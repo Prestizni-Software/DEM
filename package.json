@@ -1,6 +1,6 @@
 {
   "name": "@prestizni-software/server-dem",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "An solution for when making http requests is not a good solution",
   "keywords": [
     "websockets"
@@ -9,6 +9,9 @@
   "author": "xx0055",
   "type": "module",
   "main": "none",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "release": "standard-version && git push --follow-tags && npm publish"
   },
