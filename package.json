@@ -1,6 +1,6 @@
 {
   "name": "@Prestizni-Software/Server-DEM",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "An solution for when making http requests is not a good solution",
   "keywords": [
     "websockets"
@@ -10,12 +10,15 @@
   "type": "module",
   "main": "none",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "release": "standard-version && git push --follow-tags && npm publish"
   },
   "dependencies": {
     "@typegoose/typegoose": "^12.20.0",
     "mongoose": "^8.19.2",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "standard-version": "^9.5.0"
   }
 }
