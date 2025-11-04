@@ -1,6 +1,6 @@
 {
   "name": "@prestizni-software/server-dem",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "An solution for when making http requests is not a good solution",
   "keywords": [
     "websockets"
