@@ -1,0 +1,21 @@
+{
+  "name": "@Prestizni-Software/Server-DEM",
+  "version": "0.1.7",
+  "description": "An solution for when making http requests is not a good solution",
+  "keywords": [
+    "websockets"
+  ],
+  "license": "ISC",
+  "author": "xx0055",
+  "type": "module",
+  "main": "none",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@typegoose/typegoose": "^12.20.0",
+    "mongoose": "^8.19.2",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1"
+  }
+}
