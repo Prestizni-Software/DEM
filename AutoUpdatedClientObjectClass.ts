@@ -418,7 +418,7 @@ export function processIsRefProperties(
       (loggers ?? console).debug("Changing isRef:", path);
 
       // Example: replace with a proxy or a marker object
-      instance[prop] = instance[prop]._id;
+      instance[prop] = typeof instance[prop]  === "string" ? instance[prop] : instance[prop]._id;
     }
 
     // recurse into nested objects

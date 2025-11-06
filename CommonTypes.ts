@@ -1,8 +1,9 @@
 import { DefaultEventsMap, Server } from "socket.io";
 import { Socket as SocketClient } from "socket.io-client";
 import { ObjectId } from "bson";
-import { Ref } from "@typegoose/typegoose";
-import { Test } from "./server.js";
+import { AutoUpdated } from "./AutoUpdatedClientObjectClass.js";
+
+export type Ref<T> = string | (T extends Constructor<any> ? AutoUpdated<T> : (T & { _id: string }));
 export type LoggersTypeInternal = LoggersType & {
   warn: (...args: any[]) => void;
 };
@@ -153,6 +154,3 @@ export type PathValueOf<
 
 // ---------------------- Pretty ----------------------
 export type Pretty<T> = { [K in keyof T]: T[K] };
-
-let test1: Paths<Test> = "test2";
-let test2: PathValueOf<Test, "test2.loggers2">;

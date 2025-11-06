@@ -1,6 +1,6 @@
 {
-  "name": "@prestizni-software/server-dem",
-  "version": "0.1.24",
+  "name": "@prestizni-software/dem-publisher",
+  "version": "0.1",
   "description": "An solution for when making http requests is not a good solution",
   "keywords": [
     "websockets"
@@ -9,19 +9,13 @@
   "author": "xx0055",
   "type": "module",
   "main": "none",
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/"
-  },
   "scripts": {
-    "release": "standard-version && git push --follow-tags && npm publish --access public"
+    "release": "xcopy .\\AutoUpdateClientManagerClass.ts ..\\client\\ /Y && xcopy .\\AutoUpdatedClientObjectClass.ts ..\\client\\ /Y && xcopy .\\CommonTypes.ts ..\\client\\ /Y && xcopy .\\AutoUpdateManagerClass.ts ..\\client\\ /Y && xcopy .\\client.ts ..\\client\\ /Y && cd ..\\client && git pull && npm run release && cd ..\\src && xcopy .\\AutoUpdatedClientObjectClass.ts ..\\server\\ /Y && xcopy .\\CommonTypes.ts ..\\server\\ /Y && xcopy .\\AutoUpdateManagerClass.ts ..\\server\\ /Y && xcopy .\\server.ts ..\\server\\ /Y && xcopy .\\AutoUpdateServerManagerClass.ts ..\\server\\ /Y && xcopy .\\AutoUpdatedServerObjectClass.ts ..\\server\\ /Y && cd ..\\server && git pull && npm run release"
   },
   "dependencies": {
     "@typegoose/typegoose": "^12.20.0",
+    "mongoose": "^8.19.2",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1"
-  },
-  "devDependencies": {
-    "standard-version": "^9.5.0"
   }
 }

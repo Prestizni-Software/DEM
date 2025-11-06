@@ -10,6 +10,7 @@ import {
   ServerUpdateRequest,
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
+import { getModelForClass } from "@typegoose/typegoose";
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateServerManager<T[K]>;
 };
@@ -30,29 +31,35 @@ export function createAutoStatusDefinitions<
   C extends Constructor<any>,
   E extends { [k: string]: string | number }
 >(def: {
-  class: C
+  class: C;
   statusProperty: Paths<C>;
   statusEnum: E;
   definitions: { [K in keyof E]: {} };
-}): AutoStatusDefinitions<C> & { statusEnum: E; definitions: { [K in keyof E]: {} } } {
+}): AutoStatusDefinitions<C> & {
+  statusEnum: E;
+  definitions: { [K in keyof E]: {} };
+} {
   return def;
 }
 
-export type AUSOptions<C extends Constructor<any>> = {
+export type AUSOptions<T extends Record<string, Constructor<any>>> = {
+  [K in keyof T]: ServerManagerDefinition<T[K]>;
+};
+
+export type AUSOption<C extends Constructor<any>> =  {
     accessDefinitions?: Partial<AccessDefinitions<C>>;
     autoStatusDefinitions?: Partial<AutoStatusDefinitions<C>>;
-  }
+  };
 
 type ServerManagerDefinition<C extends Constructor<any>> = {
   class: C;
-  model: ReturnModelType<C, BeAnObject>;
-  options?: AUSOptions<C>;
+  options?: AUSOption<C>;
 };
 
 export async function AUSManagerFactory<
   T extends Record<string, Constructor<any>>
 >(
-  defs: { [K in keyof T]: ServerManagerDefinition<T[K]> },
+  defs: AUSOptions<T>,
   loggers: LoggersType,
   socket: Server
 ): Promise<{ [K in keyof T]: AutoUpdateServerManager<T[K]> }> {
@@ -65,7 +72,7 @@ export async function AUSManagerFactory<
       def.class,
       loggers,
       socket,
-      def.model,
+      getModelForClass(def.class),
       classers,
       def.options
     ) as any;
@@ -89,7 +96,7 @@ export class AutoUpdateServerManager<
     socket: Server,
     model: ReturnModelType<T, BeAnObject>,
     classers: Record<string, AutoUpdateManager<any>>,
-    options?: AUSOptions<T>
+    options?: AUSOption<T>
   ) {
     super(classParam, socket, loggers, classers);
     this.model = model;
@@ -112,7 +119,7 @@ export class AutoUpdateServerManager<
       async (ack: (ids: string[]) => void) => {
         const ids: string[] = [];
         ack(this.objectIDs);
-      } 
+      }
     );
     socket.on("delete" + this.className, async (id: string) => {
       this.classes[id].destroy();

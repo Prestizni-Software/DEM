@@ -5,7 +5,6 @@ import { Constructor, IsData, LoggersType } from "./CommonTypes.js";
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateClientManager<T[K]>;
 };
-
 // ---------------------- Factory ----------------------
 export async function AUCManagerFactory<
   T extends Record<string, Constructor<any>>
