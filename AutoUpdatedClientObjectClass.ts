@@ -12,8 +12,8 @@ import {
   ServerResponse,
   ServerUpdateRequest,
   SocketType,
-} from "./CommonTypes.js";
-import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
+} from "./CommonTypes.ts";
+import { AutoUpdateManager } from "./AutoUpdateManagerClass.ts";
 import { ObjectId } from "bson";
 
 export type AutoUpdated<T extends Constructor<any>> =

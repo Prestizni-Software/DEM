@@ -1,5 +1,6 @@
-import { AutoUpdated } from "./AutoUpdatedClientObjectClass.js";
-import { Constructor, IsData, LoggersType, SocketType } from "./CommonTypes.js";
+import { AutoUpdated } from "./AutoUpdatedClientObjectClass.ts";
+import { Constructor, IsData, LoggersType, SocketType } from "./CommonTypes.ts";
+import "reflect-metadata";
 
 export abstract class AutoUpdateManager<T extends Constructor<any>> {
   protected classes: { [_id: string]: AutoUpdated<T> } = {};

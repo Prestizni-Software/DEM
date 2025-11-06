@@ -1,7 +1,7 @@
 import { Socket } from "socket.io-client";
-import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
-import { createAutoUpdatedClass } from "./AutoUpdatedClientObjectClass.js";
-import { Constructor, IsData, LoggersType } from "./CommonTypes.js";
+import { AutoUpdateManager } from "./AutoUpdateManagerClass.ts";
+import { createAutoUpdatedClass } from "./AutoUpdatedClientObjectClass.ts";
+import { Constructor, IsData, LoggersType } from "./CommonTypes.ts";
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateClientManager<T[K]>;
 };

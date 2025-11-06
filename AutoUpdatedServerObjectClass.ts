@@ -1,6 +1,6 @@
-import { IObjectWithTypegooseFunction } from "@typegoose/typegoose/lib/types.js";
+import { IObjectWithTypegooseFunction } from "@typegoose/typegoose/lib/types.ts";
 import { Types, Document } from "mongoose";
-import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
+import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.ts";
 import {
   AutoProps,
   Constructor,
@@ -10,9 +10,9 @@ import {
   ServerUpdateRequest,
   SocketType,
   UnboxConstructor,
-} from "./CommonTypes.js";
-import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
-import { AutoUpdateServerManager } from "./AutoUpdateServerManagerClass.js";
+} from "./CommonTypes.ts";
+import { AutoUpdateManager } from "./AutoUpdateManagerClass.ts";
+import { AutoUpdateServerManager } from "./AutoUpdateServerManagerClass.ts";
 import "reflect-metadata";
 
 export type AutoUpdated<T extends Constructor<any>> = AutoUpdatedServerObject<T> & UnboxConstructor<T>;

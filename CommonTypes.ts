@@ -1,7 +1,8 @@
 import { DefaultEventsMap, Server } from "socket.io";
 import { Socket as SocketClient } from "socket.io-client";
 import { ObjectId } from "bson";
-import { AutoUpdated } from "./AutoUpdatedClientObjectClass.js";
+import { AutoUpdated } from "./AutoUpdatedClientObjectClass.ts";
+import "reflect-metadata";
 
 export type Ref<T> = string | (T extends Constructor<any> ? AutoUpdated<T> : (T & { _id: string }));
 export type LoggersTypeInternal = LoggersType & {

@@ -1,6 +1,6 @@
 import { Server, Socket } from "socket.io";
-import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
-import { createAutoUpdatedClass } from "./AutoUpdatedServerObjectClass.js";
+import { AutoUpdateManager } from "./AutoUpdateManagerClass.ts";
+import { createAutoUpdatedClass } from "./AutoUpdatedServerObjectClass.ts";
 import {
   Constructor,
   IsData,
@@ -8,8 +8,8 @@ import {
   Paths,
   ServerResponse,
   ServerUpdateRequest,
-} from "./CommonTypes.js";
-import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
+} from "./CommonTypes.ts";
+import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.ts";
 import { getModelForClass } from "@typegoose/typegoose";
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateServerManager<T[K]>;
