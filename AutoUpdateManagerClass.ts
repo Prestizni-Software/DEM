@@ -1,5 +1,5 @@
-import { AutoUpdated } from "./AutoUpdatedClientObjectClass.ts";
-import { Constructor, IsData, LoggersType, SocketType } from "./CommonTypes.ts";
+import { AutoUpdated } from "./AutoUpdatedClientObjectClass.js";
+import { Constructor, IsData, LoggersType, SocketType } from "./CommonTypes.js";
 import "reflect-metadata";
 
 export abstract class AutoUpdateManager<T extends Constructor<any>> {
@@ -7,7 +7,7 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
   public socket: SocketType;
   protected classParam: T;
   protected properties: (keyof T)[];
-  protected classers: Record<string, AutoUpdateManager<any>>;
+  public readonly classers: Record<string, AutoUpdateManager<any>>;
   protected loggers: LoggersType = {
     info: () => {},
     debug: () => {},

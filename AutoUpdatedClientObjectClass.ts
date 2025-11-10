@@ -12,9 +12,10 @@ import {
   ServerResponse,
   ServerUpdateRequest,
   SocketType,
-} from "./CommonTypes.ts";
-import { AutoUpdateManager } from "./AutoUpdateManagerClass.ts";
+} from "./CommonTypes.js";
+import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 import { ObjectId } from "bson";
+import { AutoUpdateClientManager } from "./AutoUpdateClientManagerClass.js";
 
 export type AutoUpdated<T extends Constructor<any>> =
   AutoUpdatedClientObject<T> & DeRef<InstanceOf<T>>;
@@ -23,7 +24,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   socket: SocketType,
   data: RefToId<IsData<InstanceType<C>>> | string,
   loggers: LoggersType,
-  autoClassers: { [key: string]: AutoUpdateManager<any> },
+  autoClassers: AutoUpdateClientManager<any>,
   emitter: EventTarget
 ): Promise<AutoUpdated<C>> {
   if (typeof data !== "string")
@@ -60,7 +61,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
   protected readonly emitter;
   protected readonly properties: (keyof T)[];
   protected readonly className: string;
-  protected autoClassers: Record<string, AutoUpdateManager<any>>;
+  protected autoClasser: AutoUpdateManager<any>;
   protected isLoadingReferences = false;
   public readonly classProp: Constructor<T>;
   private readonly EmitterID = new ObjectId().toHexString();
@@ -91,14 +92,14 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     properties: (keyof T)[],
     className: string,
     classProperty: Constructor<T>,
-    autoClassers: Record<string, AutoUpdateManager<any>>,
+    autoClasser: AutoUpdateManager<any>,
     emitter: EventTarget
   ) {
     this.emitter = emitter;
     this.classProp = classProperty;
     this.isLoadingReferences = true;
     this.isLoading = true;
-    this.autoClassers = autoClassers;
+    this.autoClasser = autoClasser;
     this.className = className;
     this.properties = properties;
     this.loggers.debug = loggers.debug;
@@ -125,7 +126,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
             res.data as any,
             properties,
             classProperty as any,
-            autoClassers
+            autoClasser
           );
           this.data = res.data as IsData<T>;
           this.isLoading = false;
@@ -139,12 +140,12 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
         data as any,
         properties,
         classProperty as any,
-        autoClassers
+        autoClasser
       );
       this.data = data as any;
 
       if (this.data._id === "") this.handleNewObject(data as any);
-      else this.isLoading = false;
+      else {this.isLoading = false};
     }
     if (!this.isServer) this.openSockets();
     this.generateSettersAndGetters();
@@ -167,7 +168,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
         res.data as any,
         this.properties,
         this.classProp as any,
-        this.autoClassers
+        this.autoClasser
       );
       this.data = res.data as IsData<T>;
       this.isLoading = false;
@@ -272,7 +273,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
   }
 
   protected findReference(id: string): AutoUpdated<any> | undefined {
-    for (const classer of Object.values(this.autoClassers)) {
+    for (const classer of Object.values(this.autoClasser.classers)) {
       const result = classer.getObject(id);
       if (result) return result;
     }
@@ -321,6 +322,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
       const pathArr = lastPath.split(".");
       if (pathArr.length === 1) {
         (this.data as any)[key as any] = value;
+      await this.checkAutoStatusChange();
         return true;
       }
       const pathMinusLast = pathArr.splice(0, 1);
@@ -329,11 +331,21 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
         ref = ref[p];
       }
       ref[pathArr.at(-1)!] = value;
+      await this.checkAutoStatusChange();
       return true;
     } catch (error) {
       this.loggers.error(error);
       return false;
     }
+  }
+
+  public getValue(key: Paths<T>) {
+    let value: any;
+    for (const part of key.split(".")) {
+      if (value) value = value[part];
+      else value = (this.data as any)[part];
+    }
+    return value;
   }
 
   protected async setValueInternal(key: string, value: any): Promise<boolean> {
@@ -360,11 +372,15 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     return { _id: id, key, value } as any;
   }
 
+  protected async checkAutoStatusChange() {
+    return;
+  }
+
   // return a properly typed AutoUpdatedClientClass (or null)
   // inside AutoUpdatedClientClass
   protected resolveReference(id: string): AutoUpdatedClientObject<any> | null {
-    if (!this.autoClassers) throw new Error("No autoClassers");
-    for (const autoClasser of Object.values(this.autoClassers)) {
+    if (!this.autoClasser) throw new Error("No autoClasser");
+    for (const autoClasser of Object.values(this.autoClasser.classers)) {
       const data = autoClasser.getObject(id);
       if (data) return data;
     }
@@ -395,10 +411,10 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
   }
 
   private async handleLoadOnForced(obj: any, key: string) {
-    if (!this.autoClassers) throw new Error("No autoClassers");
+    if (!this.autoClasser) throw new Error("No autoClassers");
     const refId = obj[key];
     if (refId) {
-      for (const classer of Object.values(this.autoClassers)) {
+      for (const classer of Object.values(this.autoClasser.classers)) {
         const result = classer.getObject(refId);
         if (result) {
           obj[key] = result;
@@ -482,7 +498,7 @@ function checkForMissingRefs<C extends Constructor<any>>(
   data: IsData<InstanceType<C>>,
   props: any,
   classParam: C,
-  autoClassers: { [key: string]: AutoUpdateManager<any> }
+  autoClassers: AutoUpdateManager<any>
 ) {
   if (typeof data !== "string") {
     const entryKeys = Object.keys(data);
@@ -491,7 +507,7 @@ function checkForMissingRefs<C extends Constructor<any>>(
         !entryKeys.includes(prop.toString()) &&
         getMetadataRecursive("isRef", classParam.prototype, prop.toString())
       ) {
-        findMissingObjectReference(data, prop, autoClassers);
+        findMissingObjectReference(data, prop, autoClassers.classers);
       }
     }
   }

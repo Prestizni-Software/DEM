@@ -1,55 +1,73 @@
 import { Server, Socket } from "socket.io";
-import { AutoUpdateManager } from "./AutoUpdateManagerClass.ts";
-import { createAutoUpdatedClass } from "./AutoUpdatedServerObjectClass.ts";
+import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
+import {
+  createAutoUpdatedClass,
+} from "./AutoUpdatedServerObjectClass.js";
 import {
   Constructor,
   IsData,
   LoggersType,
   Paths,
+  PathValueOf,
   ServerResponse,
   ServerUpdateRequest,
-} from "./CommonTypes.ts";
-import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.ts";
+} from "./CommonTypes.js";
+import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateServerManager<T[K]>;
 };
 type AccessDefinitions<C extends Constructor<any>> = {
-  [K in Paths<C>]: {
+  [K in Paths<C>]?: {
     access?: string[];
     update?: boolean;
   };
 };
 
-export type AutoStatusDefinitions<C extends Constructor<any>> = {
+export type AutoStatusDefinitions<
+  C extends Constructor<any>,
+  E extends Record<string, string | number>,
+  S extends StatusDefinition<C>
+> = {
   statusProperty: Paths<C>;
-  statusEnum: Record<string, string | number>;
-  definitions: Record<string, {}>;
+  statusEnum: E;
+  definitions: { [K in keyof E]: S };
+};
+
+type StatusDefinition<C extends Constructor<any>> = {
+  [K in Paths<C>]?: PathValueOf<C, K>;
 };
 
 export function createAutoStatusDefinitions<
   C extends Constructor<any>,
-  E extends { [k: string]: string | number }
->(def: {
-  class: C;
-  statusProperty: Paths<C>;
-  statusEnum: E;
-  definitions: { [K in keyof E]: {} };
-}): AutoStatusDefinitions<C> & {
-  statusEnum: E;
-  definitions: { [K in keyof E]: {} };
-} {
-  return def;
+  E extends { [k: string]: string | number },
+  S extends StatusDefinition<C>
+>(
+  _class: C,
+  _template: S,
+  statusProperty: Paths<C>,
+  statusEnum: E,
+  definitions: { [K in keyof E]: S }
+): AutoStatusDefinitions<C, E, S> {
+  return {
+    statusProperty,
+    statusEnum,
+    definitions,
+  };
 }
 
-export type AUSOptions<T extends Record<string, Constructor<any>>> = {
+export type AUSDefinitions<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: ServerManagerDefinition<T[K]>;
 };
 
-export type AUSOption<C extends Constructor<any>> =  {
-    accessDefinitions?: Partial<AccessDefinitions<C>>;
-    autoStatusDefinitions?: Partial<AutoStatusDefinitions<C>>;
-  };
+export type AUSOption<C extends Constructor<any>> = {
+  accessDefinitions?: Partial<AccessDefinitions<C>>;
+  autoStatusDefinitions?: AutoStatusDefinitions<
+    C,
+    { [k: string]: string | number },
+    StatusDefinition<C>
+  >;
+};
 
 type ServerManagerDefinition<C extends Constructor<any>> = {
   class: C;
@@ -59,7 +77,7 @@ type ServerManagerDefinition<C extends Constructor<any>> = {
 export async function AUSManagerFactory<
   T extends Record<string, Constructor<any>>
 >(
-  defs: AUSOptions<T>,
+  defs: AUSDefinitions<T>,
   loggers: LoggersType,
   socket: Server,
   emitter: EventTarget
@@ -83,7 +101,6 @@ export async function AUSManagerFactory<
     await c.loadDB();
   }
 
-
   return classers as WrappedInstances<T>;
 }
 
@@ -92,7 +109,7 @@ export class AutoUpdateServerManager<
 > extends AutoUpdateManager<T> {
   public readonly model: ReturnModelType<T, BeAnObject>;
   private readonly clientSockets: Set<Socket> = new Set<Socket>();
-
+  public readonly options?: AUSOption<T>;
   constructor(
     classParam: T,
     loggers: LoggersType,
@@ -104,6 +121,7 @@ export class AutoUpdateServerManager<
   ) {
     super(classParam, socket, loggers, classers, emitter);
     this.model = model;
+    this.options = options;
   }
 
   public async loadDB() {
@@ -210,7 +228,7 @@ export class AutoUpdateServerManager<
       this.socket,
       document,
       this.loggers,
-      this.classers,
+      this,
       this.emitter
     );
   }
@@ -224,12 +242,12 @@ export class AutoUpdateServerManager<
       this.socket,
       entry,
       this.loggers,
-      this.classers,
+      this,
       this.emitter
     );
+    object.checkAutoStatusChange();
     this.classes[object._id] = object;
     this.classesAsArray.push(object);
-    this.socket.emit("new" + this.classParam.name, await object._id);
     return object;
   }
 }

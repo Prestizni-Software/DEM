@@ -1,10 +1,82 @@
-import { ObjectId } from "mongoose";
-import { AUSManagerFactory } from "./AutoUpdateServerManagerClass.ts";
+import { mongoose, prop } from "@typegoose/typegoose";
+import {
+  AUSManagerFactory,
+  createAutoStatusDefinitions,
+} from "./AutoUpdateServerManagerClass.js";
+import { classProp } from "./CommonTypes.js";
+import { Server as SocketServer } from "socket.io";
+import { Server } from "node:http";
+console.log("Start");
 
-class Test {
-    _id!: ObjectId
+
+const io = new SocketServer(new Server() , { cors: { origin: "*" } });
+
+await mongoose.connect("mongodb://localhost:27017/GeoDB", { timeoutMS: 5000 });
+enum Status {
+  ACTIVE = "ACTIVE",
+  INACTIVE = "INACTIVE",
 }
 
-const managers = await AUSManagerFactory({
+class Test {
+  @classProp
+  public _id!: string;
 
-})
+  @prop({ required: true })
+  @classProp
+  public active!: boolean;
+
+  @prop({ required: true })
+  @classProp
+  public status!: Status;
+}
+
+const managers = await AUSManagerFactory(
+  {
+    Test: {
+      class: Test,
+      options: {
+        autoStatusDefinitions: createAutoStatusDefinitions(
+          Test,
+          {
+            active: true,
+          },
+          "status",
+          Status,
+          {
+            ACTIVE: {
+              active: true,
+            },
+            INACTIVE: {
+              active: false,
+            },
+          }
+        ),
+        accessDefinitions: {},
+      },
+    },
+  },
+  {
+    info: (s: string) => console.log(s),
+    warn: (s: string) => console.warn(s),
+    error: (s: string) => console.error(s),
+    debug: (s: string) => console.debug(s),
+  },
+  io,
+  new EventTarget()
+);
+
+console.log("CREATING OBJECT WITH active = true, status = INACTIVE");
+
+const obj = await managers.Test.createObject({ active: true, status: Status.INACTIVE });
+
+console.log(obj.status);
+
+console.log("UPDATING ACTIVE STATUS TO TRUE");
+await obj.setValue("active", true);
+
+console.log(obj.status);
+
+console.log("UPDATING ACTIVE STATUS TO FALSE");
+await obj.setValue("active", false);
+
+console.log(obj.status);

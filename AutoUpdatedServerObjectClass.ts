@@ -1,6 +1,6 @@
-import { IObjectWithTypegooseFunction } from "@typegoose/typegoose/lib/types.ts";
+import { IObjectWithTypegooseFunction } from "@typegoose/typegoose/lib/types.js";
 import { Types, Document } from "mongoose";
-import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.ts";
+import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
 import {
   AutoProps,
   Constructor,
@@ -10,9 +10,8 @@ import {
   ServerUpdateRequest,
   SocketType,
   UnboxConstructor,
-} from "./CommonTypes.ts";
-import { AutoUpdateManager } from "./AutoUpdateManagerClass.ts";
-import { AutoUpdateServerManager } from "./AutoUpdateServerManagerClass.ts";
+} from "./CommonTypes.js";
+import { AutoUpdateServerManager } from "./AutoUpdateServerManagerClass.js";
 import "reflect-metadata";
 
 export type AutoUpdated<T extends Constructor<any>> = AutoUpdatedServerObject<T> & UnboxConstructor<T>;
@@ -22,7 +21,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   socket: SocketType,
   data: DocWithProps<InstanceType<C>>,
   loggers: LoggersType,
-  autoClassers: Record<string, AutoUpdateManager<any>>,
+  autoClasser: AutoUpdateServerManager<any>,
   emitter: EventTarget
 ): Promise<AutoProps<C> & AutoUpdated<InstanceType<C>> & DeRef<InstanceType<C>>> {
   const instance = new (class extends AutoUpdatedServerObject<
@@ -37,10 +36,11 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
     ) as (keyof InstanceType<C>)[],
     classParam.name,
     classParam,
-    autoClassers,
+    autoClasser,
     emitter
   );
   await instance.isLoadedAsync();
+  await instance.checkAutoStatusChange();
   return instance as AutoProps<C> & AutoUpdated<InstanceType<C>> & DeRef<InstanceType<C>>;
 }
 
@@ -50,6 +50,7 @@ export abstract class AutoUpdatedServerObject<
 > extends AutoUpdatedClientObject<T> {
   protected readonly isServer: boolean = true;
   private readonly entry: DocWithProps<T>;
+  protected override autoClasser: AutoUpdateServerManager<any>;
 
   constructor(
     socket: SocketType,
@@ -63,7 +64,7 @@ export abstract class AutoUpdatedServerObject<
     properties: (keyof T)[],
     className: string,
     classProp: Constructor<T>,
-    autoClassers: Record<string, AutoUpdateManager<any>>,
+    autoClasser: AutoUpdateServerManager<any>,
     emitter: EventTarget
   ) {
     super(
@@ -73,11 +74,11 @@ export abstract class AutoUpdatedServerObject<
       properties,
       className,
       classProp,
-      autoClassers,
+      autoClasser,
       emitter
     );
+    this.autoClasser = autoClasser;
     this.entry = data;
-    this.socket.emit("new", { id: this.data._id, type: className });
   }
 
   protected handleNewObject(_data: IsData<T>) {
@@ -86,7 +87,7 @@ export abstract class AutoUpdatedServerObject<
   protected async setValueInternal(key: string, value: any): Promise<boolean> {
     try {
       await (
-        this.autoClassers[this.className] as AutoUpdateServerManager<any>
+        this.autoClasser.classers[this.className] as AutoUpdateServerManager<any>
       ).model.updateOne({ _id: this.data._id }, { $set: { [key]: value } });
 
       const update: ServerUpdateRequest<T> = this.makeUpdate(key, value);
@@ -104,6 +105,36 @@ export abstract class AutoUpdatedServerObject<
     await this.entry.deleteOne({ _id: this.data._id });
     this.wipeSelf();
   }
+
+  public override async checkAutoStatusChange() {
+      if (!this.autoClasser.options?.autoStatusDefinitions) return;
+      const statusPath = this.autoClasser.options.autoStatusDefinitions.statusProperty;
+      let finalStatus:
+        | keyof typeof this.autoClasser.options.autoStatusDefinitions.statusEnum
+        | null = "null";
+      for (const [currentStatus, statusDef] of Object.entries(
+        this.autoClasser.options.autoStatusDefinitions.definitions
+      )) {
+        finalStatus = currentStatus;
+        for (const [key, value] of Object.entries(statusDef)) {
+          if (this.getValue(key as any) !== value) {
+            finalStatus = null;
+            break;
+          }
+        }
+  
+        if (!finalStatus) continue;
+        if(this.autoClasser.options.autoStatusDefinitions.statusEnum[finalStatus] === this.getValue(statusPath as any)) break;
+        await this.setValue(
+          statusPath as any,
+          this.autoClasser.options.autoStatusDefinitions.statusEnum[finalStatus] as any
+        );
+        break;
+      }
+      if (!finalStatus) 
+        throw new Error(`No final status found`);
+    }
+  
 }
 
 export type DocWithProps<T> = Document &
