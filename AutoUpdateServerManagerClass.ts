@@ -61,7 +61,8 @@ export async function AUSManagerFactory<
 >(
   defs: AUSOptions<T>,
   loggers: LoggersType,
-  socket: Server
+  socket: Server,
+  emitter: EventTarget
 ): Promise<{ [K in keyof T]: AutoUpdateServerManager<T[K]> }> {
   const classers: any = {};
 
@@ -74,12 +75,14 @@ export async function AUSManagerFactory<
       socket,
       getModelForClass(def.class),
       classers,
+      emitter,
       def.options
     ) as any;
     i++;
     classers[key] = c;
     await c.loadDB();
   }
+
 
   return classers as WrappedInstances<T>;
 }
@@ -96,9 +99,10 @@ export class AutoUpdateServerManager<
     socket: Server,
     model: ReturnModelType<T, BeAnObject>,
     classers: Record<string, AutoUpdateManager<any>>,
+    emitter: EventTarget,
     options?: AUSOption<T>
   ) {
-    super(classParam, socket, loggers, classers);
+    super(classParam, socket, loggers, classers, emitter);
     this.model = model;
   }
 
@@ -206,7 +210,8 @@ export class AutoUpdateServerManager<
       this.socket,
       document,
       this.loggers,
-      this.classers
+      this.classers,
+      this.emitter
     );
   }
 
@@ -219,7 +224,8 @@ export class AutoUpdateServerManager<
       this.socket,
       entry,
       this.loggers,
-      this.classers
+      this.classers,
+      this.emitter
     );
     this.classes[object._id] = object;
     this.classesAsArray.push(object);

@@ -1,4 +1,3 @@
-import EventEmitter from "node:events";
 import "reflect-metadata";
 import {
   Constructor,
@@ -23,19 +22,25 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   socket: SocketType,
   data: IsData<InstanceType<C>> | string,
   loggers: LoggersType,
-  autoClassers: { [key: string]: AutoUpdateManager<any> }
+  autoClassers: { [key: string]: AutoUpdateManager<any> },
+  emitter: EventTarget
 ): Promise<AutoUpdated<C>> {
   if (typeof data !== "string")
     processIsRefProperties(data, classParam.prototype, undefined, [], loggers);
-
+  const props = Reflect.getMetadata("props", classParam.prototype);
+  if (typeof data !== "string")
+    checkForMissingRefs<C>(data, props, classParam, autoClassers);
   const instance = new (class extends AutoUpdatedClientObject<C> {})(
     socket,
     data,
     loggers,
-    Reflect.getMetadata("props", classParam.prototype),
+    props,
     classParam.name,
     classParam,
-    autoClassers
+    autoClassers,
+    emitter
+
+    
   );
 
   await instance.isLoadedAsync();
@@ -55,12 +60,13 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     warn: () => {},
   };
   protected isLoading = false;
-  protected readonly emitter = new EventEmitter();
+  protected readonly emitter;
   protected readonly properties: (keyof T)[];
   protected readonly className: string;
   protected autoClassers: Record<string, AutoUpdateManager<any>>;
   protected isLoadingReferences = false;
   public readonly classProp: Constructor<T>;
+  private readonly EmitterID = new ObjectId().toHexString();
 
   private readonly loadShit = async () => {
     if (this.isLoaded()) {
@@ -73,7 +79,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
 
       return;
     }
-    this.emitter.once("loaded", async () => {
+    this.emitter.addEventListener("loaded"+this.EmitterID, async () => {
       try {
         await this.loadForceReferences();
       } catch (error) {
@@ -89,8 +95,10 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     properties: (keyof T)[],
     className: string,
     classProperty: Constructor<T>,
-    autoClassers: Record<string, AutoUpdateManager<any>>
+    autoClassers: Record<string, AutoUpdateManager<any>>,
+    emitter: EventTarget
   ) {
+    this.emitter = emitter;
     this.classProp = classProperty;
     this.isLoadingReferences = true;
     this.isLoading = true;
@@ -114,12 +122,13 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
           if (!res.success) {
             this.isLoading = false;
             this.loggers.error("Could not load data from server:", res.message);
-            this.emitter.emit("loaded");
+            this.emitter.dispatchEvent(new Event("loaded"+this.EmitterID));
             return;
           }
+          checkForMissingRefs<T>(res.data as any, properties, classProperty as  any, autoClassers);
           this.data = res.data as IsData<T>;
           this.isLoading = false;
-          this.emitter.emit("loaded");
+          this.emitter.dispatchEvent(new Event("loaded"+this.EmitterID));
         }
       );
       this.data = { _id: data } as IsData<T>;
@@ -143,12 +152,12 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
       if (!res.success) {
         this.isLoading = false;
         this.loggers.error("Could not create data on server:", res.message);
-        this.emitter.emit("loaded");
+        this.emitter.dispatchEvent(new Event("loaded"+this.EmitterID));
         return;
       }
       this.data = res.data as IsData<T>;
       this.isLoading = false;
-      this.emitter.emit("loaded");
+      this.emitter.dispatchEvent(new Event("loaded"+this.EmitterID));
     });
   }
 
@@ -168,7 +177,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     await this.loadShit();
     return this.isLoading
       ? new Promise((resolve) => {
-          this.emitter.once("loaded", () => {
+          this.emitter.addEventListener("loaded"+this.EmitterID, () => {
             resolve(this.isLoading === false);
           });
         })
@@ -349,7 +358,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
 
   private async loadForceReferences(
     obj: any = this.data,
-    proto: any = Object.getPrototypeOf(this)
+    proto: any = this.classProp.prototype
   ) {
     const props: string[] = Reflect.getMetadata("props", proto) || [];
 
@@ -431,4 +440,30 @@ export function processIsRefProperties(
     }
   }
   return allProps;
+}
+
+export function getMetadataRecursive(
+  metaKey: string,
+  proto: any,
+  prop: string
+) {
+  while (proto) {
+    const meta = Reflect.getMetadata(metaKey, proto, prop);
+    if (meta !== undefined) return meta;
+    proto = Object.getPrototypeOf(proto);
+  }
+  return undefined;
+}
+
+function checkForMissingRefs<C extends Constructor<any>>(data: IsData<InstanceType<C>>, props: any, classParam: C, autoClassers: { [key: string]: AutoUpdateManager<any>; }) {
+  if (typeof data !== "string") {
+    const entryKeys = Object.keys(data);
+    for (const prop of props) {
+      if (!entryKeys.includes(prop.toString()) &&
+        getMetadataRecursive("isRef", classParam.prototype, prop.toString())) {
+        (data as any)[prop] = Object.values(autoClassers).find((autoClasser) => autoClasser.getObject((data as any)[prop])
+        );
+      }
+    }
+  }
 }

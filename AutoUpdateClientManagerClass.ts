@@ -10,16 +10,18 @@ export async function AUCManagerFactory<
   T extends Record<string, Constructor<any>>
 >(defs: T, loggers: LoggersType, socket: Socket): Promise<WrappedInstances<T>> {
   const classers = {} as WrappedInstances<T>;
-
+  const emitter =  new EventTarget();
   for (const key in defs) {
     const Model = defs[key];
     const c = new AutoUpdateClientManager(
       Model,
       loggers,
       socket,
-      classers as any
+      classers as any,
+      emitter
     );
     classers[key] = c;
+    await c.isLoadedAsync();
   }
 
   return classers;
@@ -32,14 +34,16 @@ export class AutoUpdateClientManager<
     classParam: T,
     loggers: LoggersType,
     socket: Socket,
-    classers: Record<string, AutoUpdateManager<any>>
+    classers: Record<string, AutoUpdateManager<any>>,
+    emitter: EventTarget
   ) {
-    super(classParam, socket, loggers, classers);
+    super(classParam, socket, loggers, classers, emitter);
     socket.emit("startup" + classParam.name, async (data: string[]) => {
       for (const id of data) {
         this.classes[id] = await this.handleGetMissingObject(id);
         this.classesAsArray.push(this.classes[id]);
       }
+      emitter.dispatchEvent(new Event("ManagerLoaded"+this.classParam.name+this.className));
     });
     socket.on("new" + classParam.name, async (id: string) => {
       this.classes[id] = await this.handleGetMissingObject(id);
@@ -57,7 +61,8 @@ export class AutoUpdateClientManager<
       this.socket,
       _id,
       this.loggers,
-      this.classers
+      this.classers,
+      this.emitter
     );
   }
 
@@ -68,7 +73,8 @@ export class AutoUpdateClientManager<
       this.socket,
       data,
       this.loggers,
-      this.classers
+      this.classers,
+      this.emitter
     );
     this.classes[object._id as any] = object;
     return object;

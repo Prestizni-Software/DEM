@@ -15,12 +15,16 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     warn: () => {},
   };
   protected classesAsArray: AutoUpdated<T>[] = [];
+  protected emitter: EventTarget;
+  private isLoaded = false;
   constructor(
     classParam: T,
     socket: SocketType,
     loggers: LoggersType,
-    classers: Record<string, AutoUpdateManager<any>>
+    classers: Record<string, AutoUpdateManager<any>>,
+    emitter: EventTarget
   ) {
+    this.emitter = emitter;
     this.classers = classers;
     this.socket = socket;
     this.classParam = classParam;
@@ -37,6 +41,13 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     _id: string
   ): AutoUpdated<T> | null {
     return this.classes[_id];
+  }
+
+  public async isLoadedAsync(): Promise<boolean> {
+    if (this.isLoaded) return this.isLoaded;
+    await new Promise((resolve) => this.emitter.addEventListener("ManagerLoaded"+this.classParam.name+this.className, resolve));
+    this.isLoaded = true;
+    return this.isLoaded;
   }
 
   public async deleteObject(_id: string): Promise<void> {

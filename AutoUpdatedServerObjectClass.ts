@@ -22,7 +22,8 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   socket: SocketType,
   data: DocWithProps<InstanceType<C>>,
   loggers: LoggersType,
-  autoClassers: Record<string, AutoUpdateManager<any>>
+  autoClassers: Record<string, AutoUpdateManager<any>>,
+  emitter: EventTarget
 ): Promise<AutoProps<C> & AutoUpdated<InstanceType<C>> & DeRef<InstanceType<C>>> {
   const instance = new (class extends AutoUpdatedServerObject<
     InstanceType<C>
@@ -36,7 +37,8 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
     ) as (keyof InstanceType<C>)[],
     classParam.name,
     classParam,
-    autoClassers
+    autoClassers,
+    emitter
   );
   await instance.isLoadedAsync();
   return instance as AutoProps<C> & AutoUpdated<InstanceType<C>> & DeRef<InstanceType<C>>;
@@ -61,7 +63,8 @@ export abstract class AutoUpdatedServerObject<
     properties: (keyof T)[],
     className: string,
     classProp: Constructor<T>,
-    autoClassers: Record<string, AutoUpdateManager<any>>
+    autoClassers: Record<string, AutoUpdateManager<any>>,
+    emitter: EventTarget
   ) {
     super(
       socket,
@@ -70,7 +73,8 @@ export abstract class AutoUpdatedServerObject<
       properties,
       className,
       classProp,
-      autoClassers
+      autoClassers,
+      emitter
     );
     this.entry = data;
     this.socket.emit("new", { id: this.data._id, type: className });
