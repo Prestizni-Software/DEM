@@ -8,6 +8,7 @@ import {
   LoggersTypeInternal,
   Paths,
   PathValueOf,
+  RefToId,
   ServerResponse,
   ServerUpdateRequest,
   SocketType,
@@ -20,7 +21,7 @@ export type AutoUpdated<T extends Constructor<any>> =
 export async function createAutoUpdatedClass<C extends Constructor<any>>(
   classParam: C,
   socket: SocketType,
-  data: IsData<InstanceType<C>> | string,
+  data: RefToId<IsData<InstanceType<C>>> | string,
   loggers: LoggersType,
   autoClassers: { [key: string]: AutoUpdateManager<any> },
   emitter: EventTarget
@@ -28,8 +29,6 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   if (typeof data !== "string")
     processIsRefProperties(data, classParam.prototype, undefined, [], loggers);
   const props = Reflect.getMetadata("props", classParam.prototype);
-  if (typeof data !== "string")
-    checkForMissingRefs<C>(data, props, classParam, autoClassers);
   const instance = new (class extends AutoUpdatedClientObject<C> {})(
     socket,
     data,
@@ -39,8 +38,6 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
     classParam,
     autoClassers,
     emitter
-
-    
   );
 
   await instance.isLoadedAsync();
@@ -67,7 +64,6 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
   protected isLoadingReferences = false;
   public readonly classProp: Constructor<T>;
   private readonly EmitterID = new ObjectId().toHexString();
-
   private readonly loadShit = async () => {
     if (this.isLoaded()) {
       try {
@@ -79,7 +75,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
 
       return;
     }
-    this.emitter.addEventListener("loaded"+this.EmitterID, async () => {
+    this.emitter.addEventListener("loaded" + this.EmitterID, async () => {
       try {
         await this.loadForceReferences();
       } catch (error) {
@@ -90,7 +86,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
   };
   constructor(
     socket: SocketType,
-    data: string | IsData<T>,
+    data: string | RefToId<IsData<T>>,
     loggers: LoggersType,
     properties: (keyof T)[],
     className: string,
@@ -122,20 +118,32 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
           if (!res.success) {
             this.isLoading = false;
             this.loggers.error("Could not load data from server:", res.message);
-            this.emitter.dispatchEvent(new Event("loaded"+this.EmitterID));
+            this.emitter.dispatchEvent(new Event("loaded" + this.EmitterID));
             return;
           }
-          checkForMissingRefs<T>(res.data as any, properties, classProperty as  any, autoClassers);
+          checkForMissingRefs<T>(
+            res.data as any,
+            properties,
+            classProperty as any,
+            autoClassers
+          );
           this.data = res.data as IsData<T>;
           this.isLoading = false;
-          this.emitter.dispatchEvent(new Event("loaded"+this.EmitterID));
+          this.emitter.dispatchEvent(new Event("loaded" + this.EmitterID));
         }
       );
       this.data = { _id: data } as IsData<T>;
     } else {
       this.isLoading = true;
-      this.data = data;
-      if (this.data._id === "") this.handleNewObject(data);
+      checkForMissingRefs<T>(
+        data as any,
+        properties,
+        classProperty as any,
+        autoClassers
+      );
+      this.data = data as any;
+
+      if (this.data._id === "") this.handleNewObject(data as any);
       else this.isLoading = false;
     }
     if (!this.isServer) this.openSockets();
@@ -152,19 +160,30 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
       if (!res.success) {
         this.isLoading = false;
         this.loggers.error("Could not create data on server:", res.message);
-        this.emitter.dispatchEvent(new Event("loaded"+this.EmitterID));
+        this.emitter.dispatchEvent(new Event("loaded" + this.EmitterID));
         return;
       }
+      checkForMissingRefs<T>(
+        res.data as any,
+        this.properties,
+        this.classProp as any,
+        this.autoClassers
+      );
       this.data = res.data as IsData<T>;
       this.isLoading = false;
-      this.emitter.dispatchEvent(new Event("loaded"+this.EmitterID));
+      this.emitter.dispatchEvent(new Event("loaded" + this.EmitterID));
     });
   }
 
   public get extractedData(): {
     [K in keyof InstanceType<T>]: InstanceOf<InstanceType<T>>[K];
   } {
-    return structuredClone(this.data) as any as {
+    const extracted = Object.fromEntries(
+      Object.entries(
+        processIsRefProperties(this.data, this.classProp.prototype).newData
+      ).filter(([k, v]) => typeof v !== "function")
+    );
+    return structuredClone(extracted) as any as {
       [K in keyof InstanceType<T>]: InstanceOf<InstanceType<T>>[K];
     };
   }
@@ -177,7 +196,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     await this.loadShit();
     return this.isLoading
       ? new Promise((resolve) => {
-          this.emitter.addEventListener("loaded"+this.EmitterID, () => {
+          this.emitter.addEventListener("loaded" + this.EmitterID, () => {
             resolve(this.isLoading === false);
           });
         })
@@ -223,19 +242,24 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
   }
 
   private generateSettersAndGetters() {
-    this.properties.forEach((key) => {
+    for (const key of this.properties) {
       if (typeof key !== "string") return;
 
       const k = key as keyof IsData<T>;
-      const isRef = this.getMetadataRecursive(
+      const isRef = getMetadataRecursive(
         "isRef",
         this.classProp.prototype,
         key
       );
 
       Object.defineProperty(this, key, {
-        get: () =>
-          isRef ? this.findReference(this.data[k] as string) : this.data[k],
+        get: () => {
+          if (isRef)
+            return typeof this.data[k] === "string"
+              ? this.findReference(this.data[k] as string)
+              : this.data[k];
+          else return this.data[k];
+        },
         set: () => {
           throw new Error(
             `Cannot set ${key} this way, use "setValue" function.`
@@ -244,7 +268,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
         enumerable: true,
         configurable: true,
       });
-    });
+    }
   }
 
   protected findReference(id: string): AutoUpdated<any> | undefined {
@@ -336,15 +360,6 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     return { _id: id, key, value } as any;
   }
 
-  private getMetadataRecursive(metaKey: string, proto: any, prop: string) {
-    while (proto) {
-      const meta = Reflect.getMetadata(metaKey, proto, prop);
-      if (meta !== undefined) return meta;
-      proto = Object.getPrototypeOf(proto);
-    }
-    return undefined;
-  }
-
   // return a properly typed AutoUpdatedClientClass (or null)
   // inside AutoUpdatedClientClass
   protected resolveReference(id: string): AutoUpdatedClientObject<any> | null {
@@ -413,8 +428,9 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
 export function processIsRefProperties(
   instance: any,
   target: any,
-  prefix = "",
+  prefix: string | null = null,
   allProps: string[] = [],
+  newData = {} as any,
   loggers?: LoggersType
 ) {
   const props: string[] = Reflect.getMetadata("props", target) || [];
@@ -422,24 +438,31 @@ export function processIsRefProperties(
   for (const prop of props) {
     const path = prefix ? `${prefix}.${prop}` : prop;
     allProps.push(path);
+    newData[prop] = instance[prop];
     if (Reflect.getMetadata("isRef", target, prop)) {
-      // 👇 here’s where you mutate
       (loggers ?? console).debug("Changing isRef:", path);
-
-      // Example: replace with a proxy or a marker object
-      instance[prop] = typeof instance[prop]  === "string" ? instance[prop] : instance[prop]._id;
+      newData[prop] =
+        typeof instance[prop] === "string"
+          ? instance[prop]
+          : instance[prop]?._id;
     }
 
-    // recurse into nested objects
     const type = Reflect.getMetadata("design:type", target, prop);
     if (type?.prototype) {
       const nestedProps = Reflect.getMetadata("props", type.prototype);
       if (nestedProps && instance[prop]) {
-        processIsRefProperties(instance[prop], type.prototype, path, allProps);
+        newData[prop] = processIsRefProperties(
+          instance[prop],
+          type.prototype,
+          path,
+          allProps,
+          undefined,
+          loggers
+        ).newData;
       }
     }
   }
-  return allProps;
+  return { allProps, newData };
 }
 
 export function getMetadataRecursive(
@@ -455,15 +478,39 @@ export function getMetadataRecursive(
   return undefined;
 }
 
-function checkForMissingRefs<C extends Constructor<any>>(data: IsData<InstanceType<C>>, props: any, classParam: C, autoClassers: { [key: string]: AutoUpdateManager<any>; }) {
+function checkForMissingRefs<C extends Constructor<any>>(
+  data: IsData<InstanceType<C>>,
+  props: any,
+  classParam: C,
+  autoClassers: { [key: string]: AutoUpdateManager<any> }
+) {
   if (typeof data !== "string") {
     const entryKeys = Object.keys(data);
     for (const prop of props) {
-      if (!entryKeys.includes(prop.toString()) &&
-        getMetadataRecursive("isRef", classParam.prototype, prop.toString())) {
-        (data as any)[prop] = Object.values(autoClassers).find((autoClasser) => autoClasser.getObject((data as any)[prop])
-        );
+      if (
+        !entryKeys.includes(prop.toString()) &&
+        getMetadataRecursive("isRef", classParam.prototype, prop.toString())
+      ) {
+        findMissingObjectReference(data, prop, autoClassers);
       }
     }
   }
+}
+function findMissingObjectReference(
+  data: any,
+  prop: any,
+  autoClassers: { [key: string]: AutoUpdateManager<any> }
+) {
+  for (const ac of Object.values(autoClassers)) {
+    for (const obj of ac.objectsAsArray) {
+      const found = Object.values(obj.extractedData).find((value) =>
+        Array.isArray(value) ? value.includes(data._id) : value === data._id
+      );
+      if (found) {
+        data[prop] = obj._id;
+        return;
+      }
+    }
+  }
+  console.log("a");
 }

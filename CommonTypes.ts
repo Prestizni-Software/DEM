@@ -74,6 +74,10 @@ export type DeRef<T> = {
     : NonOptional<T[K]>;
 };
 
+export type RefToId<T> = {
+  [K in keyof T]: T[K] extends Ref<infer U> ? string : T[K];
+};
+
 // ---------------------- Instance helper ----------------------
 export type InstanceOf<T> = T extends Constructor<infer I> ? I : T;
 
