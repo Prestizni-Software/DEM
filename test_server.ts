@@ -28,6 +28,10 @@ class Test {
   @prop({ required: true })
   @classProp
   public status!: Status;
+
+  @prop({ required: false })
+  @classProp
+  public description!: string | null;
 }
 
 const managers = await AUSManagerFactory(
@@ -67,7 +71,7 @@ const managers = await AUSManagerFactory(
 
 console.log("CREATING OBJECT WITH active = true, status = INACTIVE");
 
-const obj = await managers.Test.createObject({ active: true, status: Status.INACTIVE });
+const obj = await managers.Test.createObject({ active: true, status: Status.INACTIVE, description: null });
 
 console.log(obj.status);
 

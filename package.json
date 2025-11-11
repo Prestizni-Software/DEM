@@ -8,9 +8,14 @@
   "license": "ISC",
   "author": "xx0055",
   "type": "module",
-  "main": "none",
-  "scripts": {
-    "release": "xcopy .\\AutoUpdateClientManagerClass.ts ..\\client\\ /Y && xcopy .\\tsconfig.json ..\\client\\ /Y && xcopy .\\AutoUpdatedClientObjectClass.ts ..\\client\\ /Y && xcopy .\\CommonTypes.ts ..\\client\\ /Y && xcopy .\\AutoUpdateManagerClass.ts ..\\client\\ /Y && xcopy .\\client.ts ..\\client\\ /Y && cd ..\\client && git pull && npm run release && cd ..\\src && xcopy .\\AutoUpdatedClientObjectClass.ts ..\\server\\ /Y && xcopy .\\CommonTypes.ts ..\\server\\ /Y && xcopy .\\AutoUpdateManagerClass.ts ..\\server\\ /Y && xcopy .\\server.ts ..\\server\\ /Y && xcopy .\\AutoUpdateServerManagerClass.ts ..\\server\\ /Y && xcopy .\\AutoUpdatedServerObjectClass.ts ..\\server\\ /Y && xcopy .\\tsconfig.json ..\\server\\ /Y && cd ..\\server && git pull && npm run release"
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {  
+    "release": "xcopy .\\dist\\AutoUpdateClientManagerClass* ..\\client\\ /Y && xcopy .\\dist\\AutoUpdatedClientObjectClass* ..\\client\\ /Y && xcopy .\\dist\\CommonTypes* ..\\client\\ /Y && xcopy .\\dist\\AutoUpdateManagerClass* ..\\client\\ /Y && xcopy .\\dist\\client* ..\\client\\ /Y && cd ..\\client && git pull && npm run release && cd ..\\src && xcopy .\\dist\\AutoUpdatedClientObjectClass* ..\\server\\ /Y && xcopy .\\dist\\CommonTypes* ..\\server\\ /Y && xcopy .\\dist\\AutoUpdateManagerClass* ..\\server\\ /Y && xcopy .\\dist\\server* ..\\server\\ /Y && xcopy .\\dist\\AutoUpdateServerManagerClass* ..\\server\\ /Y && xcopy .\\dist\\AutoUpdatedServerObjectClass* ..\\server\\ /Y && cd ..\\server && git pull && npm run release"
   },
   "dependencies": {
     "@typegoose/typegoose": "^12.20.0",

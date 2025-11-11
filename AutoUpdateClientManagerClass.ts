@@ -66,12 +66,12 @@ export class AutoUpdateClientManager<
     );
   }
 
-  public async createObject(data: IsData<InstanceType<T>>) {
+  public async createObject(data: Omit<IsData<InstanceType<T>>, "_id">) {
     if (!this.classers) throw new Error(`No classers.`);
     const object = await createAutoUpdatedClass(
       this.classParam,
       this.socket,
-      data,
+      data as any,
       this.loggers,
       this,
       this.emitter
