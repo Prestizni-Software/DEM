@@ -1,5 +1,3 @@
-import { DefaultEventsMap, Server } from "socket.io";
-import { Socket as SocketClient } from "socket.io-client";
 import { ObjectId } from "bson";
 import { AutoUpdated } from "./AutoUpdatedClientObjectClass.js";
 import "reflect-metadata";
@@ -15,9 +13,6 @@ export type LoggersType = {
   error: (...args: any[]) => void;
   warn?: (...args: any[]) => void;
 };
-export type SocketType =
-  | SocketClient<DefaultEventsMap, DefaultEventsMap>
-  | Server<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, any>;
 export type IsData<T> = T extends { _id: string | ObjectId } ? T : never;
 export type ServerResponse<T> =
   | {

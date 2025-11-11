@@ -14,6 +14,7 @@ import {
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
+
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateServerManager<T[K]>;
 };
@@ -69,7 +70,7 @@ export type AUSOption<C extends Constructor<any>> = {
   >;
 };
 
-type ServerManagerDefinition<C extends Constructor<any>> = {
+export type ServerManagerDefinition<C extends Constructor<any>> = {
   class: C;
   options?: AUSOption<C>;
 };

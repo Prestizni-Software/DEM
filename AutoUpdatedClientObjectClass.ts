@@ -11,12 +11,12 @@ import {
   RefToId,
   ServerResponse,
   ServerUpdateRequest,
-  SocketType,
 } from "./CommonTypes.js";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 import { ObjectId } from "bson";
 import { AutoUpdateClientManager } from "./AutoUpdateClientManagerClass.js";
-
+import { Socket } from "socket.io-client";
+type SocketType = Socket<any,any>
 export type AutoUpdated<T extends Constructor<any>> =
   AutoUpdatedClientObject<T> & DeRef<InstanceOf<T>>;
 export async function createAutoUpdatedClass<C extends Constructor<any>>(
@@ -164,7 +164,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
         this.isLoading = false;
         this.loggers.error("Could not create data on server:", res.message);
         this.emitter.dispatchEvent(new Event("loaded" + this.EmitterID));
-        return;
+        throw new Error("Error creating new object: " + res.message);
       }
       checkForMissingRefs<T>(
         res.data as any,
@@ -525,7 +525,6 @@ function findMissingObjectReference(
   let foundAnAC = false;
   for (const ac of Object.values(autoClassers)) {
     if (ac.className !== acName) {
-      console.log(ac.className, acName);
       continue;
     }
     foundAnAC = true;

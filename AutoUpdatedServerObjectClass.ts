@@ -8,11 +8,13 @@ import {
   IsData,
   LoggersType,
   ServerUpdateRequest,
-  SocketType,
   UnboxConstructor,
 } from "./CommonTypes.js";
 import { AutoUpdateServerManager } from "./AutoUpdateServerManagerClass.js";
 import "reflect-metadata";
+import { DefaultEventsMap, Server } from "socket.io";
+
+type SocketType = Server<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, any>;
 
 export type AutoUpdated<T extends Constructor<any>> = AutoUpdatedServerObject<T> & UnboxConstructor<T>;
 
@@ -68,7 +70,7 @@ export abstract class AutoUpdatedServerObject<
     emitter: EventTarget
   ) {
     super(
-      socket,
+      socket as any,
       data.toObject(),
       loggers,
       properties,
