@@ -43,9 +43,13 @@ const managers = await AUCManagerFactory(
 
 console.log("CREATING OBJECT WITH active = true, status = INACTIVE");
 
-const obj = await managers.Test.createObject({ active: true, status: Status.INACTIVE, description: null });
+const obj = await managers.Test.createObject({
+  active: true,
+  status: Status.INACTIVE,
+  description: null,
+});
 
-obj.setValue("description","a")
+obj.setValue("description", null);
 
 console.log(obj.status);
 

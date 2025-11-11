@@ -43,14 +43,17 @@ export type ServerUpdateRequest<T> = {
   key: string;
   value: any;
 };
+
 export function classProp(target: any, propertyKey: string) {
   const props = Reflect.getMetadata("props", target) || [];
   props.push(propertyKey);
   Reflect.defineMetadata("props", props, target);
 }
 
-export function classRef(target: any, propertyKey: string) {
-  Reflect.defineMetadata("isRef", true, target, propertyKey);
+export function classRef(where: string) {
+  return function (target: any, propertyKey: string) {
+    Reflect.defineMetadata("isRef", where, target, propertyKey);
+  };
 }
 
 // ---------------------- Core ----------------------
@@ -68,10 +71,10 @@ export type NonOptional<T> = Exclude<T, null | undefined>;
 
 export type DeRef<T> = {
   [K in keyof T]: T[K] extends Ref<infer U>
-    ? NonOptional<U>
+    ? U
     : T[K] extends Ref<infer U> | null | undefined
-    ? NonOptional<U>
-    : NonOptional<T[K]>;
+    ? U
+    : T[K];
 };
 
 export type RefToId<T> = {

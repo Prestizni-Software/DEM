@@ -145,7 +145,9 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
       this.data = data as any;
 
       if (this.data._id === "") this.handleNewObject(data as any);
-      else {this.isLoading = false};
+      else {
+        this.isLoading = false;
+      }
     }
     if (!this.isServer) this.openSockets();
     this.generateSettersAndGetters();
@@ -322,7 +324,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
       const pathArr = lastPath.split(".");
       if (pathArr.length === 1) {
         (this.data as any)[key as any] = value;
-      await this.checkAutoStatusChange();
+        await this.checkAutoStatusChange();
         return true;
       }
       const pathMinusLast = pathArr.splice(0, 1);
@@ -488,7 +490,7 @@ export function getMetadataRecursive(
 ) {
   while (proto) {
     const meta = Reflect.getMetadata(metaKey, proto, prop);
-    if (meta !== undefined) return meta;
+    if (meta) return meta;
     proto = Object.getPrototypeOf(proto);
   }
   return undefined;
@@ -503,11 +505,13 @@ function checkForMissingRefs<C extends Constructor<any>>(
   if (typeof data !== "string") {
     const entryKeys = Object.keys(data);
     for (const prop of props) {
-      if (
-        !entryKeys.includes(prop.toString()) &&
-        getMetadataRecursive("isRef", classParam.prototype, prop.toString())
-      ) {
-        findMissingObjectReference(data, prop, autoClassers.classers);
+      const pointer = getMetadataRecursive(
+        "isRef",
+        classParam.prototype,
+        prop.toString()
+      );
+      if (!entryKeys.includes(prop.toString()) && pointer) {
+        findMissingObjectReference(data, prop, autoClassers.classers, pointer);
       }
     }
   }
@@ -515,9 +519,16 @@ function checkForMissingRefs<C extends Constructor<any>>(
 function findMissingObjectReference(
   data: any,
   prop: any,
-  autoClassers: { [key: string]: AutoUpdateManager<any> }
+  autoClassers: { [key: string]: AutoUpdateManager<any> },
+  acName: string
 ) {
+  let foundAnAC = false;
   for (const ac of Object.values(autoClassers)) {
+    if (ac.className !== acName) {
+      console.log(ac.className, acName);
+      continue;
+    }
+    foundAnAC = true;
     for (const obj of ac.objectsAsArray) {
       const found = Object.values(obj.extractedData).find((value) =>
         Array.isArray(value) ? value.includes(data._id) : value === data._id
@@ -528,5 +539,6 @@ function findMissingObjectReference(
       }
     }
   }
-  console.log("a");
+  if (!foundAnAC)
+    throw new Error(`No AutoUpdateManager found for class ${acName}`);
 }

@@ -3,7 +3,7 @@ import {
   AUSManagerFactory,
   createAutoStatusDefinitions,
 } from "./AutoUpdateServerManagerClass.js";
-import { classProp } from "./CommonTypes.js";
+import { classProp, classRef } from "./CommonTypes.js";
 import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
 console.log("Start");
@@ -32,6 +32,10 @@ class Test {
   @prop({ required: false })
   @classProp
   public description!: string | null;
+
+  @prop({ required: false })
+  @classProp @classRef("Test")
+  public ref?: Test | null;
 }
 
 const managers = await AUSManagerFactory(
