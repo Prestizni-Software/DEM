@@ -1,8 +1,6 @@
 import { Server, Socket } from "socket.io";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
-import {
-  createAutoUpdatedClass,
-} from "./AutoUpdatedServerObjectClass.js";
+import { createAutoUpdatedClass } from "./AutoUpdatedServerObjectClass.js";
 import {
   Constructor,
   IsData,
@@ -101,7 +99,16 @@ export async function AUSManagerFactory<
     classers[key] = c;
     await c.loadDB();
   }
-
+  socket.on("connection", async (socket) => {
+    loggers.debug(`Client connected: ${socket.id}`);
+    for (const manager of Object.values(classers)) {
+      (manager as any).registerSocket(socket);
+    }
+    // Client disconnect
+    socket.on("disconnect", () => {
+      loggers.debug(`Client disconnected: ${socket.id}`);
+    });
+  });
   return classers as WrappedInstances<T>;
 }
 
@@ -136,6 +143,10 @@ export class AutoUpdateServerManager<
 
   public registerSocket(socket: Socket) {
     this.clientSockets.add(socket);
+
+    socket.onAny((event: string, data: any) => {
+      this.loggers.debug("Client Event", event, data);
+    });
 
     socket.on(
       "startup" + this.className,

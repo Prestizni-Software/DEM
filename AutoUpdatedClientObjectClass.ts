@@ -16,7 +16,7 @@ import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 import { ObjectId } from "bson";
 import { AutoUpdateClientManager } from "./AutoUpdateClientManagerClass.js";
 import { Socket } from "socket.io-client";
-type SocketType = Socket<any,any>
+type SocketType = Socket<any, any>;
 export type AutoUpdated<T extends Constructor<any>> =
   AutoUpdatedClientObject<T> & DeRef<InstanceOf<T>>;
 export async function createAutoUpdatedClass<C extends Constructor<any>>(
@@ -27,8 +27,9 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   autoClassers: AutoUpdateClientManager<any>,
   emitter: EventTarget
 ): Promise<AutoUpdated<C>> {
-  if (typeof data !== "string")
-    processIsRefProperties(data, classParam.prototype, undefined, [], loggers);
+  if (typeof data !== "string"){
+    checkForMissingRefs<C>(data as any, [], classParam, autoClassers);
+    processIsRefProperties(data, classParam.prototype, undefined, [], loggers);}
   const props = Reflect.getMetadata("props", classParam.prototype);
   const instance = new (class extends AutoUpdatedClientObject<C> {})(
     socket,
@@ -181,12 +182,16 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
   public get extractedData(): {
     [K in keyof InstanceType<T>]: InstanceOf<InstanceType<T>>[K];
   } {
-    const extracted = Object.fromEntries(
-      Object.entries(
-        processIsRefProperties(this.data, this.classProp.prototype).newData
-      ).filter(([k, v]) => typeof v !== "function")
-    );
-    return structuredClone(extracted) as any as {
+    const extracted = processIsRefProperties(
+      this.data,
+      this.classProp.prototype,
+      null,
+      [],
+      {},
+      this.loggers
+    ).newData;
+
+    return structuredClone(extracted) as {
       [K in keyof InstanceType<T>]: InstanceOf<InstanceType<T>>[K];
     };
   }
@@ -449,7 +454,7 @@ export function processIsRefProperties(
   prefix: string | null = null,
   allProps: string[] = [],
   newData = {} as any,
-  loggers?: LoggersType
+  loggers = console as LoggersType
 ) {
   const props: string[] = Reflect.getMetadata("props", target) || [];
 
@@ -458,11 +463,18 @@ export function processIsRefProperties(
     allProps.push(path);
     newData[prop] = instance[prop];
     if (Reflect.getMetadata("isRef", target, prop)) {
-      (loggers ?? console).debug("Changing isRef:", path);
-      newData[prop] =
-        typeof instance[prop] === "string"
-          ? instance[prop]
-          : instance[prop]?._id;
+      loggers.debug("Changing isRef:", path);
+      if (Array.isArray(instance[prop]))
+        newData[prop] = instance[prop].map((item: any) =>
+          typeof item === "string"
+            ? item
+            : ObjectId.isValid(item) ? item?.toString() : item?._id
+        );
+      else
+        newData[prop] =
+          typeof instance[prop] === "string"
+            ? instance[prop]
+            : ObjectId.isValid(instance[prop]) ? instance[prop]?.toString() : instance[prop]?._id;
     }
 
     const type = Reflect.getMetadata("design:type", target, prop);
@@ -538,6 +550,7 @@ function findMissingObjectReference(
       }
     }
   }
-  if (!foundAnAC)
+  if (!foundAnAC) {
     throw new Error(`No AutoUpdateManager found for class ${acName}`);
+  }
 }
