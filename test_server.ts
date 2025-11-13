@@ -6,6 +6,7 @@ import {
 import { classProp, classRef } from "./CommonTypes.js";
 import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
+import EventEmitter from "node:events";
 console.log("Start");
 
 
@@ -69,7 +70,8 @@ const managers = await AUSManagerFactory(
     error: (s: string) => console.error(s),
     debug: (s: string) => console.debug(s),
   },
-  io
+  io,
+  new EventEmitter()
 );
 
 console.log("CREATING OBJECT WITH active = true, status = INACTIVE");

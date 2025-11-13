@@ -2,6 +2,7 @@ import { prop } from "@typegoose/typegoose";
 import { classProp } from "./CommonTypes.js";
 import { io } from "socket.io-client";
 import { AUCManagerFactory } from "./AutoUpdateClientManagerClass.js";
+import EventEmitter from "node:events"
 console.log("Start");
 
 const socket = io("http://localhost:3000");
@@ -38,7 +39,8 @@ const managers = await AUCManagerFactory(
     info: (msg: string) => console.log(msg),
     warn: (msg: string) => console.warn(msg),
   },
-  socket
+  socket,
+  new EventEmitter()
 );
 
 console.log("CREATING OBJECT WITH active = true, status = INACTIVE");

@@ -44,7 +44,7 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
 
   public async isLoadedAsync(): Promise<boolean> {
     if (this.isLoaded) return this.isLoaded;
-    await new Promise((resolve) => this.emitter.addListener("ManagerLoaded"+this.classParam.name+this.className, resolve));
+    await new Promise((resolve) => this.emitter.on("ManagerLoaded"+this.classParam.name+this.className, resolve));
     this.isLoaded = true;
     return this.isLoaded;
   }

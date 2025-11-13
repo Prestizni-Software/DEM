@@ -79,16 +79,12 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
 
       return;
     }
-    this.emitter.addListener("loaded" + this.EmitterID, async () => {
+    this.emitter.on("loaded" + this.EmitterID, async () => {
       try {
         await this.loadForceReferences();
       } catch (error) {
         this.loggers.error(error);
       }
-      setTimeout(
-        () => this.emitter.removeAllListeners("loaded" + this.EmitterID),
-        100
-      );
       this.isLoadingReferences = false;
     });
   };
@@ -210,11 +206,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     await this.loadShit();
     return this.isLoading
       ? new Promise((resolve) => {
-          this.emitter.addListener("loaded" + this.EmitterID, async () => {
-            setTimeout(
-              () => this.emitter.removeAllListeners("loaded" + this.EmitterID),
-              100
-            );
+          this.emitter.on("loaded" + this.EmitterID, async () => {
             resolve(this.isLoading === false);
           });
         })

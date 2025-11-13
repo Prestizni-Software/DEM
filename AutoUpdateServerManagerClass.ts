@@ -13,7 +13,6 @@ import {
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
-import EventEmitter from "node:events";
 
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateServerManager<T[K]>;
@@ -81,7 +80,7 @@ export async function AUSManagerFactory<
   defs: AUSDefinitions<T>,
   loggers: LoggersType,
   socket: Server,
-  emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets = new EventEmitter()
+  emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets
 ): Promise<{ [K in keyof T]: AutoUpdateServerManager<T[K]> }> {
   const classers: any = {};
   let i = 0;
