@@ -2,6 +2,11 @@ import { ObjectId } from "bson";
 import { AutoUpdated } from "./AutoUpdatedClientObjectClass.js";
 import "reflect-metadata";
 
+export type CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets = {
+  on: (event: string, listener: (...args: any[]) => void) => void;
+  emit: (event: string, ...args: any[]) => void;
+};
+
 export type Ref<T> = string | (T extends Constructor<any> ? AutoUpdated<T> : (T & { _id: string }));
 export type LoggersTypeInternal = LoggersType & {
   warn: (...args: any[]) => void;

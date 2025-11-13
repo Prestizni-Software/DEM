@@ -69,8 +69,7 @@ const managers = await AUSManagerFactory(
     error: (s: string) => console.error(s),
     debug: (s: string) => console.debug(s),
   },
-  io,
-  new EventTarget()
+  io
 );
 
 console.log("CREATING OBJECT WITH active = true, status = INACTIVE");

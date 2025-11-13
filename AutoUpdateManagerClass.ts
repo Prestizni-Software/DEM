@@ -1,5 +1,5 @@
 import { AutoUpdated } from "./AutoUpdatedClientObjectClass.js";
-import { Constructor, IsData, LoggersType } from "./CommonTypes.js";
+import { Constructor, CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets, IsData, LoggersType } from "./CommonTypes.js";
 import "reflect-metadata";
 export abstract class AutoUpdateManager<T extends Constructor<any>> {
   protected classes: { [_id: string]: AutoUpdated<T> } = {};
@@ -14,14 +14,14 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     warn: () => {},
   };
   protected classesAsArray: AutoUpdated<T>[] = [];
-  protected emitter: EventTarget;
+  protected emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets;
   private isLoaded = false;
   constructor(
     classParam: T,
     socket: any,
     loggers: LoggersType,
     classers: Record<string, AutoUpdateManager<any>>,
-    emitter: EventTarget
+    emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets
   ) {
     this.emitter = emitter;
     this.classers = classers;
@@ -44,7 +44,7 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
 
   public async isLoadedAsync(): Promise<boolean> {
     if (this.isLoaded) return this.isLoaded;
-    await new Promise((resolve) => this.emitter.addEventListener("ManagerLoaded"+this.classParam.name+this.className, resolve));
+    await new Promise((resolve) => this.emitter.on("ManagerLoaded"+this.classParam.name+this.className, resolve));
     this.isLoaded = true;
     return this.isLoaded;
   }

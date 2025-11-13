@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import {
   Constructor,
+  CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets,
   DeRef,
   InstanceOf,
   IsData,
@@ -25,11 +26,12 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   data: RefToId<IsData<InstanceType<C>>> | string,
   loggers: LoggersType,
   autoClassers: AutoUpdateClientManager<any>,
-  emitter: EventTarget
+  emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets
 ): Promise<AutoUpdated<C>> {
-  if (typeof data !== "string"){
+  if (typeof data !== "string") {
     checkForMissingRefs<C>(data as any, [], classParam, autoClassers);
-    processIsRefProperties(data, classParam.prototype, undefined, [], loggers);}
+    processIsRefProperties(data, classParam.prototype, undefined, [], loggers);
+  }
   const props = Reflect.getMetadata("props", classParam.prototype);
   const instance = new (class extends AutoUpdatedClientObject<C> {})(
     socket,
@@ -59,7 +61,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     warn: () => {},
   };
   protected isLoading = false;
-  protected readonly emitter;
+  protected readonly emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets;
   protected readonly properties: (keyof T)[];
   protected readonly className: string;
   protected autoClasser: AutoUpdateManager<any>;
@@ -77,7 +79,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
 
       return;
     }
-    this.emitter.addEventListener("loaded" + this.EmitterID, async () => {
+    this.emitter.on("loaded" + this.EmitterID, async () => {
       try {
         await this.loadForceReferences();
       } catch (error) {
@@ -94,7 +96,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     className: string,
     classProperty: Constructor<T>,
     autoClasser: AutoUpdateManager<any>,
-    emitter: EventTarget
+    emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets
   ) {
     this.emitter = emitter;
     this.classProp = classProperty;
@@ -120,7 +122,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
           if (!res.success) {
             this.isLoading = false;
             this.loggers.error("Could not load data from server:", res.message);
-            this.emitter.dispatchEvent(new Event("loaded" + this.EmitterID));
+            this.emitter.emit("loaded" + this.EmitterID);
             return;
           }
           checkForMissingRefs<T>(
@@ -131,7 +133,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
           );
           this.data = res.data as IsData<T>;
           this.isLoading = false;
-          this.emitter.dispatchEvent(new Event("loaded" + this.EmitterID));
+          this.emitter.emit("loaded" + this.EmitterID);
         }
       );
       this.data = { _id: data } as IsData<T>;
@@ -164,7 +166,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
       if (!res.success) {
         this.isLoading = false;
         this.loggers.error("Could not create data on server:", res.message);
-        this.emitter.dispatchEvent(new Event("loaded" + this.EmitterID));
+        this.emitter.emit("loaded" + this.EmitterID);
         throw new Error("Error creating new object: " + res.message);
       }
       checkForMissingRefs<T>(
@@ -175,7 +177,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
       );
       this.data = res.data as IsData<T>;
       this.isLoading = false;
-      this.emitter.dispatchEvent(new Event("loaded" + this.EmitterID));
+      this.emitter.emit("loaded" + this.EmitterID);
     });
   }
 
@@ -204,7 +206,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     await this.loadShit();
     return this.isLoading
       ? new Promise((resolve) => {
-          this.emitter.addEventListener("loaded" + this.EmitterID, () => {
+          this.emitter.on("loaded" + this.EmitterID, () => {
             resolve(this.isLoading === false);
           });
         })
@@ -468,13 +470,17 @@ export function processIsRefProperties(
         newData[prop] = instance[prop].map((item: any) =>
           typeof item === "string"
             ? item
-            : ObjectId.isValid(item) ? item?.toString() : item?._id
+            : ObjectId.isValid(item)
+            ? item?.toString()
+            : item?._id
         );
       else
         newData[prop] =
           typeof instance[prop] === "string"
             ? instance[prop]
-            : ObjectId.isValid(instance[prop]) ? instance[prop]?.toString() : instance[prop]?._id;
+            : ObjectId.isValid(instance[prop])
+            ? instance[prop]?.toString()
+            : instance[prop]?._id;
     }
 
     const type = Reflect.getMetadata("design:type", target, prop);

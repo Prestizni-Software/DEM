@@ -3,6 +3,7 @@ import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 import { createAutoUpdatedClass } from "./AutoUpdatedServerObjectClass.js";
 import {
   Constructor,
+  CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets,
   IsData,
   LoggersType,
   Paths,
@@ -12,6 +13,7 @@ import {
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
+import EventEmitter from "node:events";
 
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateServerManager<T[K]>;
@@ -79,7 +81,7 @@ export async function AUSManagerFactory<
   defs: AUSDefinitions<T>,
   loggers: LoggersType,
   socket: Server,
-  emitter: EventTarget
+  emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets = new EventEmitter()
 ): Promise<{ [K in keyof T]: AutoUpdateServerManager<T[K]> }> {
   const classers: any = {};
 
@@ -124,7 +126,7 @@ export class AutoUpdateServerManager<
     socket: Server,
     model: ReturnModelType<T, BeAnObject>,
     classers: Record<string, AutoUpdateManager<any>>,
-    emitter: EventTarget,
+    emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets,
     options?: AUSOption<T>
   ) {
     super(classParam, socket, loggers, classers, emitter);
