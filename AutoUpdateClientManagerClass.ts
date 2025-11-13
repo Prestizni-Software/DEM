@@ -1,7 +1,7 @@
 import { Socket } from "socket.io-client";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 import { createAutoUpdatedClass } from "./AutoUpdatedClientObjectClass.js";
-import { Constructor, IsData, LoggersType } from "./CommonTypes.js";
+import { Constructor, CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets, IsData, LoggersType } from "./CommonTypes.js";
 import { EventEmitter } from "node:events";
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateClientManager<T[K]>;
@@ -9,7 +9,7 @@ export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
 // ---------------------- Factory ----------------------
 export async function AUCManagerFactory<
   T extends Record<string, Constructor<any>>
->(defs: T, loggers: LoggersType, socket: Socket, emitter: EventEmitter = new EventEmitter()): Promise<WrappedInstances<T>> {
+>(defs: T, loggers: LoggersType, socket: Socket, emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets = new EventEmitter()): Promise<WrappedInstances<T>> {
   const classers = {} as WrappedInstances<T>;
   for (const key in defs) {
     const Model = defs[key];
@@ -35,7 +35,7 @@ export class AutoUpdateClientManager<
     loggers: LoggersType,
     socket: Socket,
     classers: Record<string, AutoUpdateManager<any>>,
-    emitter: EventEmitter
+    emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets
   ) {
     super(classParam, socket, loggers, classers, emitter);
     socket.emit("startup" + classParam.name, async (data: string[]) => {

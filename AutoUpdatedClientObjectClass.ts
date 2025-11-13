@@ -79,12 +79,16 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
 
       return;
     }
-    this.emitter.on("loaded" + this.EmitterID, async () => {
+    this.emitter.addListener("loaded" + this.EmitterID, async () => {
       try {
         await this.loadForceReferences();
       } catch (error) {
         this.loggers.error(error);
       }
+      setTimeout(
+        () => this.emitter.removeAllListeners("loaded" + this.EmitterID),
+        100
+      );
       this.isLoadingReferences = false;
     });
   };
@@ -206,7 +210,11 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     await this.loadShit();
     return this.isLoading
       ? new Promise((resolve) => {
-          this.emitter.on("loaded" + this.EmitterID, () => {
+          this.emitter.addListener("loaded" + this.EmitterID, async () => {
+            setTimeout(
+              () => this.emitter.removeAllListeners("loaded" + this.EmitterID),
+              100
+            );
             resolve(this.isLoading === false);
           });
         })
@@ -439,6 +447,9 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
   }
   public async destroy(): Promise<void> {
     this.socket.emit("delete" + this.className, this.data._id);
+
+    this.socket.removeAllListeners("update" + this.className + this.data._id);
+    this.socket.removeAllListeners("delete" + this.className + this.data._id);
     this.wipeSelf();
   }
 

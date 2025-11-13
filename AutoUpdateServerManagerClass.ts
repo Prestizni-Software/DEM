@@ -84,7 +84,6 @@ export async function AUSManagerFactory<
   emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets = new EventEmitter()
 ): Promise<{ [K in keyof T]: AutoUpdateServerManager<T[K]> }> {
   const classers: any = {};
-
   let i = 0;
   for (const key in defs) {
     const def = defs[key];
