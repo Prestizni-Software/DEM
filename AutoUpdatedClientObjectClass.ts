@@ -324,6 +324,11 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
               error.message;
           }
           if (!temp) {
+            message +=
+              "\nLikely undefined property "+path[i]+" on path: " +
+              path +
+              " at index: " +
+              i;
             this.loggers.warn(
               "Failed to set value for " + this.className + "\n" + message
             );
@@ -558,7 +563,6 @@ export function processIsRefProperties(
       ? instance[prop]?.toString()
       : instance[prop];
     if (Reflect.getMetadata("isRef", target, prop)) {
-      loggers.debug("Changing isRef:", path);
       if (Array.isArray(instance[prop]))
         newData[prop] = instance[prop].map((item: any) =>
           typeof item === "string"
