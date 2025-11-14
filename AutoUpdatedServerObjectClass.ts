@@ -4,7 +4,7 @@ import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
 import {
   AutoProps,
   Constructor,
-  CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets,
+  EventEmitter3,
   DeRef,
   IsData,
   LoggersType,
@@ -25,7 +25,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   data: DocWithProps<InstanceType<C>>,
   loggers: LoggersType,
   autoClasser: AutoUpdateServerManager<any>,
-  emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets
+  emitter: EventEmitter3
 ): Promise<AutoProps<C> & AutoUpdated<InstanceType<C>> & DeRef<InstanceType<C>>> {
   const instance = new (class extends AutoUpdatedServerObject<
     InstanceType<C>
@@ -68,7 +68,7 @@ export abstract class AutoUpdatedServerObject<
     className: string,
     classProp: Constructor<T>,
     autoClasser: AutoUpdateServerManager<any>,
-    emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets
+    emitter: EventEmitter3
   ) {
     super(
       socket as any,

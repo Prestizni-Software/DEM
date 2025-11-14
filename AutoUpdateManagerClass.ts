@@ -1,5 +1,5 @@
 import { AutoUpdated } from "./AutoUpdatedClientObjectClass.js";
-import { Constructor, CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets, IsData, LoggersType } from "./CommonTypes.js";
+import { Constructor, EventEmitter3, IsData, LoggersType } from "./CommonTypes.js";
 import "reflect-metadata";
 export abstract class AutoUpdateManager<T extends Constructor<any>> {
   protected classes: { [_id: string]: AutoUpdated<T> } = {};
@@ -14,16 +14,21 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     warn: () => {},
   };
   protected classesAsArray: AutoUpdated<T>[] = [];
-  protected emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets;
+  protected emitter: EventEmitter3;
   private isLoaded = false;
   constructor(
     classParam: T,
     socket: any,
     loggers: LoggersType,
     classers: Record<string, AutoUpdateManager<any>>,
-    emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets
+    emitter: EventEmitter3
   ) {
     this.emitter = emitter;
+    this.emitter.on("*",(e) =>
+    {
+      console.log("a");
+      
+    })
     this.classers = classers;
     this.socket = socket;
     this.classParam = classParam;

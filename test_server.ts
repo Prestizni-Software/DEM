@@ -1,16 +1,18 @@
-import { mongoose, prop } from "@typegoose/typegoose";
+import { mongoose, prop, Ref as MeRef } from "@typegoose/typegoose";
 import {
   AUSManagerFactory,
   createAutoStatusDefinitions,
 } from "./AutoUpdateServerManagerClass.js";
-import { classProp, classRef } from "./CommonTypes.js";
+import { classProp, classRef, Ref , PathValueOf } from "./CommonTypes.js";
 import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
-import EventEmitter from "node:events";
 console.log("Start");
 
+type DeTypegooseRef<T> = T extends MeRef<infer U> ? Ref<U> : never
 
-const io = new SocketServer(new Server() , { cors: { origin: "*" } });
+const server = new Server();
+server.listen(3000);
+const io = new SocketServer(server , { cors: { origin: "*" } });
 
 await mongoose.connect("mongodb://localhost:27017/GeoDB", { timeoutMS: 5000 });
 enum Status {
@@ -18,7 +20,19 @@ enum Status {
   INACTIVE = "INACTIVE",
 }
 
-class Test {
+type a = MeRef<Test> extends Ref<Test> ? true : false
+type test = PathValueOf<Test, "ref.description">
+
+type Objekt = {
+  _id: string;
+  obj: Objekt2
+}
+
+type Objekt2 = {
+  _id: string;
+}
+
+export class Test {
   @classProp
   public _id!: string;
 
@@ -36,7 +50,10 @@ class Test {
 
   @prop({ required: false })
   @classProp @classRef("Test")
-  public ref?: Test | null;
+  public ref!: Ref<Test> | null;
+
+  @classProp
+  public obj!:Objekt
 }
 
 const managers = await AUSManagerFactory(
@@ -57,7 +74,7 @@ const managers = await AUSManagerFactory(
             },
             INACTIVE: {
               active: false,
-            },
+            }
           }
         ),
         accessDefinitions: {},
@@ -70,18 +87,23 @@ const managers = await AUSManagerFactory(
     error: (s: string) => console.error(s),
     debug: (s: string) => console.debug(s),
   },
-  io,
-  new EventEmitter()
+  io
 );
-
 console.log("CREATING OBJECT WITH active = true, status = INACTIVE");
 
-const obj = await managers.Test.createObject({ active: true, status: Status.INACTIVE, description: null });
+const obj = managers.Test.getObject("69159ff15e4f33ec695ce236")
+const obj2 = managers.Test.getObject("6915b412a11536e6b4a70d9b")
+
+if(!obj || !obj2)
+  throw new Error("No obj")
 
 console.log(obj.status);
 
 console.log("UPDATING ACTIVE STATUS TO TRUE");
 await obj.setValue("active", true);
+
+await obj.setValue("ref.ref.ref.obj.obj._id", "aaa");
+await obj.setValue("obj.obj._id", "gay");
 
 console.log(obj.status);
 

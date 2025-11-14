@@ -1,14 +1,18 @@
 import { ObjectId } from "bson";
-import { AutoUpdated } from "./AutoUpdatedClientObjectClass.js";
 import "reflect-metadata";
+import EventEmitter from "eventemitter3";
+import { Test } from "./test_server";
 
-export type CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets = {
-  on: (event: string, listener: (...args: any[]) => void) => void;
-  emit: (event: string, ...args: any[]) => void;
-  removeAllListeners: (event: string) => void;
-};
+export type EventEmitter3 = EventEmitter;
 
-export type Ref<T> = string | (T extends Constructor<any> ? AutoUpdated<T> : (T & { _id: string }));
+type RefType = string | ObjectId;
+
+export type Ref<T> = T extends {
+      _id?: RefType;
+    }
+  ? T | string
+  : ObjectId;
+
 export type LoggersTypeInternal = LoggersType & {
   warn: (...args: any[]) => void;
 };
@@ -19,7 +23,7 @@ export type LoggersType = {
   error: (...args: any[]) => void;
   warn?: (...args: any[]) => void;
 };
-export type IsData<T> = T extends { _id: string | ObjectId } ? T : never;
+export type IsData<T> = T extends { _id: RefType } ? T : never;
 export type ServerResponse<T> =
   | {
       data: T; // in this case, the applied patch
@@ -40,7 +44,7 @@ export type ServerUpdateResponse<T> = {
 };
 
 export type ServerUpdateRequest<T> = {
-  _id: string;
+  _id: RefType;
   key: string;
   value: any;
 };
@@ -79,7 +83,7 @@ export type DeRef<T> = {
 };
 
 export type RefToId<T> = {
-  [K in keyof T]: T[K] extends Ref<infer U> ? string : T[K];
+  [K in keyof T]: T[K] extends Ref<infer U> ? U | string : T[K];
 };
 
 // ---------------------- Instance helper ----------------------
@@ -99,7 +103,6 @@ type StripPrototypePrefix<P extends string> = P extends "prototype"
   ? Rest
   : P;
 
-type ResolveRef<T> = T extends Ref<infer U> ? U : T;
 type Recurseable<T> = T extends object
   ? T extends Array<any> | Function
     ? never
@@ -135,31 +138,43 @@ type PathsHelper<
   : `${K}` | Join<K, Paths<DeRef<NonOptional<V>>, Prev[Depth], OriginalDepth>>;
 
 // ---------------------- PathValueOf ----------------------
+export type ResolveRef<T> = T extends Ref<infer U> ? U : T;
+
 type Split<S extends string> = S extends `${infer L}.${infer R}`
   ? [L, ...Split<R>]
   : [S];
 
-type PathValue<
+export type PathValue<
   T,
-  Parts extends readonly string[],
+  Parts extends string[],
   Depth extends number = 5
-> = Depth extends 0
-  ? any
-  : Parts extends [infer K, ...infer Rest]
-  ? K extends keyof T
-    ? Rest extends readonly string[]
-      ? Rest["length"] extends 0
-        ? ResolveRef<T[K]>
-        : PathValue<ResolveRef<T[K]>, Rest, Prev[Depth]>
-      : never
-    : never
-  : T;
+> =
+  Depth extends 0 ? never :
+  // Distribute over unions in T
+  T extends unknown ? (
+    Parts extends [infer K, ...infer Rest]
+      ? K extends string
+        ? K extends keyof T
+          ? Rest extends string[]
+            ? // unwrap at every step; recursion will also distribute
+              ResolveRef<
+                Rest['length'] extends 0
+                  ? T[K]
+                  : PathValue<ResolveRef<T[K]>, Rest, Prev[Depth]>
+              >
+            : never
+          : never
+        : never
+      : ResolveRef<T>
+  ) : never;
 
 export type PathValueOf<
   T,
   P extends string,
-  Depth extends number = 5
-> = PathValue<DeRef<InstanceOf<T>>, Split<P>, Depth>;
+  Depth extends number = 6
+> = PathValue<InstanceOf<T>, Split<P>, Depth>;
 
+
+type TestRefType = InstanceOf<Test>["ref"];
 // ---------------------- Pretty ----------------------
 export type Pretty<T> = { [K in keyof T]: T[K] };

@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import {
   Constructor,
-  CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets,
+  EventEmitter3,
   DeRef,
   InstanceOf,
   IsData,
@@ -26,7 +26,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   data: RefToId<IsData<InstanceType<C>>> | string,
   loggers: LoggersType,
   autoClassers: AutoUpdateClientManager<any>,
-  emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets
+  emitter: EventEmitter3
 ): Promise<AutoUpdated<C>> {
   if (typeof data !== "string") {
     checkForMissingRefs<C>(data as any, [], classParam, autoClassers);
@@ -61,7 +61,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     warn: () => {},
   };
   protected isLoading = false;
-  protected readonly emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets;
+  protected readonly emitter: EventEmitter3;
   protected readonly properties: (keyof T)[];
   protected readonly className: string;
   protected autoClasser: AutoUpdateManager<any>;
@@ -96,7 +96,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     className: string,
     classProperty: Constructor<T>,
     autoClasser: AutoUpdateManager<any>,
-    emitter: CustomFuckingEmitterTypeBecauseExpoIsAFuckingJokeToTheEntireExistenceOfSockets
+    emitter: EventEmitter3
   ) {
     this.emitter = emitter;
     this.classProp = classProperty;
@@ -377,8 +377,12 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
   }
 
   protected makeUpdate(key: string, value: any): any {
-    const id = this.data._id.toString();
-    return { _id: id, key, value } as any;
+    try {
+      const id = this.data._id.toString();
+      return { _id: id, key, value } as any;
+    } catch (error) {
+      throw error;
+    }
   }
 
   protected async checkAutoStatusChange() {
@@ -466,7 +470,9 @@ export function processIsRefProperties(
   for (const prop of props) {
     const path = prefix ? `${prefix}.${prop}` : prop;
     allProps.push(path);
-    newData[prop] = instance[prop];
+    newData[prop] = ObjectId.isValid(instance[prop])
+      ? instance[prop]?.toString()
+      : instance[prop];
     if (Reflect.getMetadata("isRef", target, prop)) {
       loggers.debug("Changing isRef:", path);
       if (Array.isArray(instance[prop]))
