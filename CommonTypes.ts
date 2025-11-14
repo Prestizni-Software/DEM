@@ -1,7 +1,6 @@
 import { ObjectId } from "bson";
 import "reflect-metadata";
 import EventEmitter from "eventemitter3";
-import { Test } from "./test_server";
 
 export type EventEmitter3 = EventEmitter;
 
@@ -182,6 +181,5 @@ export type PathValueOf<
 > = PathValue<InstanceOf<T>, Split<P>, Depth>;
 
 
-type TestRefType = InstanceOf<Test>["ref"];
 // ---------------------- Pretty ----------------------
 export type Pretty<T> = { [K in keyof T]: T[K] };

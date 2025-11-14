@@ -6,56 +6,21 @@ import {
 import { classProp, classRef, Ref , PathValueOf } from "./CommonTypes.js";
 import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
+import { Status, Test } from "./TestTypes.js";
 console.log("Start");
 
 type DeTypegooseRef<T> = T extends MeRef<infer U> ? Ref<U> : never
 
+
+
+
+type a = MeRef<Test> extends Ref<Test> ? true : false
+type test = PathValueOf<Test, "ref.description">
 const server = new Server();
 server.listen(3000);
 const io = new SocketServer(server , { cors: { origin: "*" } });
 
 await mongoose.connect("mongodb://localhost:27017/GeoDB", { timeoutMS: 5000 });
-enum Status {
-  ACTIVE = "ACTIVE",
-  INACTIVE = "INACTIVE",
-}
-
-type a = MeRef<Test> extends Ref<Test> ? true : false
-type test = PathValueOf<Test, "ref.description">
-
-type Objekt = {
-  _id: string;
-  obj: Objekt2
-}
-
-type Objekt2 = {
-  _id: string;
-}
-
-export class Test {
-  @classProp
-  public _id!: string;
-
-  @prop({ required: true })
-  @classProp
-  public active!: boolean;
-
-  @prop({ required: true })
-  @classProp
-  public status!: Status;
-
-  @prop({ required: false })
-  @classProp
-  public description!: string | null;
-
-  @prop({ required: false })
-  @classProp @classRef("Test")
-  public ref!: Ref<Test> | null;
-
-  @classProp
-  public obj!:Objekt
-}
-
 const managers = await AUSManagerFactory(
   {
     Test: {

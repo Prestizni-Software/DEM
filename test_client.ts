@@ -2,6 +2,7 @@ import { prop } from "@typegoose/typegoose";
 import { classProp } from "./CommonTypes.js";
 import { io } from "socket.io-client";
 import { AUCManagerFactory } from "./AutoUpdateClientManagerClass.js";
+import { Test } from "./TestTypes.js";
 console.log("Start");
 
 const socket = io("http://localhost:3000");
@@ -11,22 +12,6 @@ enum Status {
   INACTIVE = "INACTIVE",
 }
 
-class Test {
-  @classProp
-  public _id!: string;
-
-  @prop({ required: true })
-  @classProp
-  public active!: boolean;
-
-  @prop({ required: true })
-  @classProp
-  public status!: Status;
-
-  @prop({ required: false })
-  @classProp
-  public description!: string | null;
-}
 
 const managers = await AUCManagerFactory(
   {
@@ -43,22 +28,12 @@ const managers = await AUCManagerFactory(
 
 console.log("CREATING OBJECT WITH active = true, status = INACTIVE");
 
-const obj = await managers.Test.createObject({
-  active: true,
-  status: Status.INACTIVE,
-  description: null,
-});
+const obj = managers.Test.getObject("6915b55f11d9579cc670502f");
+const obj2 = managers.Test.getObject("691702d91a05cb761dfc66f4");
 
-obj.setValue("description", null);
+if(!obj || !obj2)
+  throw new Error("No obj")
 
-console.log(obj.status);
+await obj.setValue("ref.obj.obj._id", "gay2")
 
-console.log("UPDATING ACTIVE STATUS TO TRUE");
-await obj.setValue("active", true);
-
-console.log(obj.status);
-
-console.log("UPDATING ACTIVE STATUS TO FALSE");
-await obj.setValue("active", false);
-
-console.log(obj.status);
+console.log(obj.ref?.obj?.obj._id);

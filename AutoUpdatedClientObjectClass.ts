@@ -147,7 +147,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
       );
       this.data = data as any;
 
-      if (this.data._id === "") this.handleNewObject(data as any);
+      if (!this.data._id || this.data._id === "") this.handleNewObject(data as any);
       else {
         this.isLoading = false;
       }
@@ -217,13 +217,13 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     this.loggers.debug(`[${this.data._id}] Opening socket listeners`);
 
     this.socket.on(
-      "update" + this.className + this.data._id,
+      "update" + this.className + this.data._id.toString(),
       async (update: ServerUpdateRequest<T>) => {
         await this.handleUpdateRequest(update);
       }
     );
   }
-  // Example server-side handler
+  
   private async handleUpdateRequest(
     update: ServerUpdateRequest<T>
   ): Promise<ServerResponse<undefined>> {
@@ -325,7 +325,9 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
           }
           if (!temp) {
             message +=
-              "\nLikely undefined property "+path[i]+" on path: " +
+              "\nLikely undefined property " +
+              path[i] +
+              " on path: " +
               path +
               " at index: " +
               i;
@@ -362,10 +364,10 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
       try {
         const res = await this.setValueInternal(lastPath, value);
         success = res.success;
-        message += "\nReport from inner setValue function: " + res.message;
+        message += "\nReport from inner setValue function: \n " + res.message;
       } catch (error: any) {
         success = false;
-        message += "Error from inner setValue function: " + error.message;
+        message += "\nError from inner setValue function: \n  " + error.message;
       }
 
       if (!success) {
@@ -469,7 +471,10 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     try {
       const id = this.data._id.toString();
       return { _id: id, key, value } as any;
-    } catch (error) {
+    } catch (error: any) {
+      this.loggers.error(
+        "Probably missing the fucking identifier ['_id'] again " + error.message
+      );
       throw error;
     }
   }
