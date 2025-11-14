@@ -23,6 +23,13 @@ export type LoggersType = {
   error: (...args: any[]) => void;
   warn?: (...args: any[]) => void;
 };
+
+export type InnerLoggersType = {
+  info: (...args: any[]) => void;
+  debug: (...args: any[]) => void;
+  error: (...args: any[]) => void;
+  warn: (...args: any[]) => void;
+}
 export type IsData<T> = T extends { _id: RefType } ? T : never;
 export type ServerResponse<T> =
   | {

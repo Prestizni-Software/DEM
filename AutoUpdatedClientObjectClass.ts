@@ -291,7 +291,8 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
   public async setValue<K extends Paths<InstanceOf<T>>>(
     key: K,
     val: PathValueOf<T, K>
-  ): Promise<boolean> {
+  ): Promise<{ success: boolean; msg: string }> {
+    let message = "Setting value " + key + " of " + this.className;
     let value = val as any;
     this.loggers.debug(
       `[${(this.data as any)._id}] Setting ${key} to ${value}`
@@ -308,11 +309,28 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
           typeof obj[path[i]] !== "object" ||
           obj[path[i]] instanceof ObjectId
         ) {
-          let temp = this.resolveReference(
-            obj[path[i]].toString()
-          ) as AutoUpdated<any>;
+          let temp;
+          try {
+            temp = this.resolveReference(
+              obj[path[i]]?.toString()
+            ) as AutoUpdated<any>;
+          } catch (error: any) {
+            message +=
+              "\n Error: likely undefined property on path: " +
+              path +
+              " on index: " +
+              i +
+              " with error: " +
+              error.message;
+          }
           if (!temp) {
-            return false;
+            this.loggers.warn(
+              "Failed to set value for " + this.className + "\n" + message
+            );
+            return {
+              success: false,
+              msg: message,
+            };
           }
           lastClass = temp;
           lastPath = path.slice(i + 1).join(".");
@@ -320,19 +338,45 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
         } else obj = obj[path[i]];
       }
 
-      if (lastClass !== this || lastPath !== (key as any))
-        throw new Error("???");
+      if (lastClass !== this || lastPath !== (key as any)) {
+        message +=
+          "\n What the actual fuckity fuck error on path: " +
+          path +
+          " on index: " +
+          (path.length - 1);
+        this.loggers.error(
+          "Failed to set value for " + this.className + "\n" + message
+        );
+        return {
+          success: false,
+          msg: message,
+        };
+      }
 
-      const success = await this.setValueInternal(lastPath, value);
+      let success;
+      try {
+        const res = await this.setValueInternal(lastPath, value);
+        success = res.success;
+        message += "\nReport from inner setValue function: " + res.message;
+      } catch (error: any) {
+        success = false;
+        message += "Error from inner setValue function: " + error.message;
+      }
 
       if (!success) {
-        return false;
+        this.loggers.warn(
+          "Failed to set value for " + this.className + "\n" + message
+        );
+        return { success: false, msg: message };
       }
       const pathArr = lastPath.split(".");
       if (pathArr.length === 1) {
         (this.data as any)[key as any] = value;
         await this.checkAutoStatusChange();
-        return true;
+        return {
+          success: true,
+          msg: "Successfully set " + key + " to " + value,
+        };
       }
       const pathMinusLast = pathArr.splice(0, 1);
       let ref = this as any;
@@ -341,38 +385,78 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
       }
       ref[pathArr.at(-1)!] = value;
       await this.checkAutoStatusChange();
-      return true;
-    } catch (error) {
+      return {
+        success: true,
+        msg: "Successfully set " + key + " to " + value,
+      };
+    } catch (error: any) {
+      this.loggers.error(
+        "An error occurred setting value for " +
+          this.className +
+          "\n" +
+          message +
+          "\n Random error here: " +
+          error.message +
+          "\n" +
+          error.stack
+      );
       this.loggers.error(error);
-      return false;
+      return {
+        success: false,
+        msg:
+          message +
+          "\n Random error here: " +
+          error.message +
+          "\n" +
+          error.stack,
+      };
     }
   }
 
   public getValue(key: Paths<T>) {
     let value: any;
+
     for (const part of key.split(".")) {
-      if (value) value = value[part];
-      else value = (this.data as any)[part];
+      try {
+        if (value) value = value[part];
+        else value = (this.data as any)[part];
+      } catch (error: any) {
+        this.loggers.error(
+          "Error getting value for " +
+            this.className +
+            " on key " +
+            key +
+            " on index " +
+            part +
+            ":",
+          error.message
+        );
+      }
     }
     return value;
   }
 
-  protected async setValueInternal(key: string, value: any): Promise<boolean> {
+  protected async setValueInternal(
+    key: string,
+    value: any
+  ): Promise<{ success: boolean; message: string }> {
     const update: ServerUpdateRequest<T> = this.makeUpdate(key, value);
-    const promise = new Promise<boolean>((resolve) => {
-      try {
-        this.socket.emit(
-          "update" + this.className + this.data._id,
-          update,
-          (res: ServerResponse<T>) => {
-            resolve(res.success);
-          }
-        );
-      } catch (error) {
-        this.loggers.error("Error sending update:", error);
-        resolve(false);
+    const promise = new Promise<{ success: boolean; message: string }>(
+      (resolve) => {
+        try {
+          this.socket.emit(
+            "update" + this.className + this.data._id,
+            update,
+            (res: ServerResponse<T>) => {
+              resolve({ success: res.success, message: res.message });
+            }
+          );
+        } catch (error: any) {
+          this.loggers.error("Error sending update:", error);
+          resolve({ success: false, message: error.message });
+        }
       }
-    });
+    );
     return promise;
   }
 

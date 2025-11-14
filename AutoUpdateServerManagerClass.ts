@@ -86,7 +86,9 @@ export async function AUSManagerFactory<
   const classers: any = {};
   let i = 0;
   for (const key in defs) {
+    loggers.debug(`Creating manager for ${key}`);
     const def = defs[key];
+    try {
     const c = new AutoUpdateServerManager(
       def.class,
       loggers,
@@ -99,6 +101,11 @@ export async function AUSManagerFactory<
     i++;
     classers[key] = c;
     await c.loadDB();
+      
+    } catch (error) {
+      loggers.error("Error creating manager: " + key);
+      loggers.error(error);
+    }
   }
   socket.on("connection", async (socket) => {
     loggers.debug(`Client connected: ${socket.id}`);
@@ -119,6 +126,7 @@ export class AutoUpdateServerManager<
   public readonly model: ReturnModelType<T, BeAnObject>;
   private readonly clientSockets: Set<Socket> = new Set<Socket>();
   public readonly options?: AUSOption<T>;
+  private readonly doDebug = false;
   constructor(
     classParam: T,
     loggers: LoggersType,
@@ -134,20 +142,23 @@ export class AutoUpdateServerManager<
   }
 
   public async loadDB() {
+    this.loggers.debug("Loading manager DB " + this.className);
     const docs = await this.model.find({});
     for (const doc of docs) {
       this.classes[(doc as any)._id] =
         this.classes[(doc as any)._id] ??
         (await this.handleGetMissingObject((doc as any)._id.toString()));
     }
+    this.loggers.debug("Loaded manager DB " + this.className + " - [" + docs.length + "] entries");
   }
 
   public registerSocket(socket: Socket) {
     this.clientSockets.add(socket);
 
-    socket.onAny((event: string, data: any) => {
-      this.loggers.debug("Client Event", event, data);
-    });
+    if (this.doDebug)
+      socket.onAny((event: string, data: any) => {
+        this.loggers.debug("Client Event", event, data);
+      });
 
     socket.on(
       "startup" + this.className,
@@ -156,12 +167,18 @@ export class AutoUpdateServerManager<
       }
     );
     socket.on("delete" + this.className, async (id: string) => {
+      this.loggers.debug("Deleting object from manager " + this.className, id);
+      try {
       this.classes[id].destroy();
       this.classesAsArray.splice(
         this.classesAsArray.indexOf(this.classes[id]),
         1
       );
       delete this.classes[id];
+      } catch (error) {
+        this.loggers.error("Error deleting object from manager " + this.className + " - " + id);
+        this.loggers.error(error);
+      }
     });
     socket.on(
       "new" + this.className,
@@ -169,6 +186,7 @@ export class AutoUpdateServerManager<
         data: IsData<InstanceType<T>>,
         ack: (res: ServerResponse<T>) => void
       ) => {
+        this.loggers.debug("Creating new object in manager " + this.className);
         try {
           const newDoc = await this.createObject(data);
           ack({
@@ -177,6 +195,7 @@ export class AutoUpdateServerManager<
             message: "Created successfully",
           });
         } catch (error) {
+          this.loggers.error("Error creating new object in manager " + this.className);
           this.loggers.error(error);
           ack({ success: false, message: (error as any).message });
         }
@@ -193,19 +212,22 @@ export class AutoUpdateServerManager<
           event.startsWith("update" + this.className) &&
           event.replace("update" + this.className, "").length === 24
         ) {
+          this.loggers.debug("Updating object in manager " + this.className + ": " + event + " - " + JSON.stringify(data));
           try {
             const id = event.replace("update" + this.className, "");
             let obj = this.classes[id];
             if (typeof obj === "string")
               this.classes[id] = obj = await this.handleGetMissingObject(obj);
-            if (typeof obj === "string") throw new Error(`Never...`);
-            obj.setValue(data.key as any, data.value);
-            ack({
+            if (typeof obj === "string") throw new Error(`Never... failed to get object somehow: ${obj}`);
+            const res = await obj.setValue(data.key as any, data.value);
+
+            res.success ? ack({
               data: obj.extractedData,
-              success: true,
-              message: "Updated successfully",
-            });
+              success: res.success,
+              message: res.msg,
+            }) : ack({ success: res.success, message: res.msg });
           } catch (error) {
+            this.loggers.warn("Failed to update object in manager " + this.className);
             ack({ success: false, message: (error as any).message });
           }
         } else if (

@@ -87,7 +87,7 @@ export abstract class AutoUpdatedServerObject<
   protected handleNewObject(_data: IsData<T>) {
     throw new Error("Cannot create new objects like this.");
   }
-  protected async setValueInternal(key: string, value: any): Promise<boolean> {
+  protected async setValueInternal(key: string, value: any): Promise<{ success: boolean, message: string }> {
     try {
       await (
         this.autoClasser.classers[this.className] as AutoUpdateServerManager<any>
@@ -96,10 +96,16 @@ export abstract class AutoUpdatedServerObject<
       const update: ServerUpdateRequest<T> = this.makeUpdate(key, value);
       this.socket.emit("update" + this.className + this.data._id, update);
 
-      return true;
+      return {
+        success: true,
+        message: "Updated",
+      };
     } catch (error) {
       this.loggers.error("Error saving object:", error);
-      return false;
+      return {
+        success: false,
+        message: "Error saving object: " + (error as Error).message,
+      };
     }
   }
 
