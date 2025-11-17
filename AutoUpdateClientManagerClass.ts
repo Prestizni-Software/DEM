@@ -9,21 +9,42 @@ export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
 // ---------------------- Factory ----------------------
 export async function AUCManagerFactory<
   T extends Record<string, Constructor<any>>
->(defs: T, loggers: LoggersType, socket: Socket, emitter: EventEmitter = new EventEmitter()): Promise<WrappedInstances<T>> {
+>(
+  defs: T,
+  loggers: LoggersType,
+  socket: Socket,
+  emitter: EventEmitter = new EventEmitter()
+): Promise<WrappedInstances<T>> {
   const classers = {} as WrappedInstances<T>;
   for (const key in defs) {
-    const Model = defs[key];
-    const c = new AutoUpdateClientManager(
-      Model,
-      loggers,
-      socket,
-      classers as any,
-      emitter
-    );
-    classers[key] = c;
-    await c.isLoadedAsync();
+    let message = `Creating manager for: ${key}`;
+    try {
+      const Model = defs[key];
+      const c = new AutoUpdateClientManager(
+        Model,
+        loggers,
+        socket,
+        classers,
+        emitter
+      );
+      classers[key] = c;
+    } catch (error: any) {
+      message += "\n Error creating manager: " + key;
+      message += "\n " + error.message;
+      loggers.error(error.stack);
+      loggers.error(message);
+      continue;
+    }
+    try {
+      await classers[key].isLoadedAsync();
+    } catch (error: any) {
+      message += "\n Error creating manager: " + key;
+      message += "\n " + error.message;
+      loggers.error(error.stack);
+      loggers.error(message);
+      continue;
+    }
   }
-
 
   return classers;
 }
@@ -40,18 +61,67 @@ export class AutoUpdateClientManager<
   ) {
     super(classParam, socket, loggers, classers, emitter);
     socket.emit("startup" + classParam.name, async (data: string[]) => {
+      this.loggers.debug(
+        "Loading manager DB " +
+          this.className +
+          " - [" +
+          data.length +
+          "] entries"
+      );
+
       for (const id of data) {
-        this.classes[id] = await this.handleGetMissingObject(id);
-        this.classesAsArray.push(this.classes[id]);
+        try {
+          this.classes[id] = await this.handleGetMissingObject(id);
+          this.classesAsArray.push(this.classes[id]);
+        } catch (error: any) {
+          this.loggers.error(
+            "Error loading object " +
+              id +
+              " from manager " +
+              this.className +
+              " - " +
+              error.message
+          );
+          this.loggers.error(error.stack);
+        }
       }
-      emitter.emit("ManagerLoaded"+this.classParam.name+this.className);
+      emitter.emit("ManagerLoaded" + this.classParam.name + this.className);
     });
     socket.on("new" + classParam.name, async (id: string) => {
-      this.classes[id] = await this.handleGetMissingObject(id);
-      this.classesAsArray.push(this.classes[id]);
+      this.loggers.debug(
+        "Applying new object from manager " + this.className + " - " + id
+      );
+      try {
+        this.classes[id] = await this.handleGetMissingObject(id);
+        this.classesAsArray.push(this.classes[id]);
+      } catch (error: any) {
+        this.loggers.error(
+          "Error loading object " +
+            id +
+            " from manager " +
+            this.className +
+            " - " +
+            error.message
+        );
+        this.loggers.error(error.stack);
+      }
     });
-    socket.on("delete" + classParam.name, (id: string) => {
-      this.deleteObject(id);
+    socket.on("delete" + classParam.name, async (id: string) => {
+      this.loggers.debug(
+        "Applying object deletion from manager " + this.className + " - " + id
+      );
+      try {
+        await this.deleteObject(id);
+      } catch (error: any) {
+        this.loggers.error(
+          "Error applying object deletion from manager " +
+            this.className +
+            " - " +
+            id
+        );
+        this.loggers.error(error.message);
+        this.loggers.error(error.stack);
+      }
     });
   }
 

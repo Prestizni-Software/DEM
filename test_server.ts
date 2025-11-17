@@ -3,7 +3,7 @@ import {
   AUSManagerFactory,
   createAutoStatusDefinitions,
 } from "./AutoUpdateServerManagerClass.js";
-import { classProp, classRef, Ref , PathValueOf } from "./CommonTypes.js";
+import { classProp, classRef, Ref , PathValueOf, IsData } from "./CommonTypes.js";
 import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
 import { Status, Test } from "./TestTypes.js";
@@ -56,8 +56,11 @@ const managers = await AUSManagerFactory(
 );
 console.log("CREATING OBJECT WITH active = true, status = INACTIVE");
 
+type test2 = IsData<Test>
+
 const obj = managers.Test.getObject("69159ff15e4f33ec695ce236")
 const obj2 = managers.Test.getObject("6915b412a11536e6b4a70d9b")
+const obj3 = managers.Test.createObject({})
 
 if(!obj || !obj2)
   throw new Error("No obj")
@@ -67,7 +70,7 @@ console.log(obj.status);
 console.log("UPDATING ACTIVE STATUS TO TRUE");
 await obj.setValue("active", true);
 
-await obj.setValue("ref.ref.ref.obj.obj._id", "aaa");
+await obj.setValue("ref.ref.ref.obj.obj._id", 23);
 await obj.setValue("obj.obj._id", "gay");
 
 console.log(obj.status);

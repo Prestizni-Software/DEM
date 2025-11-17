@@ -1,16 +1,16 @@
-import { ObjectId } from "bson";
 import "reflect-metadata";
 import EventEmitter from "eventemitter3";
 
+type ObjectId = {
+  toString: () => string;
+  id: Uint8Array<ArrayBufferLike>;
+}
+
 export type EventEmitter3 = EventEmitter;
 
-type RefType = string | ObjectId;
-
-export type Ref<T> = T extends {
-      _id?: RefType;
-    }
-  ? T | string
-  : ObjectId;
+export type Ref<T> = T extends IsData<T>
+  ? T | string | ObjectId
+  : T
 
 export type LoggersTypeInternal = LoggersType & {
   warn: (...args: any[]) => void;
@@ -29,7 +29,7 @@ export type InnerLoggersType = {
   error: (...args: any[]) => void;
   warn: (...args: any[]) => void;
 }
-export type IsData<T> = T extends { _id: RefType } ? T : never;
+export type IsData<T> = T extends { _id: string } ? T : T extends { _id: ObjectId } ? T : never;
 export type ServerResponse<T> =
   | {
       data: T; // in this case, the applied patch
@@ -50,7 +50,7 @@ export type ServerUpdateResponse<T> = {
 };
 
 export type ServerUpdateRequest<T> = {
-  _id: RefType;
+  _id: string | ObjectId;
   key: string;
   value: any;
 };
