@@ -1,5 +1,5 @@
 import { mongoose, Ref as MeRef } from "@typegoose/typegoose";
-import { Ref, PathValueOf, IsData, Paths, DeRef, ResolveRef } from "./CommonTypes.js";
+import { Ref, PathValueOf, IsData, Paths, DeRef, ResolveRef, InstanceOf } from "./CommonTypes.js";
 import {
   AUSManagerFactory,
   createAutoStatusDefinitions,
@@ -9,10 +9,11 @@ import { Server } from "node:http";
 import { Status, Test } from "./TestTypes.js";
 import { ObjectId } from "bson";
 console.log("Start");
-type a = MeRef<Test> extends Ref<Test> ? true : false;
+type a = Ref<Test> extends MeRef<Test> ? true : false;
 type test4 = DeRef<Ref<Test>>;
 type testt = Ref<Test>
-type test7 = DeRef<Test>
+type test7 = DeRef<Ref<Test>>
+type abc = ResolveRef<Ref<Test>>
 type test5 = test4 extends { _id: string | ObjectId } ? true : false;
 type test3 = Paths<Test>;
 type test6 = "ref._id" extends Paths<Test> ? true : false;
@@ -72,6 +73,10 @@ await obj.setValue("active", true);
 await obj.setValue("ref","a")
 await obj.setValue("ref.ref.obj.obj._id", 23);
 await obj.setValue("obj.obj._id", "gay");
+await obj.setValue("ref.ref.ref.obj.obj._id", 23);
+await obj.setValue("ref.ref.$where", 23)
+await obj.setValue("obj.obj._id", 23);
+await obj.setValue("ref", 23)
 
 console.log(obj.status);
 
