@@ -9,7 +9,6 @@ import {
   LoggersTypeInternal,
   Paths,
   PathValueOf,
-  RefToId,
   ServerResponse,
   ServerUpdateRequest,
 } from "./CommonTypes.js";
@@ -23,7 +22,7 @@ export type AutoUpdated<T extends Constructor<any>> =
 export async function createAutoUpdatedClass<C extends Constructor<any>>(
   classParam: C,
   socket: SocketType,
-  data: RefToId<IsData<InstanceType<C>>> | string,
+  data: DeRef<IsData<InstanceType<C>>> | string,
   loggers: LoggersType,
   autoClassers: AutoUpdateClientManager<any>,
   emitter: EventEmitter3
@@ -90,7 +89,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
   };
   constructor(
     socket: SocketType,
-    data: string | RefToId<IsData<T>>,
+    data: string | DeRef<IsData<T>>,
     loggers: LoggersType,
     properties: (keyof T)[],
     className: string,

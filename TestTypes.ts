@@ -17,7 +17,7 @@ export type Objekt2 = {
 
 export class Test {
   @classProp
-  public _id!: string;
+  public _id!: ObjectId;
 
   @prop({ required: true })
   @classProp

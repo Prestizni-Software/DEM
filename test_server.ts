@@ -1,5 +1,5 @@
 import { mongoose, Ref as MeRef } from "@typegoose/typegoose";
-import { Ref, PathValueOf, IsData, Paths, DeRef, ObjectId, ResolveRef } from "./CommonTypes.js";
+import { Ref, PathValueOf, IsData, Paths, DeRef, ResolveRef } from "./CommonTypes.js";
 import {
   AUSManagerFactory,
   createAutoStatusDefinitions,
@@ -7,9 +7,11 @@ import {
 import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
 import { Status, Test } from "./TestTypes.js";
+import { ObjectId } from "bson";
 console.log("Start");
 type a = MeRef<Test> extends Ref<Test> ? true : false;
 type test4 = DeRef<Ref<Test>>;
+type testt = Ref<Test>
 type test7 = DeRef<Test>
 type test5 = test4 extends { _id: string | ObjectId } ? true : false;
 type test3 = Paths<Test>;
@@ -59,7 +61,7 @@ console.log("CREATING OBJECT WITH active = true, status = INACTIVE");
 
 const obj = managers.Test.getObject("69159ff15e4f33ec695ce236");
 const obj2 = managers.Test.getObject("6915b412a11536e6b4a70d9b");
-const obj3 = managers.Test.createObject({});
+
 
 if (!obj || !obj2) throw new Error("No obj");
 
@@ -67,7 +69,7 @@ console.log(obj.status);
 
 console.log("UPDATING ACTIVE STATUS TO TRUE");
 await obj.setValue("active", true);
-
+await obj.setValue("ref","a")
 await obj.setValue("ref.ref.obj.obj._id", 23);
 await obj.setValue("obj.obj._id", "gay");
 
