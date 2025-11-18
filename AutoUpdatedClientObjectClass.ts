@@ -6,8 +6,6 @@ import {
   IsData,
   LoggersType,
   LoggersTypeInternal,
-  Paths,
-  PathValueOf,
   ServerResponse,
   ServerUpdateRequest,
 } from "./CommonTypes.js";
@@ -15,6 +13,7 @@ import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 import { ObjectId } from "bson";
 import { AutoUpdateClientManager } from "./AutoUpdateClientManagerClass.js";
 import { Socket } from "socket.io-client";
+import { Paths, PathValueOf } from "./CommonTypes.js";
 type SocketType = Socket<any, any>;
 export type AutoUpdated<T extends Constructor<any>> =
   AutoUpdatedClientObject<T> & InstanceOf<T>;

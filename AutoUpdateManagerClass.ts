@@ -1,5 +1,5 @@
 import { AutoUpdated } from "./AutoUpdatedClientObjectClass.js";
-import { Constructor, EventEmitter3, InnerLoggersType, IsData, LoggersType } from "./CommonTypes.js";
+import { Constructor, EventEmitter3, IsData, LoggersType, LoggersTypeInternal } from "./CommonTypes.js";
 import "reflect-metadata";
 export abstract class AutoUpdateManager<T extends Constructor<any>> {
   protected classes: { [_id: string]: AutoUpdated<T> } = {};
@@ -7,7 +7,7 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
   protected classParam: T;
   protected properties: (keyof T)[];
   public readonly classers: Record<string, AutoUpdateManager<any>>;
-  protected loggers: InnerLoggersType = {
+  protected loggers: LoggersTypeInternal = {
     info: () => {},
     debug: () => {},
     error: () => {},
@@ -37,7 +37,7 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
       Object.getPrototypeOf(classParam)
     );
     loggers.warn = loggers.warn ?? loggers.info;
-    this.loggers = loggers as InnerLoggersType;
+    this.loggers = loggers as LoggersTypeInternal;
   }
 
 

@@ -1,18 +1,10 @@
 import { IObjectWithTypegooseFunction } from "@typegoose/typegoose/lib/types.js";
 import { Types, Document } from "mongoose";
 import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
-import {
-  AutoProps,
-  Constructor,
-  EventEmitter3,
-  IsData,
-  LoggersType,
-  ServerUpdateRequest,
-  UnboxConstructor,
-} from "./CommonTypes.js";
 import { AutoUpdateServerManager } from "./AutoUpdateServerManagerClass.js";
 import "reflect-metadata";
 import { DefaultEventsMap, Server } from "socket.io";
+import { Constructor, UnboxConstructor, LoggersType, EventEmitter3, AutoProps, IsData, ServerUpdateRequest } from "./CommonTypes.js";
 
 type SocketType = Server<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, any>;
 

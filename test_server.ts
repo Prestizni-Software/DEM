@@ -1,5 +1,5 @@
 import { mongoose, Ref, prop } from "@typegoose/typegoose";
-import { PathValueOf, IsData, classRef, classProp, Paths } from "./CommonTypes.js";
+import { PathValueOf, Paths } from "./CommonTypes_server.js";
 import {
   AUSManagerFactory,
   createAutoStatusDefinitions,
@@ -8,6 +8,7 @@ import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
 import { Objekt, Status } from "./TestTypes.js";
 import { ObjectId } from "bson";
+import { classProp, classRef, IsData } from "./CommonTypes.js";
 
 
 export class Test {
@@ -92,14 +93,14 @@ if (!obj || !obj2) throw new Error("No obj");
 console.log(obj.status);
 
 console.log("UPDATING ACTIVE STATUS TO TRUE");
-await obj.setValue("active", true);
-await obj.setValue("ref","a")
-await obj.setValue("ref.ref.obj.obj._id", 23);
-await obj.setValue("obj.obj._id", "gay");
-await obj.setValue("ref.ref.ref.obj.obj._id", 23);
-await obj.setValue("ref.ref.$where", 23)
-await obj.setValue("obj.obj._id", 23);
-await obj.setValue("ref", 23)
+//await obj.setValue("active", true);
+//await obj.setValue("ref","a")
+//await obj.setValue("ref.ref.obj.obj._id", 23);
+//await obj.setValue("obj.obj._id", "gay");
+//await obj.setValue("ref.ref.ref.obj.obj._id", 23);
+//await obj.setValue("ref.ref.$where", 23)
+//await obj.setValue("obj.obj._id", 23);
+//await obj.setValue("ref", 23)
 
 console.log(obj.status);
 

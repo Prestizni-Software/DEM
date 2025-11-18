@@ -1,14 +1,15 @@
-import { classProp, classRef, ObjectId, Paths } from "./CommonTypes.js";
 import { io } from "socket.io-client";
 import { AUCManagerFactory } from "./AutoUpdateClientManagerClass.js";
 import { Objekt, Status } from "./TestTypes.js";
+import { classProp, classRef } from "./CommonTypes.js";
+import { Paths } from "./CommonTypes.js";
 console.log("Start");
 
 const socket = io("http://localhost:3000");
 
 export class Test {
   @classProp
-  public _id!: string | ObjectId;
+  public _id!: string;
 
   @classProp
   public active!: boolean;

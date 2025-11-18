@@ -6,14 +6,13 @@ import {
   EventEmitter3,
   IsData,
   LoggersType,
-  Paths,
-  PathValueOf,
   ServerResponse,
   ServerUpdateRequest,
 } from "./CommonTypes.js";
-import { BeAnObject, Ref, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
+import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
 import EventEmitter from "eventemitter3";
+import { Paths, PathValueOf } from "./CommonTypes_server.js";
 
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateServerManager<T[K]>;
