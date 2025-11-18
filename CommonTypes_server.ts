@@ -1,12 +1,13 @@
-
-import "reflect-metadata";
-import { Test } from "./test_server";
 import { Ref } from "@typegoose/typegoose";
-import { InstanceOf, Join, OnlyClassKeys, Prev, Recurseable, Split, StripPrototypePrefix } from "./CommonTypes";
-
-
-
-
+import {
+  InstanceOf,
+  Join,
+  OnlyClassKeys,
+  Prev,
+  Recurseable,
+  Split,
+  StripPrototypePrefix,
+} from "./CommonTypes";
 
 // ---------------------- DeRef ----------------------
 export type NonOptional<T> = Exclude<T, null | undefined>;
@@ -53,25 +54,25 @@ export type PathValue<
   T,
   Parts extends string[],
   Depth extends number = 5
-> =
-  Depth extends 0 ? never :
-  // Distribute over unions in T
-  T extends unknown ? (
-    Parts extends [infer K, ...infer Rest]
-      ? K extends string
-        ? K extends keyof T
-          ? Rest extends string[]
-            ? // unwrap at every step; recursion will also distribute
-              ResolveRef<
-                Rest['length'] extends 0
-                  ? T[K]
-                  : PathValue<ResolveRef<T[K]>, Rest, Prev[Depth]>
-              >
-            : never
+> = Depth extends 0
+  ? never
+  : // Distribute over unions in T
+  T extends unknown
+  ? Parts extends [infer K, ...infer Rest]
+    ? K extends string
+      ? K extends keyof T
+        ? Rest extends string[]
+          ? // unwrap at every step; recursion will also distribute
+            ResolveRef<
+              Rest["length"] extends 0
+                ? T[K]
+                : PathValue<ResolveRef<T[K]>, Rest, Prev[Depth]>
+            >
           : never
         : never
-      : ResolveRef<T>
-  ) : never;
+      : never
+    : ResolveRef<T>
+  : never;
 
 export type PathValueOf<
   T,

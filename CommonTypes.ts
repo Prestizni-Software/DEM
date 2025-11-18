@@ -1,5 +1,6 @@
 import EventEmitter from "eventemitter3";
 import { ObjectId } from "bson";
+import "reflect-metadata";
 
 type RefType = string | ObjectId;
 export type EventEmitter3 = EventEmitter;
