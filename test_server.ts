@@ -1,24 +1,47 @@
-import { mongoose, Ref as MeRef } from "@typegoose/typegoose";
-import { Ref, PathValueOf, IsData, Paths, DeRef, ResolveRef, InstanceOf } from "./CommonTypes.js";
+import { mongoose, Ref, prop } from "@typegoose/typegoose";
+import { PathValueOf, IsData, classRef, classProp, Paths } from "./CommonTypes.js";
 import {
   AUSManagerFactory,
   createAutoStatusDefinitions,
 } from "./AutoUpdateServerManagerClass.js";
 import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
-import { Status, Test } from "./TestTypes.js";
+import { Objekt, Status } from "./TestTypes.js";
 import { ObjectId } from "bson";
+
+
+export class Test {
+  @classProp
+  public _id!: string | ObjectId;
+
+  @prop({ required: true })
+  @classProp
+  public active!: boolean;
+
+  @prop({ required: true })
+  @classProp
+  public status!: Status;
+
+  @prop({ required: false })
+  @classProp
+  public description!: string | null;
+
+  @prop({ required: false })
+  @classProp @classRef("Test")
+  public ref!: Ref<Test> | null;
+
+  @prop({ required: false })
+  @classProp
+  public obj!:Objekt | null
+}
+
 console.log("Start");
-type a = MeRef<Test> extends Ref<Test> ? true : false;
-type test4 = DeRef<Ref<Test>>;
-type testt = MeRef<Test>
-type test7 = DeRef<Ref<Test>>
-type abc = ResolveRef<Ref<Test>>
-type test5 = test4 extends { _id: string | ObjectId } ? true : false;
+type testt = Ref<Test>
+
 type test3 = Paths<Test>;
 type test6 = "ref._id" extends Paths<Test> ? true : false;
 type test2 = IsData<Test>;
-type test = PathValueOf<Test, "ref">;
+type test = PathValueOf<Test, "ref.status">;
 const server = new Server();
 server.listen(3000);
 const io = new SocketServer(server, { cors: { origin: "*" } });

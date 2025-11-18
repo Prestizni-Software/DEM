@@ -11,7 +11,7 @@ import {
   ServerResponse,
   ServerUpdateRequest,
 } from "./CommonTypes.js";
-import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
+import { BeAnObject, Ref, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
 import EventEmitter from "eventemitter3";
 

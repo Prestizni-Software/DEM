@@ -1,38 +1,27 @@
-import { prop } from "@typegoose/typegoose";
-import { classProp, classRef, Paths } from "./CommonTypes.js";
+import { classProp, classRef, ObjectId, Paths } from "./CommonTypes.js";
 import { io } from "socket.io-client";
 import { AUCManagerFactory } from "./AutoUpdateClientManagerClass.js";
-import { Objekt } from "./TestTypes.js";
+import { Objekt, Status } from "./TestTypes.js";
 console.log("Start");
 
 const socket = io("http://localhost:3000");
-
-enum Status {
-  ACTIVE = "ACTIVE",
-  INACTIVE = "INACTIVE",
-}
 
 export class Test {
   @classProp
   public _id!: string | ObjectId;
 
-  @prop({ required: true })
   @classProp
   public active!: boolean;
 
-  @prop({ required: true })
   @classProp
   public status!: Status;
 
-  @prop({ required: false })
   @classProp
   public description!: string | null;
 
-  @prop({ required: false })
   @classProp @classRef("Test")
   public ref!: Test | null;
 
-  @prop({ required: false })
   @classProp
   public obj!:Objekt | null
 }
@@ -57,8 +46,8 @@ const obj2 = managers.Test.getObject("691702d91a05cb761dfc66f4");
 
 if(!obj || !obj2)
   throw new Error("No obj")
-
-await obj.setValue("ref.obj.obj._id", "gay2")
+type test = Paths<Test>
+await obj.setValue("ref.obj.obj._id", "23")
 
 
 console.log(obj.ref?.obj?.obj._id);

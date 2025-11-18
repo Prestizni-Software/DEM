@@ -5,7 +5,6 @@ import {
   AutoProps,
   Constructor,
   EventEmitter3,
-  DeRef,
   IsData,
   LoggersType,
   ServerUpdateRequest,
@@ -26,7 +25,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   loggers: LoggersType,
   autoClasser: AutoUpdateServerManager<any>,
   emitter: EventEmitter3
-): Promise<AutoProps<C> & AutoUpdated<InstanceType<C>> & DeRef<InstanceType<C>>> {
+): Promise<AutoProps<C> & AutoUpdated<InstanceType<C>> & InstanceType<C>> {
   const instance = new (class extends AutoUpdatedServerObject<
     InstanceType<C>
   > {})(
@@ -44,7 +43,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   );
   await instance.isLoadedAsync();
   await instance.checkAutoStatusChange();
-  return instance as AutoProps<C> & AutoUpdated<InstanceType<C>> & DeRef<InstanceType<C>>;
+  return instance as AutoProps<C> & AutoUpdated<InstanceType<C>> & InstanceType<C>;
 }
 
 // ---------------------- Class ----------------------

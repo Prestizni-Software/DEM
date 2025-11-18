@@ -1,9 +1,12 @@
-import { ObjectId } from "bson";
 import "reflect-metadata";
 import EventEmitter from "eventemitter3";
-import { Ref } from "@typegoose/typegoose";
 
 export type EventEmitter3 = EventEmitter;
+
+export type ObjectId = {
+  toString: () => string;
+  id: Uint8Array<ArrayBufferLike>;
+};
 
 type RefType = string | ObjectId;
 
@@ -72,31 +75,14 @@ export type UnboxConstructor<T> = T extends new (...args: any[]) => infer I
   ? I
   : T;
 
-// ---------------------- DeRef ----------------------
 export type NonOptional<T> = Exclude<T, null | undefined>;
-
-export type DeRef<T> = {
-  [K in keyof T]:
-    T[K] extends Ref<infer U>
-      ? ExtractObject<U> // only keep object part
-      : T[K];
-};
-export type RefToId<T> = {
-  [K in keyof T]: T[K] extends Ref<infer U> ? U | string : T[K];
-};
 
 // ---------------------- Instance helper ----------------------
 export type InstanceOf<T> = T extends Constructor<infer I> ? I : T;
 
-// Generic filter for any desired type
-export type NeededTypeAtPath<C extends Constructor<any>, T> = {
-  [P in Paths<C>]: PathValueOf<C, P> extends T ? P : never;
-}[Paths<C>];
-
 // ---------------------- Paths ----------------------
-type ExtractObject<T> = T extends object ? T : never;
-type Prev = [never, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-type StripPrototypePrefix<P extends string> = P extends "prototype"
+export type Prev = [never, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+export type StripPrototypePrefix<P extends string> = P extends "prototype"
   ? never
   : P extends `prototype.${infer Rest}`
   ? Rest
@@ -104,15 +90,15 @@ type StripPrototypePrefix<P extends string> = P extends "prototype"
 
 type Primitive = string | number | boolean | bigint | symbol | null | undefined;
 
-type Recurseable<T> =
+export type Recurseable<T> =
   T extends Primitive | ObjectId | Date | Function | Array<any>
     ? never
     : T extends object
       ? T
       : never;
 
-type Join<K extends string, P extends string> = `${K}.${P}`;
-type OnlyClassKeys<T> = {
+export type Join<K extends string, P extends string> = `${K}.${P}`;
+export type OnlyClassKeys<T> = {
   [K in keyof T]: K;
 }[keyof T] &
   string;
@@ -124,25 +110,22 @@ export type Paths<
 > = Depth extends never
   ? never
   : {
-      [K in OnlyClassKeys<DeRef<NonOptional<T>>>]: K extends "_id"
+      [K in OnlyClassKeys<NonOptional<T>>]: K extends "_id"
         ? StripPrototypePrefix<`${K}`>
         : StripPrototypePrefix<
-            PathsHelper<K, DeRef<NonOptional<T>>[K], Depth, OriginalDepth>
+            PathsHelper<K, NonOptional<T>[K], Depth, OriginalDepth>
           >;
-    }[OnlyClassKeys<DeRef<NonOptional<T>>>];
+    }[OnlyClassKeys<NonOptional<T>>];
 
-type PathsHelper<
+export type PathsHelper<
   K extends string,
   V,
   Depth extends number,
   OriginalDepth extends number
-> = Recurseable<ResolveRef<V>> extends never
+> = Recurseable<V> extends never
   ? `${K}`
-  : `${K}` | Join<K, Paths<ResolveRef<V>, Prev[Depth], OriginalDepth>>;
+  : `${K}` | Join<K, Paths<V, Prev[Depth], OriginalDepth>>;
 // ---------------------- PathValueOf ----------------------
-export type ResolveRef<T> = T extends Ref<infer U>
-  ? ExtractObject<U>
-  : T;
 
 type Split<S extends string> = S extends `${infer L}.${infer R}`
   ? [L, ...Split<R>]
@@ -161,15 +144,15 @@ export type PathValue<
       ? K extends keyof T
         ? Rest extends string[]
           ? // unwrap at every step; recursion will also distribute
-            ResolveRef<
+            
               Rest["length"] extends 0
                 ? T[K]
-                : PathValue<ResolveRef<T[K]>, Rest, Prev[Depth]>
-            >
+                : PathValue<T[K], Rest, Prev[Depth]>
+            
           : never
         : never
       : never
-    : ResolveRef<T>
+    : T
   : never;
 
 export type PathValueOf<
