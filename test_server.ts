@@ -9,9 +9,9 @@ import { Server } from "node:http";
 import { Status, Test } from "./TestTypes.js";
 import { ObjectId } from "bson";
 console.log("Start");
-type a = Ref<Test> extends MeRef<Test> ? true : false;
+type a = MeRef<Test> extends Ref<Test> ? true : false;
 type test4 = DeRef<Ref<Test>>;
-type testt = Ref<Test>
+type testt = MeRef<Test>
 type test7 = DeRef<Ref<Test>>
 type abc = ResolveRef<Ref<Test>>
 type test5 = test4 extends { _id: string | ObjectId } ? true : false;
