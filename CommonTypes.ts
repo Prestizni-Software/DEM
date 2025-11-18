@@ -81,9 +81,11 @@ export type UnboxConstructor<T> = T extends new (...args: any[]) => infer I
 export type NonOptional<T> = Exclude<T, null | undefined>;
 
 export type DeRef<T> = {
-  [K in keyof T]: T[K] extends Ref<infer U> | null | undefined ? U : T[K];
+  [K in keyof T]:
+    T[K] extends Ref<infer U>
+      ? ExtractObject<U> // only keep object part
+      : T[K];
 };
-
 export type RefToId<T> = {
   [K in keyof T]: T[K] extends Ref<infer U> ? U | string : T[K];
 };
@@ -97,7 +99,7 @@ export type NeededTypeAtPath<C extends Constructor<any>, T> = {
 }[Paths<C>];
 
 // ---------------------- Paths ----------------------
-
+type ExtractObject<T> = T extends object ? T : never;
 type Prev = [never, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 type StripPrototypePrefix<P extends string> = P extends "prototype"
   ? never
@@ -105,11 +107,15 @@ type StripPrototypePrefix<P extends string> = P extends "prototype"
   ? Rest
   : P;
 
-type Recurseable<T> = T extends object
-  ? T extends Array<any> | Function
+type Primitive = string | number | boolean | bigint | symbol | null | undefined;
+
+type Recurseable<T> =
+  T extends Primitive | ObjectId | Date | Function | Array<any>
     ? never
-    : T
-  : never;
+    : T extends object
+      ? T
+      : never;
+
 type Join<K extends string, P extends string> = `${K}.${P}`;
 type OnlyClassKeys<T> = {
   [K in keyof T]: K;
@@ -135,14 +141,13 @@ type PathsHelper<
   V,
   Depth extends number,
   OriginalDepth extends number
-> = Recurseable<V> extends never
+> = Recurseable<ResolveRef<V>> extends never
   ? `${K}`
-  :
-      | `${K}`
-      | Join<K, Paths<DeRef<NonOptional<V>>, Prev[Depth], OriginalDepth>>;
-
+  : `${K}` | Join<K, Paths<ResolveRef<V>, Prev[Depth], OriginalDepth>>;
 // ---------------------- PathValueOf ----------------------
-export type ResolveRef<T> = T extends Ref<infer U> ? U : T;
+export type ResolveRef<T> = T extends Ref<infer U>
+  ? ExtractObject<U>
+  : T;
 
 type Split<S extends string> = S extends `${infer L}.${infer R}`
   ? [L, ...Split<R>]

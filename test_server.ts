@@ -18,7 +18,7 @@ type test5 = test4 extends { _id: string | ObjectId } ? true : false;
 type test3 = Paths<Test>;
 type test6 = "ref._id" extends Paths<Test> ? true : false;
 type test2 = IsData<Test>;
-type test = PathValueOf<Test, "ref.ref.obj">;
+type test = PathValueOf<Test, "ref">;
 const server = new Server();
 server.listen(3000);
 const io = new SocketServer(server, { cors: { origin: "*" } });
