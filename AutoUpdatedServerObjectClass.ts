@@ -4,7 +4,8 @@ import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
 import { AutoUpdateServerManager } from "./AutoUpdateServerManagerClass.js";
 import "reflect-metadata";
 import { DefaultEventsMap, Server } from "socket.io";
-import { Constructor, UnboxConstructor, LoggersType, EventEmitter3, AutoProps, IsData, ServerUpdateRequest } from "./CommonTypes.js";
+import { Constructor, UnboxConstructor, LoggersType, EventEmitter3, AutoProps, IsData, ServerUpdateRequest, InstanceOf } from "./CommonTypes.js";
+import { Paths, PathValueOf } from "./CommonTypes_server.js";
 
 type SocketType = Server<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, any>;
 
@@ -18,7 +19,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   autoClasser: AutoUpdateServerManager<any>,
   emitter: EventEmitter3
 ): Promise<AutoProps<C> & AutoUpdated<InstanceType<C>> & InstanceType<C>> {
-  const instance = new (class extends AutoUpdatedServerObject<
+  const instance = new (class extends AutoUpdatedServerObject< 
     InstanceType<C>
   > {})(
     socket,
@@ -75,6 +76,12 @@ export abstract class AutoUpdatedServerObject<
     this.entry = data;
   }
 
+  public setValue_<K extends Paths<InstanceOf<T>>>(
+    key: K,
+    val: PathValueOf<T, K>
+  ): Promise<{ success: boolean; msg: string }> {
+    return this.setValue__(key, val);
+  }
   protected handleNewObject(_data: IsData<T>) {
     throw new Error("Cannot create new objects like this.");
   }
@@ -107,33 +114,13 @@ export abstract class AutoUpdatedServerObject<
   }
 
   public override async checkAutoStatusChange() {
-      if (!this.autoClasser.options?.autoStatusDefinitions) return;
-      const statusPath = this.autoClasser.options.autoStatusDefinitions.statusProperty;
-      let finalStatus:
-        | keyof typeof this.autoClasser.options.autoStatusDefinitions.statusEnum
-        | null = "null";
-      for (const [currentStatus, statusDef] of Object.entries(
-        this.autoClasser.options.autoStatusDefinitions.definitions
-      )) {
-        finalStatus = currentStatus;
-        for (const [key, value] of Object.entries(statusDef)) {
-          if (this.getValue(key as any) !== value) {
-            finalStatus = null;
-            break;
-          }
-        }
-  
-        if (!finalStatus) continue;
-        if(this.autoClasser.options.autoStatusDefinitions.statusEnum[finalStatus] === this.getValue(statusPath as any)) break;
-        await this.setValue(
-          statusPath as any,
-          this.autoClasser.options.autoStatusDefinitions.statusEnum[finalStatus] as any
-        );
-        break;
-      }
-      if (!finalStatus) 
-        throw new Error(`No final status found`);
-    }
+    const neededStatus = await this.autoClasser.options?.autoStatusDefinitions?.definition(this) as any;
+    const statusPath = this.autoClasser.options?.autoStatusDefinitions?.statusProperty as any
+    if(!neededStatus || !statusPath) return;
+    const currentStatus = this.getValue(this.autoClasser.options?.autoStatusDefinitions?.statusProperty as any)
+    if (neededStatus === currentStatus) return;
+    this.setValue(statusPath, neededStatus);
+  }
   
 }
 

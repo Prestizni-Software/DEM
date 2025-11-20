@@ -37,12 +37,6 @@ export class Test {
 }
 
 console.log("Start");
-type testt = Ref<Test>
-
-type test3 = Paths<Test>;
-type test6 = "ref._id" extends Paths<Test> ? true : false;
-type test2 = IsData<Test>;
-type test = PathValueOf<Test, "ref.status">;
 const server = new Server();
 server.listen(3000);
 const io = new SocketServer(server, { cors: { origin: "*" } });
@@ -55,21 +49,14 @@ const managers = await AUSManagerFactory(
       options: {
         autoStatusDefinitions: createAutoStatusDefinitions(
           Test,
-          {
-            active: true,
-          },
           "status",
           Status,
-          {
-            ACTIVE: {
-              active: true,
-            },
-            INACTIVE: {
-              active: false,
-            },
+          async (obj) => {
+            if(obj.description) return;
+            if (obj.active) return Status.ACTIVE;
+            return Status.INACTIVE;
           }
         ),
-        accessDefinitions: {},
       },
     },
   },
@@ -93,14 +80,8 @@ if (!obj || !obj2) throw new Error("No obj");
 console.log(obj.status);
 
 console.log("UPDATING ACTIVE STATUS TO TRUE");
-//await obj.setValue("active", true);
-//await obj.setValue("ref","a")
-//await obj.setValue("ref.ref.obj.obj._id", 23);
-//await obj.setValue("obj.obj._id", "gay");
-//await obj.setValue("ref.ref.ref.obj.obj._id", 23);
-//await obj.setValue("ref.ref.$where", 23)
-//await obj.setValue("obj.obj._id", 23);
-//await obj.setValue("ref", 23)
+await obj.setValue("active", true);
+await obj.setValue("active", false);
 
 console.log(obj.status);
 

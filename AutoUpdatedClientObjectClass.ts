@@ -6,6 +6,8 @@ import {
   IsData,
   LoggersType,
   LoggersTypeInternal,
+  Paths,
+  PathValueOf,
   ServerResponse,
   ServerUpdateRequest,
 } from "./CommonTypes.js";
@@ -13,7 +15,6 @@ import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 import { ObjectId } from "bson";
 import { AutoUpdateClientManager } from "./AutoUpdateClientManagerClass.js";
 import { Socket } from "socket.io-client";
-import { Paths, PathValueOf } from "./CommonTypes.js";
 type SocketType = Socket<any, any>;
 export type AutoUpdated<T extends Constructor<any>> =
   AutoUpdatedClientObject<T> & InstanceOf<T>;
@@ -285,12 +286,19 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     }
   }
 
-  public async setValue<K extends Paths<InstanceOf<T>>>(
+  public setValue<K extends Paths<InstanceOf<T>>>(
     key: K,
     val: PathValueOf<T, K>
   ): Promise<{ success: boolean; msg: string }> {
+    return this.setValue__(key, val);
+  }
+
+  protected async setValue__(
+    key: any,
+    val: any
+  ): Promise<{ success: boolean; msg: string }> {
     let message = "Setting value " + key + " of " + this.className;
-    let value = val as any;
+    let value = val;
     this.loggers.debug(
       `[${(this.data as any)._id}] Setting ${key} to ${value}`
     );

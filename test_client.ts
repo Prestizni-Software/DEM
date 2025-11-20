@@ -2,7 +2,6 @@ import { io } from "socket.io-client";
 import { AUCManagerFactory } from "./AutoUpdateClientManagerClass.js";
 import { Objekt, Status } from "./TestTypes.js";
 import { classProp, classRef } from "./CommonTypes.js";
-import { Paths } from "./CommonTypes.js";
 console.log("Start");
 
 const socket = io("http://localhost:3000");
@@ -47,7 +46,6 @@ const obj2 = managers.Test.getObject("691702d91a05cb761dfc66f4");
 
 if(!obj || !obj2)
   throw new Error("No obj")
-type test = Paths<Test>
 await obj.setValue("ref.obj.obj._id", "23")
 
 

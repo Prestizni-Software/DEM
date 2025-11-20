@@ -12,66 +12,65 @@ import {
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
 import EventEmitter from "eventemitter3";
-import { Paths, PathValueOf } from "./CommonTypes_server.js";
+import { Paths } from "./CommonTypes_server.js";
 
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateServerManager<T[K]>;
-};
-type AccessDefinitions<C extends Constructor<any>> = {
-  [K in Paths<C>]?: {
-    access?: string[];
-    update?: boolean;
-  };
 };
 
 export type AutoStatusDefinitions<
   C extends Constructor<any>,
   E extends Record<string, string | number>,
-  S extends StatusDefinition<C>
+  K extends keyof E
 > = {
   statusProperty: Paths<C>;
   statusEnum: E;
-  definitions: { [K in keyof E]: S };
-};
-
-type StatusDefinition<C extends Constructor<any>> = {
-  [K in Paths<C>]?: PathValueOf<C, K>;
+  definition: (data: InstanceType<C>) => Promise<E[K] | void>;
 };
 
 export function createAutoStatusDefinitions<
   C extends Constructor<any>,
   E extends { [k: string]: string | number },
-  S extends StatusDefinition<C>
+  K extends keyof E
 >(
   _class: C,
-  _template: S,
   statusProperty: Paths<C>,
   statusEnum: E,
-  definitions: { [K in keyof E]: S }
-): AutoStatusDefinitions<C, E, S> {
+  definition: (data: InstanceType<C>) => Promise<E[K] | void>
+): AutoStatusDefinitions<C, E, keyof E> {
   return {
     statusProperty,
     statusEnum,
-    definitions,
+    definition,
   };
 }
 
 export type AUSDefinitions<T extends Record<string, Constructor<any>>> = {
-  [K in keyof T]: ServerManagerDefinition<T[K]>;
+  [K in keyof T]: ServerManagerDefinition<T[K], T>;
 };
 
-export type AUSOption<C extends Constructor<any>> = {
-  accessDefinitions?: Partial<AccessDefinitions<C>>;
+export type AUSOption<
+  C extends Constructor<any>,
+  T extends Record<string, Constructor<any>>
+> = {
+  accessDefinitions?: (
+    data: InstanceType<C>,
+    managers: { [K in keyof T]: AutoUpdateServerManager<T[K]> },
+    userId: string
+  ) => Promise<IsData<InstanceType<C>>>;
   autoStatusDefinitions?: AutoStatusDefinitions<
     C,
     { [k: string]: string | number },
-    StatusDefinition<C>
+    keyof { [k: string]: string | number }
   >;
 };
 
-export type ServerManagerDefinition<C extends Constructor<any>> = {
+export type ServerManagerDefinition<
+  C extends Constructor<any>,
+  T extends Record<string, Constructor<any>>
+> = {
   class: C;
-  options?: AUSOption<C>;
+  options?: AUSOption<C, T>;
 };
 
 export async function AUSManagerFactory<
@@ -88,19 +87,18 @@ export async function AUSManagerFactory<
     loggers.debug(`Creating manager for ${key}`);
     const def = defs[key];
     try {
-    const c = new AutoUpdateServerManager(
-      def.class,
-      loggers,
-      socket,
-      getModelForClass(def.class),
-      classers,
-      emitter,
-      def.options
-    ) as any;
-    i++;
-    classers[key] = c;
-    await c.loadDB();
-      
+      const c = new AutoUpdateServerManager(
+        def.class,
+        loggers,
+        socket,
+        getModelForClass(def.class),
+        classers,
+        emitter,
+        def.options
+      ) as any;
+      i++;
+      classers[key] = c;
+      await c.loadDB();
     } catch (error) {
       loggers.error("Error creating manager: " + key);
       loggers.error(error);
@@ -124,7 +122,7 @@ export class AutoUpdateServerManager<
 > extends AutoUpdateManager<T> {
   public readonly model: ReturnModelType<T, BeAnObject>;
   private readonly clientSockets: Set<Socket> = new Set<Socket>();
-  public readonly options?: AUSOption<T>;
+  public readonly options?: AUSOption<T,any>;
   private readonly doDebug = false;
   constructor(
     classParam: T,
@@ -133,7 +131,7 @@ export class AutoUpdateServerManager<
     model: ReturnModelType<T, BeAnObject>,
     classers: Record<string, AutoUpdateManager<any>>,
     emitter: EventEmitter3,
-    options?: AUSOption<T>
+    options?: AUSOption<T,any>
   ) {
     super(classParam, socket, loggers, classers, emitter);
     this.model = model;
@@ -148,7 +146,9 @@ export class AutoUpdateServerManager<
         this.classes[(doc as any)._id] ??
         (await this.handleGetMissingObject((doc as any)._id.toString()));
     }
-    this.loggers.debug("Loaded manager DB " + this.className + " - [" + docs.length + "] entries");
+    this.loggers.debug(
+      "Loaded manager DB " + this.className + " - [" + docs.length + "] entries"
+    );
   }
 
   public registerSocket(socket: Socket) {
@@ -168,14 +168,16 @@ export class AutoUpdateServerManager<
     socket.on("delete" + this.className, async (id: string) => {
       this.loggers.debug("Deleting object from manager " + this.className, id);
       try {
-      this.classes[id].destroy();
-      this.classesAsArray.splice(
-        this.classesAsArray.indexOf(this.classes[id]),
-        1
-      );
-      delete this.classes[id];
+        this.classes[id].destroy();
+        this.classesAsArray.splice(
+          this.classesAsArray.indexOf(this.classes[id]),
+          1
+        );
+        delete this.classes[id];
       } catch (error) {
-        this.loggers.error("Error deleting object from manager " + this.className + " - " + id);
+        this.loggers.error(
+          "Error deleting object from manager " + this.className + " - " + id
+        );
         this.loggers.error(error);
       }
     });
@@ -194,7 +196,9 @@ export class AutoUpdateServerManager<
             message: "Created successfully",
           });
         } catch (error) {
-          this.loggers.error("Error creating new object in manager " + this.className);
+          this.loggers.error(
+            "Error creating new object in manager " + this.className
+          );
           this.loggers.error(error);
           ack({ success: false, message: (error as any).message });
         }
@@ -211,22 +215,34 @@ export class AutoUpdateServerManager<
           event.startsWith("update" + this.className) &&
           event.replace("update" + this.className, "").length === 24
         ) {
-          this.loggers.debug("Updating object in manager " + this.className + ": " + event + " - " + JSON.stringify(data));
+          this.loggers.debug(
+            "Updating object in manager " +
+              this.className +
+              ": " +
+              event +
+              " - " +
+              JSON.stringify(data)
+          );
           try {
             const id = event.replace("update" + this.className, "");
             let obj = this.classes[id];
             if (typeof obj === "string")
               this.classes[id] = obj = await this.handleGetMissingObject(obj);
-            if (typeof obj === "string") throw new Error(`Never... failed to get object somehow: ${obj}`);
+            if (typeof obj === "string")
+              throw new Error(`Never... failed to get object somehow: ${obj}`);
             const res = await obj.setValue(data.key as any, data.value);
 
-            res.success ? ack({
-              data: obj.extractedData,
-              success: res.success,
-              message: res.msg,
-            }) : ack({ success: res.success, message: res.msg });
+            res.success
+              ? ack({
+                  data: obj.extractedData,
+                  success: res.success,
+                  message: res.msg,
+                })
+              : ack({ success: res.success, message: res.msg });
           } catch (error) {
-            this.loggers.warn("Failed to update object in manager " + this.className);
+            this.loggers.warn(
+              "Failed to update object in manager " + this.className
+            );
             ack({ success: false, message: (error as any).message });
           }
         } else if (
