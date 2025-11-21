@@ -78,7 +78,6 @@ export class AutoUpdateClientManager<
       for (const id of data) {
         try {
           this.classes[id] = await this.handleGetMissingObject(id);
-          this.classesAsArray.push(this.classes[id]);
         } catch (error: any) {
           this.loggers.error(
             "Error loading object " +
@@ -99,7 +98,6 @@ export class AutoUpdateClientManager<
       );
       try {
         this.classes[id] = await this.handleGetMissingObject(id);
-        this.classesAsArray.push(this.classes[id]);
       } catch (error: any) {
         this.loggers.error(
           "Error loading object " +

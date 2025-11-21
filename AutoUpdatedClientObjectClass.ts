@@ -13,7 +13,6 @@ import {
 } from "./CommonTypes.js";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 import { ObjectId } from "bson";
-import { AutoUpdateClientManager } from "./AutoUpdateClientManagerClass.js";
 import { Socket } from "socket.io-client";
 type SocketType = Socket<any, any>;
 export type AutoUpdated<T extends Constructor<any>> =
@@ -23,7 +22,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   socket: SocketType,
   data: IsData<InstanceType<C>> | string,
   loggers: LoggersType,
-  autoClassers: AutoUpdateClientManager<any>,
+  autoClassers: AutoUpdateManager<any>,
   emitter: EventEmitter3,
   token: string
 ): Promise<AutoUpdated<C>> {
@@ -355,7 +354,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
         } else obj = obj[path[i]];
       }
 
-      if (lastClass !== this || lastPath !== (key as any)) {
+      if (lastClass !== this || lastPath !== (key)) {
         message +=
           "\n What the actual fuckity fuck error on path: " +
           path +
@@ -388,7 +387,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
       }
       const pathArr = lastPath.split(".");
       if (pathArr.length === 1) {
-        (this.data as any)[key as any] = value;
+        (this.data as any)[key] = value;
         await this.checkAutoStatusChange();
         return {
           success: true,

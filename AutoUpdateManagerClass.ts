@@ -13,7 +13,6 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     error: () => {},
     warn: () => {},
   };
-  protected classesAsArray: AutoUpdated<T>[] = [];
   protected emitter: EventEmitter3;
   private isLoaded = false;
   constructor(
@@ -58,7 +57,6 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     if (typeof this.classes[_id] === "string")
       this.classes[_id] = await this.handleGetMissingObject(this.classes[_id]);
     (this.classes[_id]).destroy();
-    this.classesAsArray.splice(this.classesAsArray.indexOf(this.classes[_id]), 1);
     delete this.classes[_id];
   }
 
@@ -66,12 +64,12 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     return Object.keys(this.classes);
   }
 
-  public get objects(): { [_id: string]: AutoUpdated<T> | string } {
+  public get objects(): { [_id: string]: AutoUpdated<T> } {
     return this.classes;
   }
 
   public get objectsAsArray(): AutoUpdated<T>[] {
-    return this.classesAsArray;
+    return Object.values(this.classes);
   }
 
   public get className(): string {

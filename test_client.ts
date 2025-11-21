@@ -36,7 +36,8 @@ const managers = await AUCManagerFactory(
     info: (msg: string) => console.log(msg),
     warn: (msg: string) => console.warn(msg),
   },
-  socket
+  socket,
+  ""
 );
 
 console.log("CREATING OBJECT WITH active = true, status = INACTIVE");

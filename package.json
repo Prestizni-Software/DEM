@@ -15,7 +15,9 @@
     "dist"
   ],
   "scripts": {
-    "release": "npx tsc && xcopy .\\dist\\AutoUpdateClientManagerClass* ..\\client\\ /Y && xcopy .\\dist\\AutoUpdatedClientObjectClass* ..\\client\\ /Y && xcopy .\\dist\\CommonTypes.* ..\\client\\ /Y && xcopy .\\dist\\AutoUpdateManagerClass* ..\\client\\ /Y && xcopy .\\dist\\client* ..\\client\\ /Y && cd ..\\client && git pull && npm run release && cd ..\\src && xcopy .\\dist\\AutoUpdatedClientObjectClass* ..\\server\\ /Y && xcopy .\\dist\\AutoUpdateManagerClass* ..\\server\\ /Y && xcopy .\\dist\\server* ..\\server\\ /Y && xcopy .\\dist\\CommonTypes* ..\\server\\ /Y && xcopy .\\dist\\AutoUpdateServerManagerClass* ..\\server\\ /Y && xcopy .\\dist\\AutoUpdatedServerObjectClass* ..\\server\\ /Y && cd ..\\server && git pull && npm run release"
+    "release": "npm run release_client && npm run release_server",
+    "release_client": "xcopy .\\tsconfig.json ..\\client\\ /Y && xcopy .\\AutoUpdateClientManagerClass.ts ..\\client\\ /Y && xcopy .\\AutoUpdatedClientObjectClass.ts ..\\client\\ /Y && xcopy .\\CommonTypes.ts ..\\client\\ /Y && xcopy .\\AutoUpdateManagerClass.ts ..\\client\\ /Y && xcopy .\\client.ts ..\\client\\ /Y && cd ..\\client && npm run release && cd ..\\src",
+    "release_server": "xcopy .\\tsconfig.json ..\\server\\ /Y && xcopy .\\AutoUpdatedClientObjectClass.ts ..\\server\\ /Y && xcopy .\\AutoUpdateManagerClass.ts ..\\server\\ /Y && xcopy .\\server.ts ..\\server\\ /Y && xcopy .\\CommonTypes.ts ..\\server\\ /Y && xcopy .\\CommonTypes_server.ts ..\\server\\ /Y && xcopy .\\AutoUpdateServerManagerClass.ts ..\\server\\ /Y && xcopy .\\AutoUpdatedServerObjectClass.ts ..\\server\\ /Y && cd ..\\server && npm run release && cd ..\\src"
   },
   "dependencies": {
     "@typegoose/typegoose": "^12.20.0",

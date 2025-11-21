@@ -11,8 +11,8 @@ import {
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
-import EventEmitter from "eventemitter3";
 import { Paths } from "./CommonTypes_server.js";
+import EventEmitter from "eventemitter3";
 
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateServerManager<T[K]>;
@@ -79,8 +79,9 @@ export async function AUSManagerFactory<
   defs: AUSDefinitions<T>,
   loggers: LoggersType,
   socket: Server,
-  emitter: EventEmitter3 = new EventEmitter()
+  emitter?: EventEmitter3
 ): Promise<{ [K in keyof T]: AutoUpdateServerManager<T[K]> }> {
+  emitter = emitter ?? new EventEmitter();
   const classers: any = {};
   let i = 0;
   for (const key in defs) {
@@ -98,10 +99,19 @@ export async function AUSManagerFactory<
       ) as any;
       i++;
       classers[key] = c;
-      await c.loadDB();
-    } catch (error) {
+    } catch (error:any) {
       loggers.error("Error creating manager: " + key);
-      loggers.error(error);
+      loggers.error(error.message);
+      loggers.error(error.stack);
+      continue;
+    }
+    loggers.debug("Loading DB for manager: " + key);
+    try {
+      await classers[key].loadDB();
+    } catch (error:any) {
+      loggers.error("Error loading DB for manager: " + key);
+      loggers.error(error.message);
+      loggers.error(error.stack);
     }
   }
   socket.on("connection", async (socket) => {
@@ -122,7 +132,7 @@ export class AutoUpdateServerManager<
 > extends AutoUpdateManager<T> {
   public readonly model: ReturnModelType<T, BeAnObject>;
   private readonly clientSockets: Set<Socket> = new Set<Socket>();
-  public readonly options?: AUSOption<T,any>;
+  public readonly options?: AUSOption<T, any>;
   private readonly doDebug = false;
   constructor(
     classParam: T,
@@ -131,7 +141,7 @@ export class AutoUpdateServerManager<
     model: ReturnModelType<T, BeAnObject>,
     classers: Record<string, AutoUpdateManager<any>>,
     emitter: EventEmitter3,
-    options?: AUSOption<T,any>
+    options?: AUSOption<T, any>
   ) {
     super(classParam, socket, loggers, classers, emitter);
     this.model = model;
@@ -169,10 +179,6 @@ export class AutoUpdateServerManager<
       this.loggers.debug("Deleting object from manager " + this.className, id);
       try {
         this.classes[id].destroy();
-        this.classesAsArray.splice(
-          this.classesAsArray.indexOf(this.classes[id]),
-          1
-        );
         delete this.classes[id];
       } catch (error) {
         this.loggers.error(
@@ -296,7 +302,6 @@ export class AutoUpdateServerManager<
     );
     object.checkAutoStatusChange();
     this.classes[object._id] = object;
-    this.classesAsArray.push(object);
     return object;
   }
 }
