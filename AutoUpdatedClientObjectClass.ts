@@ -24,7 +24,8 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   data: IsData<InstanceType<C>> | string,
   loggers: LoggersType,
   autoClassers: AutoUpdateClientManager<any>,
-  emitter: EventEmitter3
+  emitter: EventEmitter3,
+  token: string
 ): Promise<AutoUpdated<C>> {
   if (typeof data !== "string") {
     checkForMissingRefs<C>(data as any, [], classParam, autoClassers);
@@ -39,7 +40,8 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
     classParam.name,
     classParam,
     autoClassers,
-    emitter
+    emitter,
+    token
   );
 
   await instance.isLoadedAsync();
@@ -66,6 +68,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
   protected isLoadingReferences = false;
   public readonly classProp: Constructor<T>;
   private readonly EmitterID = new ObjectId().toHexString();
+  private readonly token: string;
   private readonly loadShit = async () => {
     if (this.isLoaded()) {
       try {
@@ -94,8 +97,10 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     className: string,
     classProperty: Constructor<T>,
     autoClasser: AutoUpdateManager<any>,
-    emitter: EventEmitter3
+    emitter: EventEmitter3,
+    token: string = ""
   ) {
+    this.token = token;
     this.emitter = emitter;
     this.classProp = classProperty;
     this.isLoadingReferences = true;
@@ -457,7 +462,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
       (resolve) => {
         try {
           this.socket.emit(
-            "update" + this.className + this.data._id,
+            "update" + this.className + this.data._id, 
             update,
             (res: ServerResponse<T>) => {
               resolve({ success: res.success, message: res.message });

@@ -13,6 +13,7 @@ export async function AUCManagerFactory<
   defs: T,
   loggers: LoggersType,
   socket: Socket,
+  token: string,
   emitter: EventEmitter = new EventEmitter()
 ): Promise<WrappedInstances<T>> {
   const classers = {} as WrappedInstances<T>;
@@ -25,7 +26,8 @@ export async function AUCManagerFactory<
         loggers,
         socket,
         classers,
-        emitter
+        emitter,
+        token
       );
       classers[key] = c;
     } catch (error: any) {
@@ -52,14 +54,18 @@ export async function AUCManagerFactory<
 export class AutoUpdateClientManager<
   T extends Constructor<any>
 > extends AutoUpdateManager<T> {
+  private readonly token;
   constructor(
     classParam: T,
     loggers: LoggersType,
     socket: Socket,
     classers: Record<string, AutoUpdateManager<any>>,
-    emitter: EventEmitter
+    emitter: EventEmitter,
+    token: string
   ) {
+    
     super(classParam, socket, loggers, classers, emitter);
+    this.token = token;
     socket.emit("startup" + classParam.name, async (data: string[]) => {
       this.loggers.debug(
         "Loading manager DB " +
@@ -133,7 +139,8 @@ export class AutoUpdateClientManager<
       _id,
       this.loggers,
       this,
-      this.emitter
+      this.emitter,
+      this.token
     );
   }
 
@@ -145,9 +152,10 @@ export class AutoUpdateClientManager<
       data as any,
       this.loggers,
       this,
-      this.emitter
+      this.emitter,
+      this.token
     );
-    this.classes[object._id as any] = object;
+    this.classes[object._id] = object;
     return object;
   }
 }
