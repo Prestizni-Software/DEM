@@ -4,7 +4,7 @@ import { Objekt, Status } from "./TestTypes.js";
 import { classProp, classRef } from "./CommonTypes.js";
 console.log("Start");
 
-const socket = io("http://localhost:3000");
+const socket = io("http://localhost:3001");
 
 export class Test {
   @classProp

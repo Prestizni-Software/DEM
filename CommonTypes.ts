@@ -102,4 +102,3 @@ export type PathValueOf<
   P extends string,
   Depth extends number = 6
 > = PathValue<InstanceOf<T>, Split<P>, Depth>;
-

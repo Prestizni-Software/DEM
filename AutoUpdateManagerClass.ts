@@ -1,12 +1,10 @@
-import { AutoUpdated } from "./AutoUpdatedClientObjectClass.js";
 import { Constructor, EventEmitter3, IsData, LoggersType, LoggersTypeInternal } from "./CommonTypes.js";
 import "reflect-metadata";
 export abstract class AutoUpdateManager<T extends Constructor<any>> {
-  protected classes: { [_id: string]: AutoUpdated<T> } = {};
+  protected abstract classes: { [_id: string]: any };
   public socket: any;
   protected classParam: T;
   protected properties: (keyof T)[];
-  public readonly classers: Record<string, AutoUpdateManager<any>>;
   protected loggers: LoggersTypeInternal = {
     info: () => {},
     debug: () => {},
@@ -28,7 +26,6 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
       console.log("a");
       
     })
-    this.classers = classers;
     this.socket = socket;
     this.classParam = classParam;
     this.properties = Reflect.getMetadata(
@@ -37,13 +34,6 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     );
     loggers.warn = loggers.warn ?? loggers.info;
     this.loggers = loggers as LoggersTypeInternal;
-  }
-
-
-  public getObject(
-    _id: string
-  ): AutoUpdated<T> | null {
-    return this.classes[_id];
   }
 
   public async isLoadedAsync(): Promise<boolean> {
@@ -64,22 +54,14 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     return Object.keys(this.classes);
   }
 
-  public get objects(): { [_id: string]: AutoUpdated<T> } {
-    return this.classes;
-  }
-
-  public get objectsAsArray(): AutoUpdated<T>[] {
-    return Object.values(this.classes);
-  }
-
   public get className(): string {
     return this.classParam.name;
   }
 
   protected abstract handleGetMissingObject(
     _id: string
-  ): Promise<AutoUpdated<T>>;
+  ): Promise<any>;
   public abstract createObject(
     data: IsData<InstanceType<T>>
-  ): Promise<AutoUpdated<T>>;
+  ): Promise<any>;
 }

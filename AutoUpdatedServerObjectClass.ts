@@ -1,42 +1,57 @@
-import { IObjectWithTypegooseFunction } from "@typegoose/typegoose/lib/types.js";
-import { Types, Document } from "mongoose";
 import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
 import { AutoUpdateServerManager } from "./AutoUpdateServerManagerClass.js";
 import "reflect-metadata";
 import { DefaultEventsMap, Server } from "socket.io";
-import { Constructor, UnboxConstructor, LoggersType, EventEmitter3, AutoProps, IsData, ServerUpdateRequest, InstanceOf } from "./CommonTypes.js";
-import { Paths, PathValueOf } from "./CommonTypes_server.js";
+import {
+  Constructor,
+  UnboxConstructor,
+  LoggersType,
+  EventEmitter3,
+  AutoProps,
+  IsData,
+  ServerUpdateRequest,
+  InstanceOf,
+} from "./CommonTypes.js";
+import { Paths, PathValueOf, Unref, UnwrapRef } from "./CommonTypes_server.js";
+import { DocumentType } from "@typegoose/typegoose";
 
-type SocketType = Server<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, any>;
+type SocketType = Server<
+  DefaultEventsMap,
+  DefaultEventsMap,
+  DefaultEventsMap,
+  any
+>;
 
-export type AutoUpdated<T extends Constructor<any>> = AutoUpdatedServerObject<T> & UnboxConstructor<T>;
+export type AutoUpdated<T extends Constructor<any>> =
+  AutoUpdatedServerObject<T> & UnwrapRef<UnboxConstructor<T>>;
 
 export async function createAutoUpdatedClass<C extends Constructor<any>>(
   classParam: C,
   socket: SocketType,
-  data: DocWithProps<InstanceType<C>>,
+  data: DocumentType<C>,
   loggers: LoggersType,
-  autoClasser: AutoUpdateServerManager<any>,
+  parentClasser: AutoUpdateServerManager<any>,
   emitter: EventEmitter3
-): Promise<AutoProps<C> & AutoUpdated<InstanceType<C>> & InstanceType<C>> {
-  const instance = new (class extends AutoUpdatedServerObject< 
-    InstanceType<C>
-  > {})(
+): Promise<
+  AutoProps<UnwrapRef<C>> &
+    AutoUpdated<InstanceType<C>> &
+    UnwrapRef<InstanceType<C>>
+> {
+  const instance = new (class extends AutoUpdatedServerObject<C> {})(
     socket,
     data,
     loggers,
-    Reflect.getMetadata(
-      "props",
-      classParam.prototype
-    ) as (keyof InstanceType<C>)[],
+    Reflect.getMetadata("props", classParam.prototype) as (keyof C)[],
     classParam.name,
     classParam,
-    autoClasser,
+    parentClasser,
     emitter
   );
   await instance.isLoadedAsync();
   await instance.checkAutoStatusChange();
-  return instance as AutoProps<C> & AutoUpdated<InstanceType<C>> & InstanceType<C>;
+  return instance as AutoProps<UnwrapRef<C>> &
+    AutoUpdated<InstanceType<C>> &
+    UnwrapRef<InstanceType<C>>;
 }
 
 // ---------------------- Class ----------------------
@@ -44,12 +59,12 @@ export abstract class AutoUpdatedServerObject<
   T extends Constructor<any>
 > extends AutoUpdatedClientObject<T> {
   protected readonly isServer: boolean = true;
-  private readonly entry: DocWithProps<T>;
-  protected override autoClasser: AutoUpdateServerManager<any>;
+  private readonly entry: DocumentType<T>;
+  protected declare parentClasser: AutoUpdateServerManager<any>;
 
   constructor(
     socket: SocketType,
-    data: DocWithProps<T>,
+    data: DocumentType<T>,
     loggers: {
       info: (...args: any[]) => void;
       debug: (...args: any[]) => void;
@@ -59,37 +74,41 @@ export abstract class AutoUpdatedServerObject<
     properties: (keyof T)[],
     className: string,
     classProp: Constructor<T>,
-    autoClasser: AutoUpdateServerManager<any>,
+    parentClasser: AutoUpdateServerManager<any>,
     emitter: EventEmitter3
   ) {
     super(
       socket as any,
-      data.toObject(),
+      data.toObject() as any,
       loggers,
       properties,
       className,
       classProp,
-      autoClasser,
+      parentClasser as any,
       emitter
     );
-    this.autoClasser = autoClasser;
+    this.parentClasser = parentClasser;
     this.entry = data;
   }
 
   public setValue_<K extends Paths<InstanceOf<T>>>(
     key: K,
-    val: PathValueOf<T, K>
+    val: Unref<PathValueOf<T, K>>
   ): Promise<{ success: boolean; msg: string }> {
     return this.setValue__(key, val);
   }
   protected handleNewObject(_data: IsData<T>) {
     throw new Error("Cannot create new objects like this.");
   }
-  protected async setValueInternal(key: string, value: any): Promise<{ success: boolean, message: string }> {
+  protected async setValueInternal(
+    key: string,
+    value: any
+  ): Promise<{ success: boolean; message: string }> {
     try {
-      await (
-        this.autoClasser.classers[this.className] as AutoUpdateServerManager<any>
-      ).model.updateOne({ _id: this.data._id }, { $set: { [key]: value } });
+      await this.parentClasser.classers[this.className].model.updateOne(
+        { _id: this.data._id },
+        { $set: { [key]: value } }
+      );
 
       const update: ServerUpdateRequest<T> = this.makeUpdate(key, value);
       this.socket.emit("update" + this.className + this.data._id, update);
@@ -114,16 +133,17 @@ export abstract class AutoUpdatedServerObject<
   }
 
   public override async checkAutoStatusChange() {
-    const neededStatus = await this.autoClasser.options?.autoStatusDefinitions?.definition(this) as any;
-    const statusPath = this.autoClasser.options?.autoStatusDefinitions?.statusProperty as any
-    if(!neededStatus || !statusPath) return;
-    const currentStatus = this.getValue(this.autoClasser.options?.autoStatusDefinitions?.statusProperty as any)
+    const neededStatus =
+      (await this.parentClasser.options?.autoStatusDefinitions?.definition(
+        this
+      )) as any;
+    const statusPath = this.parentClasser.options?.autoStatusDefinitions
+      ?.statusProperty as any;
+    if (!neededStatus || !statusPath) return;
+    const currentStatus = this.getValue(
+      this.parentClasser.options?.autoStatusDefinitions?.statusProperty as any
+    );
     if (neededStatus === currentStatus) return;
     this.setValue(statusPath, neededStatus);
   }
-  
 }
-
-export type DocWithProps<T> = Document &
-  Omit<T & { _id: Types.ObjectId; __v: number }, "typegooseName"> &
-  IObjectWithTypegooseFunction;

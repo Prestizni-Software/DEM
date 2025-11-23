@@ -1,6 +1,6 @@
 import { Socket } from "socket.io-client";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
-import { createAutoUpdatedClass } from "./AutoUpdatedClientObjectClass.js";
+import { AutoUpdated, createAutoUpdatedClass } from "./AutoUpdatedClientObjectClass.js";
 import { Constructor, IsData, LoggersType } from "./CommonTypes.js";
 import EventEmitter from "eventemitter3";
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
@@ -55,16 +55,19 @@ export class AutoUpdateClientManager<
   T extends Constructor<any>
 > extends AutoUpdateManager<T> {
   private readonly token;
+  protected classes: { [_id: string]: AutoUpdated<T> } = {};
+    public readonly classers: Record<string, AutoUpdateClientManager<any>>;
   constructor(
     classParam: T,
     loggers: LoggersType,
     socket: Socket,
-    classers: Record<string, AutoUpdateManager<any>>,
+    classers: Record<string, AutoUpdateClientManager<any>>,
     emitter: EventEmitter,
     token: string
   ) {
     
     super(classParam, socket, loggers, classers, emitter);
+    this.classers = classers;
     this.token = token;
     socket.emit("startup" + classParam.name, async (data: string[]) => {
       this.loggers.debug(
@@ -127,6 +130,20 @@ export class AutoUpdateClientManager<
         this.loggers.error(error.stack);
       }
     });
+  }
+
+  public getObject(
+    _id: string
+  ): AutoUpdated<T> | null {
+    return this.classes[_id];
+  }
+
+  public get objects(): { [_id: string]: AutoUpdated<T> } {
+    return this.classes;
+  }
+
+  public get objectsAsArray(): AutoUpdated<T>[] {
+    return Object.values(this.classes);
   }
 
   protected async handleGetMissingObject(_id: string) {

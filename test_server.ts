@@ -1,5 +1,4 @@
 import { mongoose, Ref, prop } from "@typegoose/typegoose";
-import { PathValueOf, Paths } from "./CommonTypes_server.js";
 import {
   AUSManagerFactory,
   createAutoStatusDefinitions,
@@ -7,13 +6,12 @@ import {
 import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
 import { Objekt, Status } from "./TestTypes.js";
-import { ObjectId } from "bson";
-import { classProp, classRef, IsData } from "./CommonTypes.js";
-
+import { classProp, classRef } from "./CommonTypes.js";
+import { Types } from "mongoose";
 
 export class Test {
   @classProp
-  public _id!: string | ObjectId;
+  public _id!: Types.ObjectId;
 
   @prop({ required: true })
   @classProp
@@ -28,17 +26,23 @@ export class Test {
   public description!: string | null;
 
   @prop({ required: false })
-  @classProp @classRef("Test")
+  @classProp
+  @classRef("Test")
   public ref!: Ref<Test> | null;
+
+  @prop({ required: true, default: [] })
+  @classProp
+  @classRef("Test")
+  public refarr!: Ref<Test>[];
 
   @prop({ required: false })
   @classProp
-  public obj!:Objekt | null
+  public obj!: Objekt | null;
 }
 
 console.log("Start");
 const server = new Server();
-server.listen(3000);
+server.listen(3001);
 const io = new SocketServer(server, { cors: { origin: "*" } });
 
 await mongoose.connect("mongodb://localhost:27017/GeoDB", { timeoutMS: 5000 });
@@ -52,7 +56,7 @@ const managers = await AUSManagerFactory(
           "status",
           Status,
           async (obj) => {
-            if(obj.description) return;
+            if (obj.description) return;
             if (obj.active) return Status.ACTIVE;
             return Status.INACTIVE;
           }
@@ -70,22 +74,27 @@ const managers = await AUSManagerFactory(
 );
 console.log("CREATING OBJECT WITH active = true, status = INACTIVE");
 
-
 const obj = managers.Test.getObject("69159ff15e4f33ec695ce236");
-const obj2 = managers.Test.getObject("6915b412a11536e6b4a70d9b");
 
+const obj2 = managers.Test.getObject("6915b412a11536e6b4a70d9b");
 
 if (!obj || !obj2) throw new Error("No obj");
 
 console.log(obj.status);
 
 console.log("UPDATING ACTIVE STATUS TO TRUE");
-await obj.setValue("active", true);
-await obj.setValue("active", false);
+await obj.setValue_("active", true);
+await obj.setValue_("active", false);
 
-console.log(obj.status);
+await obj.setValue_("ref", obj2._id);
+
+const refarr = obj.refarr;
+refarr.push(obj2._id);
+await obj.setValue_("refarr", refarr.map((r) => r._id));
+
+const testik = obj.ref;
 
 console.log("UPDATING ACTIVE STATUS TO FALSE");
-await obj.setValue("active", false);
+await obj.setValue_("active", false);
 
 console.log(obj.status);

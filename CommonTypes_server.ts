@@ -8,6 +8,7 @@ import {
   Split,
   StripPrototypePrefix,
 } from "./CommonTypes";
+import { Types } from "mongoose";
 
 // ---------------------- DeRef ----------------------
 export type NonOptional<T> = Exclude<T, null | undefined>;
@@ -19,6 +20,8 @@ export type DeRef<T> = {
     ? U
     : T[K];
 };
+
+export type Unref<T> = [T] extends [Ref<infer U>] ? U | string | Types.ObjectId : T;
 
 export type RefToId<T> = {
   [K in keyof T]: T[K] extends Ref<infer U> ? U | string : T[K];
@@ -79,3 +82,17 @@ export type PathValueOf<
   P extends string,
   Depth extends number = 6
 > = PathValue<InstanceOf<T>, Split<P>, Depth>;
+
+export type UnwrapRef<T, D extends number = 5> =
+  // stop when depth = 0
+  D extends 0
+    ? T
+    : T extends Types.ObjectId
+    ? T
+    : T extends Ref<infer U>
+    ? UnwrapRef<U, Prev[D]>
+    : T extends (infer A)[]
+    ? UnwrapRef<A, Prev[D]>[]
+    : T extends object
+    ? { [K in keyof T]: UnwrapRef<T[K], Prev[D]> }
+    : T;

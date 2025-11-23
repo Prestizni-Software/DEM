@@ -1,6 +1,6 @@
 import { Server, Socket } from "socket.io";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
-import { createAutoUpdatedClass } from "./AutoUpdatedServerObjectClass.js";
+import { AutoUpdated, createAutoUpdatedClass } from "./AutoUpdatedServerObjectClass.js";
 import {
   Constructor,
   EventEmitter3,
@@ -80,7 +80,7 @@ export async function AUSManagerFactory<
   loggers: LoggersType,
   socket: Server,
   emitter?: EventEmitter3
-): Promise<{ [K in keyof T]: AutoUpdateServerManager<T[K]> }> {
+): Promise<{ [K in keyof T]: T[K] & AutoUpdateServerManager<T[K]> }> {
   emitter = emitter ?? new EventEmitter();
   const classers: any = {};
   let i = 0;
@@ -124,7 +124,7 @@ export async function AUSManagerFactory<
       loggers.debug(`Client disconnected: ${socket.id}`);
     });
   });
-  return classers as WrappedInstances<T>;
+  return classers;
 }
 
 export class AutoUpdateServerManager<
@@ -134,16 +134,20 @@ export class AutoUpdateServerManager<
   private readonly clientSockets: Set<Socket> = new Set<Socket>();
   public readonly options?: AUSOption<T, any>;
   private readonly doDebug = false;
+  protected override classes: { [_id: string]: AutoUpdated<T> } = {};
+  public readonly classers: Record<string, AutoUpdateServerManager<any>>;
+  private readonly token?: string;
   constructor(
     classParam: T,
     loggers: LoggersType,
     socket: Server,
     model: ReturnModelType<T, BeAnObject>,
-    classers: Record<string, AutoUpdateManager<any>>,
+    classers: Record<string, AutoUpdateServerManager<any>>,
     emitter: EventEmitter3,
     options?: AUSOption<T, any>
   ) {
     super(classParam, socket, loggers, classers, emitter);
+    this.classers = classers;
     this.model = model;
     this.options = options;
   }
@@ -272,6 +276,20 @@ export class AutoUpdateServerManager<
     socket.on("disconnect", () => {
       this.clientSockets.delete(socket);
     });
+  }
+  
+  public getObject(
+    _id: string
+  ): AutoUpdated<T> | null {
+    return this.classes[_id];
+  }
+
+  public get objects(): { [_id: string]: AutoUpdated<T> } {
+    return this.classes;
+  }
+
+  public get objectsAsArray(): AutoUpdated<T>[] {
+    return Object.values(this.classes);
   }
 
   protected async handleGetMissingObject(_id: string) {
