@@ -8,37 +8,22 @@ import {
   LoggersTypeInternal,
   Paths,
   PathValueOf,
-  Prev,
   ServerResponse,
   ServerUpdateRequest,
 } from "./CommonTypes.js";
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
-import { AutoUpdateClientManager } from "./AutoUpdateClientManagerClass.js";
+import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 type SocketType = Socket<any, any>;
-export type UnwrapRef<T, D extends number = 5> =
-  // stop when depth = 0
-  D extends 0
-    ? T
-    : // unwrap Ref<U>
-    T extends any
-    ? UnwrapRef<T, Prev[D]>
-    : T extends (infer A)[]
-    ? UnwrapRef<A, Prev[D]>[]
-    : T extends object
-    ? { [K in keyof T]: UnwrapRef<T[K], Prev[D]> }
-    : T;
-export type AutoUpdated<T extends Constructor<any>> =
-  AutoUpdatedClientObject<T> & UnwrapRef<InstanceOf<T>>;
 export async function createAutoUpdatedClass<C extends Constructor<any>>(
   classParam: C,
   socket: SocketType,
   data: IsData<InstanceType<C>> | string,
   loggers: LoggersType,
-  autoClassers: AutoUpdateClientManager<any>,
+  autoClassers: AutoUpdateManager<any>,
   emitter: EventEmitter3,
   token: string
-): Promise<AutoUpdated<C>> {
+): Promise<any> {
   if (typeof data !== "string") {
     checkForMissingRefs<C>(data as any, [], classParam, autoClassers);
     processIsRefProperties(data, classParam.prototype, undefined, [], loggers);
@@ -76,7 +61,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
   protected readonly emitter: EventEmitter3;
   protected readonly properties: (keyof T)[];
   protected readonly className: string;
-  protected autoClasser: AutoUpdateClientManager<any>;
+  protected autoClasser: AutoUpdateManager<any>;
   protected isLoadingReferences = false;
   public readonly classProp: Constructor<T>;
   private readonly EmitterID = new ObjectId().toHexString();
@@ -108,7 +93,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     properties: (keyof T)[],
     className: string,
     classProperty: Constructor<T>,
-    autoClasser: AutoUpdateClientManager<any>,
+    autoClasser: AutoUpdateManager<any>,
     emitter: EventEmitter3,
     token?: string
   ) {
@@ -297,7 +282,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     }
   }
 
-  protected findReference(id: string | ObjectId): AutoUpdated<any> | undefined {
+  protected findReference(id: string | ObjectId): any {
     if (typeof id !== "string" && !ObjectId.isValid(id)) return id;
     for (const classer of Object.values(this.autoClasser.classers)) {
       const result = classer.getObject(id.toString());
@@ -337,7 +322,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
           try {
             temp = this.resolveReference(
               obj[path[i]]?.toString()
-            ) as AutoUpdated<any>;
+            ) as any;
           } catch (error: any) {
             message +=
               "\n Error: likely undefined property on path: " +
@@ -637,7 +622,7 @@ function checkForMissingRefs<C extends Constructor<any>>(
   data: IsData<InstanceType<C>>,
   props: any,
   classParam: C,
-  autoClassers: AutoUpdateClientManager<any>
+  autoClassers: AutoUpdateManager<any>
 ) {
   if (typeof data !== "string") {
     const entryKeys = Object.keys(data);
@@ -656,7 +641,7 @@ function checkForMissingRefs<C extends Constructor<any>>(
 function findMissingObjectReference(
   data: any,
   prop: any,
-  autoClassers: { [key: string]: AutoUpdateClientManager<any> },
+  autoClassers: { [key: string]: AutoUpdateManager<any> },
   acName: string
 ) {
   let foundAnAC = false;

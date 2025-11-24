@@ -1,10 +1,17 @@
-import { Constructor, EventEmitter3, IsData, LoggersType, LoggersTypeInternal } from "./CommonTypes.js";
+import {
+  Constructor,
+  EventEmitter3,
+  IsData,
+  LoggersType,
+  LoggersTypeInternal,
+} from "./CommonTypes.js";
 import "reflect-metadata";
 export abstract class AutoUpdateManager<T extends Constructor<any>> {
   protected abstract classes: { [_id: string]: any };
   public socket: any;
   protected classParam: T;
   protected properties: (keyof T)[];
+  public readonly classers: Record<string, AutoUpdateManager<any>>;
   protected loggers: LoggersTypeInternal = {
     info: () => {},
     debug: () => {},
@@ -20,12 +27,11 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     classers: Record<string, AutoUpdateManager<any>>,
     emitter: EventEmitter3
   ) {
+    this.classers = classers;
     this.emitter = emitter;
-    this.emitter.on("*",(e) =>
-    {
+    this.emitter.on("*", (e) => {
       console.log("a");
-      
-    })
+    });
     this.socket = socket;
     this.classParam = classParam;
     this.properties = Reflect.getMetadata(
@@ -38,7 +44,12 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
 
   public async isLoadedAsync(): Promise<boolean> {
     if (this.isLoaded) return this.isLoaded;
-    await new Promise((resolve) => this.emitter.on("ManagerLoaded"+this.classParam.name+this.className, resolve));
+    await new Promise((resolve) =>
+      this.emitter.on(
+        "ManagerLoaded" + this.classParam.name + this.className,
+        resolve
+      )
+    );
     this.isLoaded = true;
     return this.isLoaded;
   }
@@ -46,7 +57,7 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
   public async deleteObject(_id: string): Promise<void> {
     if (typeof this.classes[_id] === "string")
       this.classes[_id] = await this.handleGetMissingObject(this.classes[_id]);
-    (this.classes[_id]).destroy();
+    this.classes[_id].destroy();
     delete this.classes[_id];
   }
 
@@ -58,10 +69,10 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     return this.classParam.name;
   }
 
-  protected abstract handleGetMissingObject(
-    _id: string
-  ): Promise<any>;
-  public abstract createObject(
-    data: IsData<InstanceType<T>>
-  ): Promise<any>;
+  protected abstract handleGetMissingObject(_id: string): Promise<any>;
+  public abstract createObject(data: IsData<InstanceType<T>>): Promise<any>;
+  public abstract getObject(_id: string): any;
+  public abstract get objects(): { [_id: string]: any };
+
+  public abstract get objectsAsArray(): any[];
 }

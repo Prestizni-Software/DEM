@@ -1,7 +1,7 @@
 import { Socket } from "socket.io-client";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
-import { AutoUpdated, createAutoUpdatedClass } from "./AutoUpdatedClientObjectClass.js";
-import { Constructor, IsData, LoggersType } from "./CommonTypes.js";
+import { AutoUpdatedClientObject, createAutoUpdatedClass } from "./AutoUpdatedClientObjectClass.js";
+import { Constructor, InstanceOf, IsData, LoggersType, Prev } from "./CommonTypes.js";
 import EventEmitter from "eventemitter3";
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateClientManager<T[K]>;
@@ -56,7 +56,7 @@ export class AutoUpdateClientManager<
 > extends AutoUpdateManager<T> {
   private readonly token;
   protected classes: { [_id: string]: AutoUpdated<T> } = {};
-    public readonly classers: Record<string, AutoUpdateClientManager<any>>;
+  public readonly classers: Record<string, AutoUpdateClientManager<any>>;
   constructor(
     classParam: T,
     loggers: LoggersType,
@@ -146,7 +146,7 @@ export class AutoUpdateClientManager<
     return Object.values(this.classes);
   }
 
-  protected async handleGetMissingObject(_id: string) {
+  protected async handleGetMissingObject(_id: string):Promise<AutoUpdated<T>> {
     if (!this.classers) throw new Error(`No classers.`);
     return await createAutoUpdatedClass(
       this.classParam,
@@ -159,7 +159,7 @@ export class AutoUpdateClientManager<
     );
   }
 
-  public async createObject(data: Omit<IsData<InstanceType<T>>, "_id">) {
+  public async createObject(data: Omit<IsData<InstanceType<T>>, "_id">):Promise<AutoUpdated<T>> {
     if (!this.classers) throw new Error(`No classers.`);
     const object = await createAutoUpdatedClass(
       this.classParam,
@@ -174,3 +174,11 @@ export class AutoUpdateClientManager<
     return object;
   }
 }
+
+export type UnwrapRef<T, D extends number = 5> =
+  // stop when depth = 0
+  D extends 0 ? T : T extends any ? UnwrapRef<T, Prev[D]> : T extends (infer A)[] ? UnwrapRef<A, Prev[D]>[] : T extends object ? {
+    [K in keyof T]: UnwrapRef<T[K], Prev[D]>;
+  } : T;
+export type AutoUpdated<T extends Constructor<any>> =
+  AutoUpdatedClientObject<T> & UnwrapRef<InstanceOf<T>>;
