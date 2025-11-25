@@ -176,7 +176,6 @@ export class AutoUpdateClientManager<
 }
 
 export type UnwrapRef<T, D extends number = 5> =
-  // stop when depth = 0
   D extends 0 ? T : T extends any ? UnwrapRef<T, Prev[D]> : T extends (infer A)[] ? UnwrapRef<A, Prev[D]>[] : T extends object ? {
     [K in keyof T]: UnwrapRef<T[K], Prev[D]>;
   } : T;
