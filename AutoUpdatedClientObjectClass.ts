@@ -6,10 +6,11 @@ import {
   IsData,
   LoggersType,
   LoggersTypeInternal,
-  Paths,
   PathValueOf,
   ServerResponse,
   ServerUpdateRequest,
+  Paths,
+  UnboxConstructor,
 } from "./CommonTypes.js";
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
@@ -21,15 +22,13 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   data: IsData<InstanceType<C>> | string,
   loggers: LoggersType,
   autoClassers: AutoUpdateManager<any>,
-  emitter: EventEmitter3,
-  token: string
+  emitter: EventEmitter3
 ): Promise<any> {
   if (typeof data !== "string") {
-    checkForMissingRefs<C>(data as any, [], classParam, autoClassers);
     processIsRefProperties(data, classParam.prototype, undefined, [], loggers);
   }
   const props = Reflect.getMetadata("props", classParam.prototype);
-  const instance = new (class extends AutoUpdatedClientObject<C> {})(
+  const instance = new AutoUpdatedClientObject<C>(
     socket,
     data,
     loggers,
@@ -37,16 +36,14 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
     classParam.name,
     classParam,
     autoClassers,
-    emitter,
-    token
+    emitter
   );
 
-  await instance.isLoadedAsync();
-
+  await instance.isPreLoadedAsync();
   return instance as any;
 }
 
-export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
+export class AutoUpdatedClientObject<T> {
   protected readonly socket: SocketType;
   //protected updates: string[] = [];
   protected data: IsData<T>;
@@ -66,24 +63,26 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
   public readonly classProp: Constructor<T>;
   private readonly EmitterID = new ObjectId().toHexString();
   private readonly token?: string;
-  private readonly loadShit = async () => {
-    if (this.isLoaded()) {
+  private readonly loadShit = async (): Promise<void> => {
+    if (this.isLoaded) {
       try {
         await this.loadForceReferences();
       } catch (error) {
         this.loggers.error(error);
       }
       this.isLoadingReferences = false;
-
       return;
     }
-    this.emitter.on("loaded" + this.EmitterID, async () => {
-      try {
-        await this.loadForceReferences();
-      } catch (error) {
-        this.loggers.error(error);
-      }
-      this.isLoadingReferences = false;
+    return new Promise((resolve) => {
+      this.emitter.on("pre-loaded" + this.EmitterID, async () => {
+        try {
+          await this.loadForceReferences();
+        } catch (error) {
+          this.loggers.error(error);
+        }
+        this.isLoadingReferences = false;
+        resolve();
+      });
     });
   };
   constructor(
@@ -94,10 +93,8 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
     className: string,
     classProperty: Constructor<T>,
     autoClasser: AutoUpdateManager<any>,
-    emitter: EventEmitter3,
-    token?: string
+    emitter: EventEmitter3
   ) {
-    this.token = token;
     this.emitter = emitter;
     this.classProp = classProperty;
     this.isLoadingReferences = true;
@@ -122,29 +119,17 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
           if (!res.success) {
             this.isLoading = false;
             this.loggers.error("Could not load data from server:", res.message);
-            this.emitter.emit("loaded" + this.EmitterID);
+            this.emitter.emit("pre-loaded" + this.EmitterID);
             return;
           }
-          checkForMissingRefs<T>(
-            res.data as any,
-            properties,
-            classProperty as any,
-            autoClasser
-          );
           this.data = res.data as IsData<T>;
           this.isLoading = false;
-          this.emitter.emit("loaded" + this.EmitterID);
+          this.emitter.emit("pre-loaded" + this.EmitterID);
         }
       );
       this.data = { _id: data } as IsData<T>;
     } else {
       this.isLoading = true;
-      checkForMissingRefs<T>(
-        data as any,
-        properties,
-        classProperty as any,
-        autoClasser
-      );
       this.data = data as any;
 
       if (!this.data._id || this.data._id === "")
@@ -167,24 +152,22 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
       if (!res.success) {
         this.isLoading = false;
         this.loggers.error("Could not create data on server:", res.message);
-        this.emitter.emit("loaded" + this.EmitterID);
+        this.emitter.emit("pre-loaded" + this.EmitterID);
         throw new Error("Error creating new object: " + res.message);
       }
-      checkForMissingRefs<T>(
-        res.data as any,
-        this.properties,
-        this.classProp as any,
-        this.autoClasser
-      );
       this.data = res.data as IsData<T>;
       this.isLoading = false;
-      this.emitter.emit("loaded" + this.EmitterID);
+      this.emitter.emit("pre-loaded" + this.EmitterID);
     });
   }
 
   public get extractedData(): {
-    [K in keyof InstanceType<T>]: InstanceOf<InstanceType<T>>[K];
-  } {
+    [K in keyof T]: T[K];
+  } extends { prototype: infer U }
+    ? U
+    : {
+        [K in keyof T]: T[K];
+      } {
     const extracted = processIsRefProperties(
       this.data,
       this.classProp.prototype,
@@ -194,24 +177,32 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
       this.loggers
     ).newData;
 
-    return structuredClone(extracted) as {
-      [K in keyof InstanceType<T>]: InstanceOf<InstanceType<T>>[K];
-    };
+    return structuredClone(extracted);
   }
 
-  public isLoaded(): boolean {
+  public get isLoaded(): boolean {
     return !this.isLoading;
   }
 
-  public async isLoadedAsync(): Promise<boolean> {
+  public async isPreLoadedAsync(): Promise<boolean> {
     await this.loadShit();
     return this.isLoading
       ? new Promise((resolve) => {
-          this.emitter.on("loaded" + this.EmitterID, async () => {
+          this.emitter.on("pre-loaded" + this.EmitterID, async () => {
             resolve(this.isLoading === false);
           });
         })
       : true;
+  }
+
+  public async loadMissingReferences(): Promise<void> {
+    checkForMissingRefs(
+      this.data,
+      this.properties,
+      this.classProp,
+      this.autoClasser
+    );
+    this.generateSettersAndGetters();
   }
 
   private openSockets() {
@@ -320,9 +311,7 @@ export abstract class AutoUpdatedClientObject<T extends Constructor<any>> {
         ) {
           let temp;
           try {
-            temp = this.resolveReference(
-              obj[path[i]]?.toString()
-            ) as any;
+            temp = this.resolveReference(obj[path[i]]?.toString()) as any;
           } catch (error: any) {
             message +=
               "\n Error: likely undefined property on path: " +
@@ -578,7 +567,7 @@ export function processIsRefProperties(
     if (Reflect.getMetadata("isRef", target, prop)) {
       if (Array.isArray(instance[prop]))
         newData[prop] = instance[prop].map((item: any) =>
-          typeof item === "string" ? item : item?._id.toString()
+          typeof item === "string" ? item : item?._id?.toString()
         );
       else
         newData[prop] =
@@ -628,7 +617,7 @@ function checkForMissingRefs<C extends Constructor<any>>(
     const entryKeys = Object.keys(data);
     for (const prop of props) {
       const pointer = getMetadataRecursive(
-        "isRef",
+        "refsTo",
         classParam.prototype,
         prop.toString()
       );
@@ -651,8 +640,14 @@ function findMissingObjectReference(
     }
     foundAnAC = true;
     for (const obj of ac.objectsAsArray) {
-      const found = Object.values(obj.extractedData).find((value) =>
-        Array.isArray(value) ? value.includes(data._id) : value === data._id
+      const eData = obj.extractedData;
+      const found = Object.keys(eData).find((key) =>
+        Array.isArray(eData[key])
+          ? eData[key]
+              .map((v: any) => v?.toString?.())
+              .includes(data._id.toString()) && key !== "_id"
+          : eData[key]?.toString?.() === data?._id?.toString?.() &&
+            key !== "_id"
       );
       if (found) {
         data[prop] = obj._id;

@@ -12,6 +12,8 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
   protected classParam: T;
   protected properties: (keyof T)[];
   public readonly classers: Record<string, AutoUpdateManager<any>>;
+  protected preloaded = false;
+  protected waitingToResolveReferences: { [_id: string]: string } = {};
   protected loggers: LoggersTypeInternal = {
     info: () => {},
     debug: () => {},
@@ -19,7 +21,6 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     warn: () => {},
   };
   protected emitter: EventEmitter3;
-  private isLoaded = false;
   constructor(
     classParam: T,
     socket: any,
@@ -42,16 +43,10 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     this.loggers = loggers as LoggersTypeInternal;
   }
 
-  public async isLoadedAsync(): Promise<boolean> {
-    if (this.isLoaded) return this.isLoaded;
-    await new Promise((resolve) =>
-      this.emitter.on(
-        "ManagerLoaded" + this.classParam.name + this.className,
-        resolve
-      )
-    );
-    this.isLoaded = true;
-    return this.isLoaded;
+  public async loadReferences(): Promise<void> {
+    for (const obj of this.objectsAsArray) {
+      await obj.loadMissingReferences();
+    }
   }
 
   public async deleteObject(_id: string): Promise<void> {

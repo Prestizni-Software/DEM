@@ -7,10 +7,10 @@ import {
   UnboxConstructor,
   LoggersType,
   EventEmitter3,
-  AutoProps,
   IsData,
   ServerUpdateRequest,
   InstanceOf,
+  Prev
 } from "./CommonTypes.js";
 import { Paths, PathValueOf, Unref, UnwrapRef } from "./CommonTypes_server.js";
 import { DocumentType } from "@typegoose/typegoose";
@@ -22,8 +22,8 @@ type SocketType = Server<
   any
 >;
 
-export type AutoUpdated<T extends Constructor<any>> =
-  AutoUpdatedServerObject<T> & UnwrapRef<UnboxConstructor<T>>;
+export type AutoUpdated<T, D extends number = 10> =
+  AutoUpdatedServerObject<T> & UnwrapRef<UnboxConstructor<T>, Prev[D]>;
 
 export async function createAutoUpdatedClass<C extends Constructor<any>>(
   classParam: C,
@@ -32,12 +32,8 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   loggers: LoggersType,
   parentClasser: AutoUpdateServerManager<any>,
   emitter: EventEmitter3
-): Promise<
-  AutoProps<UnwrapRef<C>> &
-    AutoUpdated<InstanceType<C>> &
-    UnwrapRef<InstanceType<C>>
-> {
-  const instance = new (class extends AutoUpdatedServerObject<C> {})(
+): Promise<AutoUpdated<InstanceType<C>>> {
+  const instance = new AutoUpdatedServerObject<C>(
     socket,
     data,
     loggers,
@@ -47,16 +43,14 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
     parentClasser,
     emitter
   );
-  await instance.isLoadedAsync();
+  await instance.isPreLoadedAsync();
   await instance.checkAutoStatusChange();
-  return instance as AutoProps<UnwrapRef<C>> &
-    AutoUpdated<InstanceType<C>> &
-    UnwrapRef<InstanceType<C>>;
+  return instance as AutoUpdated<InstanceType<C>>;
 }
 
 // ---------------------- Class ----------------------
-export abstract class AutoUpdatedServerObject<
-  T extends Constructor<any>
+export class AutoUpdatedServerObject<
+  T
 > extends AutoUpdatedClientObject<T> {
   protected readonly isServer: boolean = true;
   private readonly entry: DocumentType<T>;

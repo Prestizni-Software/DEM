@@ -1,6 +1,9 @@
 import { Server, Socket } from "socket.io";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
-import { AutoUpdated, createAutoUpdatedClass } from "./AutoUpdatedServerObjectClass.js";
+import {
+  AutoUpdated,
+  createAutoUpdatedClass,
+} from "./AutoUpdatedServerObjectClass.js";
 import {
   Constructor,
   EventEmitter3,
@@ -49,15 +52,25 @@ export type AUSDefinitions<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: ServerManagerDefinition<T[K], T>;
 };
 
+type AccessMiddleware<
+  C extends Constructor<any>,
+  T extends Record<string, Constructor<any>>
+> = {
+  login: (token: string) => Promise<boolean>;
+  access: (
+    data: InstanceType<C>,
+    managers: {
+      [K in keyof T]: AutoUpdateServerManager<T[K]>;
+    },
+    userId: string
+  ) => Promise<IsData<InstanceType<C>> | false>;
+};
+
 export type AUSOption<
   C extends Constructor<any>,
   T extends Record<string, Constructor<any>>
 > = {
-  accessDefinitions?: (
-    data: InstanceType<C>,
-    managers: { [K in keyof T]: AutoUpdateServerManager<T[K]> },
-    userId: string
-  ) => Promise<IsData<InstanceType<C>>>;
+  accessDefinitions?: AccessMiddleware<C, T>;
   autoStatusDefinitions?: AutoStatusDefinitions<
     C,
     { [k: string]: string | number },
@@ -73,6 +86,37 @@ export type ServerManagerDefinition<
   options?: AUSOption<C, T>;
 };
 
+function setupSocketMiddleware(
+  socket_server: Server,
+  loggers: LoggersType,
+  secured?: AccessMiddleware<any, any>
+) {
+  socket_server.use(async (socket, next) => {
+    if (secured?.login) {
+      if (!(await secured.login(socket.handshake.auth.token))) {
+        (loggers.warn ?? loggers.info)(
+          "Someone tried to connect with invalid token: (" +
+            socket.handshake.auth.token +
+            ")\nWith ID:" +
+            socket.id +
+            "\nFrom: " +
+            socket.handshake.address
+        );
+        return socket.disconnect(true);
+      }
+    }
+
+    socket.use((event, next) => {
+      loggers.debug("Client Event", event[0]);
+      if (secured) {
+        //TODO: check access
+      }
+      next();
+    });
+    next();
+  });
+}
+
 export async function AUSManagerFactory<
   T extends Record<string, Constructor<any>>
 >(
@@ -82,7 +126,8 @@ export async function AUSManagerFactory<
   emitter?: EventEmitter3
 ): Promise<{ [K in keyof T]: T[K] & AutoUpdateServerManager<T[K]> }> {
   emitter = emitter ?? new EventEmitter();
-  const classers: any = {};
+  const classers: { [K in keyof T]: T[K] & AutoUpdateServerManager<T[K]> } =
+    {} as any;
   let i = 0;
   for (const key in defs) {
     loggers.debug(`Creating manager for ${key}`);
@@ -99,7 +144,7 @@ export async function AUSManagerFactory<
       ) as any;
       i++;
       classers[key] = c;
-    } catch (error:any) {
+    } catch (error: any) {
       loggers.error("Error creating manager: " + key);
       loggers.error(error.message);
       loggers.error(error.stack);
@@ -107,17 +152,27 @@ export async function AUSManagerFactory<
     }
     loggers.debug("Loading DB for manager: " + key);
     try {
-      await classers[key].loadDB();
-    } catch (error:any) {
+      setupSocketMiddleware(socket, loggers, def.options?.accessDefinitions);
+    } catch (error: any) {
+      loggers.error("Error setting up socket middleware");
+      loggers.error(error.message);
+      loggers.error(error.stack);
+    }
+    try {
+      await classers[key].preLoad();
+    } catch (error: any) {
       loggers.error("Error loading DB for manager: " + key);
       loggers.error(error.message);
       loggers.error(error.stack);
     }
   }
+  for (const manager of Object.values(classers)) {
+    await manager.loadReferences();
+  }
   socket.on("connection", async (socket) => {
     loggers.debug(`Client connected: ${socket.id}`);
     for (const manager of Object.values(classers)) {
-      (manager as any).registerSocket(socket);
+      manager.registerSocket(socket);
     }
     // Client disconnect
     socket.on("disconnect", () => {
@@ -152,13 +207,21 @@ export class AutoUpdateServerManager<
     this.options = options;
   }
 
-  public async loadDB() {
+  public async preLoad() {
     this.loggers.debug("Loading manager DB " + this.className);
     const docs = await this.model.find({});
     for (const doc of docs) {
       this.classes[(doc as any)._id] =
         this.classes[(doc as any)._id] ??
-        (await this.handleGetMissingObject((doc as any)._id.toString()));
+        (await createAutoUpdatedClass<T>(
+          this.classParam,
+          this.socket,
+          doc as any,
+          this.loggers,
+          this,
+          this.emitter
+        ));
+      await this.classes[(doc as any)._id].isPreLoadedAsync();
     }
     this.loggers.debug(
       "Loaded manager DB " + this.className + " - [" + docs.length + "] entries"
@@ -277,10 +340,8 @@ export class AutoUpdateServerManager<
       this.clientSockets.delete(socket);
     });
   }
-  
-  public getObject(
-    _id: string
-  ): AutoUpdated<T> | null {
+
+  public getObject(_id: string): AutoUpdated<T> | null {
     return this.classes[_id];
   }
 
@@ -296,28 +357,33 @@ export class AutoUpdateServerManager<
     const document = await this.model.findById(_id);
     if (!document) throw new Error(`No document with id ${_id} in DB.`);
     if (!this.classers) throw new Error(`No classers.`);
-    return await createAutoUpdatedClass(
+    const object = await createAutoUpdatedClass<T>(
       this.classParam,
       this.socket,
-      document,
+      document as any,
       this.loggers,
       this,
       this.emitter
     );
+    await object.isPreLoadedAsync();
+    await object.loadMissingReferences();
+    return object;
   }
 
   public async createObject(data: Omit<IsData<InstanceType<T>>, "_id">) {
     if (!this.classers) throw new Error(`No classers.`);
     (data as any)._id = undefined;
     const entry = await this.model.create(data);
-    const object = await createAutoUpdatedClass(
+    const object = await createAutoUpdatedClass<T>(
       this.classParam,
       this.socket,
-      entry,
+      entry as any,
       this.loggers,
       this,
       this.emitter
     );
+    await object.isPreLoadedAsync();
+    await object.loadMissingReferences();
     object.checkAutoStatusChange();
     this.classes[object._id] = object;
     return object;

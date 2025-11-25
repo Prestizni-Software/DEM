@@ -1,5 +1,6 @@
 import { Ref } from "@typegoose/typegoose";
 import {
+  Constructor,
   InstanceOf,
   Join,
   OnlyClassKeys,
@@ -8,7 +9,8 @@ import {
   Split,
   StripPrototypePrefix,
 } from "./CommonTypes";
-import { Types } from "mongoose";
+import { ObjectId, Types } from "mongoose";
+import { AutoUpdated } from "./AutoUpdatedServerObjectClass";
 
 // ---------------------- DeRef ----------------------
 export type NonOptional<T> = Exclude<T, null | undefined>;
@@ -21,7 +23,11 @@ export type DeRef<T> = {
     : T[K];
 };
 
-export type Unref<T> = [T] extends [Ref<infer U>] ? U | string | Types.ObjectId : T;
+export type Unref<T> = [T] extends [Ref<infer U>]
+  ? U extends Constructor<any>
+    ? AutoUpdated<U>
+    : U | ObjectId | string
+  : T;
 
 export type RefToId<T> = {
   [K in keyof T]: T[K] extends Ref<infer U> ? U | string : T[K];
@@ -83,16 +89,25 @@ export type PathValueOf<
   Depth extends number = 6
 > = PathValue<InstanceOf<T>, Split<P>, Depth>;
 
-export type UnwrapRef<T, D extends number = 5> =
-  // stop when depth = 0
+export type UnwrapRef<T, D extends number = 10> =
   D extends 0
     ? T
-    : T extends Types.ObjectId
-    ? T
-    : T extends Ref<infer U>
-    ? UnwrapRef<U, Prev[D]>
+
+    // arrays
     : T extends (infer A)[]
-    ? UnwrapRef<A, Prev[D]>[]
+      ? UnwrapRef<A, Prev[D]>[]
+    : // special case: Ref<ObjectId> → never
+    T extends Ref<infer U>
+      ? U extends Types.ObjectId
+        ? never
+        : AutoUpdated<U, D>
+
+    // leaf Types.ObjectId: return it, do NOT unwrap as never
+    : T extends Types.ObjectId
+      ? Types.ObjectId
+
+    // objects
     : T extends object
-    ? { [K in keyof T]: UnwrapRef<T[K], Prev[D]> }
+      ? { [K in keyof T]: UnwrapRef<T[K], Prev[D]> }
+
     : T;

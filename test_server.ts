@@ -6,7 +6,7 @@ import {
 import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
 import { Objekt, Status } from "./TestTypes.js";
-import { classProp, classRef } from "./CommonTypes.js";
+import { classProp, classRef, populatedRef } from "./CommonTypes.js";
 import { Types } from "mongoose";
 
 export class Test {
@@ -26,18 +26,19 @@ export class Test {
   public description!: string | null;
 
   @prop({ required: false })
-  @classProp
-  @classRef("Test")
+  @classProp @classRef()
   public ref!: Ref<Test> | null;
 
   @prop({ required: true, default: [] })
-  @classProp
-  @classRef("Test")
+  @classProp @classRef()
   public refarr!: Ref<Test>[];
 
   @prop({ required: false })
   @classProp
   public obj!: Objekt | null;
+
+  @classProp @populatedRef("Test")
+  public parent!: Ref<Test> | null;
 }
 
 console.log("Start");
@@ -61,6 +62,12 @@ const managers = await AUSManagerFactory(
             return Status.INACTIVE;
           }
         ),
+        accessDefinitions:{
+          login: async (token: string) => true,
+          access: async (data, managers, userId) => {
+            return false;
+          }
+        }
       },
     },
   },
@@ -74,9 +81,13 @@ const managers = await AUSManagerFactory(
 );
 console.log("CREATING OBJECT WITH active = true, status = INACTIVE");
 
-const obj = managers.Test.getObject("69159ff15e4f33ec695ce236");
+/*for(const obj of managers.Test.objectsAsArray){
+  await obj.destroy();
+}*/
 
-const obj2 = managers.Test.getObject("6915b412a11536e6b4a70d9b");
+const obj = managers.Test.getObject("69258c5082673d1b24da2d1f")
+
+const obj2 = managers.Test.getObject("69258c5082673d1b24da2d21")
 
 if (!obj || !obj2) throw new Error("No obj");
 
@@ -89,12 +100,12 @@ await obj.setValue_("active", false);
 await obj.setValue_("ref", obj2._id);
 
 const refarr = obj.refarr;
+refarr.splice(0, 0);
 refarr.push(obj2._id);
 await obj.setValue_("refarr", refarr.map((r) => r._id));
-
+const test = await obj.parent?.parent?.setValue_("active", true);
 const testik = obj.ref;
 
 console.log("UPDATING ACTIVE STATUS TO FALSE");
 await obj.setValue_("active", false);
-
 console.log(obj.status);

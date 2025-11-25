@@ -1,7 +1,16 @@
 import { Socket } from "socket.io-client";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
-import { AutoUpdatedClientObject, createAutoUpdatedClass } from "./AutoUpdatedClientObjectClass.js";
-import { Constructor, InstanceOf, IsData, LoggersType, Prev } from "./CommonTypes.js";
+import {
+  AutoUpdatedClientObject,
+  createAutoUpdatedClass,
+} from "./AutoUpdatedClientObjectClass.js";
+import {
+  Constructor,
+  IsData,
+  LoggersType,
+  Prev,
+  UnboxConstructor,
+} from "./CommonTypes.js";
 import EventEmitter from "eventemitter3";
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateClientManager<T[K]>;
@@ -13,7 +22,6 @@ export async function AUCManagerFactory<
   defs: T,
   loggers: LoggersType,
   socket: Socket,
-  token: string,
   emitter: EventEmitter = new EventEmitter()
 ): Promise<WrappedInstances<T>> {
   const classers = {} as WrappedInstances<T>;
@@ -26,35 +34,43 @@ export async function AUCManagerFactory<
         loggers,
         socket,
         classers,
-        emitter,
-        token
+        emitter
       );
       classers[key] = c;
+      try {
+        await c.loadFromServer();
+      } catch (error: any) {
+        message += "\n Error loading data from server for manager: " + key;
+        message += "\n " + error.message;
+        loggers.error(message);
+        loggers.error(error.stack);
+        continue;
+      }
     } catch (error: any) {
       message += "\n Error creating manager: " + key;
       message += "\n " + error.message;
-      loggers.error(error.stack);
       loggers.error(message);
-      continue;
-    }
-    try {
-      await classers[key].isLoadedAsync();
-    } catch (error: any) {
-      message += "\n Error creating manager: " + key;
-      message += "\n " + error.message;
       loggers.error(error.stack);
-      loggers.error(message);
       continue;
     }
   }
-
+  for (const key in defs) {
+    try {
+      await classers[key].loadReferences();
+    } catch (error: any) {
+      let message = "Error loading manager: " + key;
+      message += "\n Error resolving references in manager";
+      message += "\n " + error.message;
+      loggers.error(message);
+      loggers.error(error.stack);
+    }
+  }
   return classers;
 }
 
 export class AutoUpdateClientManager<
   T extends Constructor<any>
 > extends AutoUpdateManager<T> {
-  private readonly token;
   protected classes: { [_id: string]: AutoUpdated<T> } = {};
   public readonly classers: Record<string, AutoUpdateClientManager<any>>;
   constructor(
@@ -62,40 +78,14 @@ export class AutoUpdateClientManager<
     loggers: LoggersType,
     socket: Socket,
     classers: Record<string, AutoUpdateClientManager<any>>,
-    emitter: EventEmitter,
-    token: string
+    emitter: EventEmitter
   ) {
-    
     super(classParam, socket, loggers, classers, emitter);
     this.classers = classers;
-    this.token = token;
-    socket.emit("startup" + classParam.name, async (data: string[]) => {
-      this.loggers.debug(
-        "Loading manager DB " +
-          this.className +
-          " - [" +
-          data.length +
-          "] entries"
-      );
+  }
 
-      for (const id of data) {
-        try {
-          this.classes[id] = await this.handleGetMissingObject(id);
-        } catch (error: any) {
-          this.loggers.error(
-            "Error loading object " +
-              id +
-              " from manager " +
-              this.className +
-              " - " +
-              error.message
-          );
-          this.loggers.error(error.stack);
-        }
-      }
-      emitter.emit("ManagerLoaded" + this.classParam.name + this.className);
-    });
-    socket.on("new" + classParam.name, async (id: string) => {
+  private startSocketListeners() {
+    this.socket.on("new" + this.classParam.name, async (id: string) => {
       this.loggers.debug(
         "Applying new object from manager " + this.className + " - " + id
       );
@@ -113,7 +103,7 @@ export class AutoUpdateClientManager<
         this.loggers.error(error.stack);
       }
     });
-    socket.on("delete" + classParam.name, async (id: string) => {
+    this.socket.on("delete" + this.classParam.name, async (id: string) => {
       this.loggers.debug(
         "Applying object deletion from manager " + this.className + " - " + id
       );
@@ -132,9 +122,65 @@ export class AutoUpdateClientManager<
     });
   }
 
-  public getObject(
-    _id: string
-  ): AutoUpdated<T> | null {
+  public async loadFromServer() {
+    return new Promise<void>((resolve, reject) => {
+      this.socket.emit(
+        "startup" + this.classParam.name,
+        async (data: string[]) => {
+          this.loggers.debug(
+            "Loading manager DB " +
+              this.className +
+              " - [" +
+              data.length +
+              "] entries"
+          );
+
+          for (const id of data) {
+            try {
+              this.classes[id] = await createAutoUpdatedClass(
+                this.classParam,
+                this.socket,
+                id,
+                this.loggers,
+                this,
+                this.emitter
+              );
+              await this.classes[id].isPreLoadedAsync();
+            } catch (error: any) {
+              this.loggers.error(
+                "Error loading object " +
+                  id +
+                  " from manager " +
+                  this.className +
+                  " - " +
+                  error.message
+              );
+              this.loggers.error(error.stack);
+            }
+          }
+          for (const id in this.classes) {
+            try {
+              await this.classes[id].loadMissingReferences();
+            } catch (error: any) {
+              this.loggers.error(
+                "Error loading missing references for object " +
+                  id +
+                  " from manager " +
+                  this.className +
+                  " - " +
+                  error.message
+              );
+              this.loggers.error(error.stack);
+            }
+          }
+          this.startSocketListeners();
+          resolve();
+        }
+      );
+    });
+  }
+
+  public getObject(_id: string): AutoUpdated<T> | null {
     return this.classes[_id];
   }
 
@@ -146,20 +192,24 @@ export class AutoUpdateClientManager<
     return Object.values(this.classes);
   }
 
-  protected async handleGetMissingObject(_id: string):Promise<AutoUpdated<T>> {
+  protected async handleGetMissingObject(_id: string): Promise<AutoUpdated<T>> {
     if (!this.classers) throw new Error(`No classers.`);
-    return await createAutoUpdatedClass(
+    const object = await createAutoUpdatedClass(
       this.classParam,
       this.socket,
       _id,
       this.loggers,
       this,
-      this.emitter,
-      this.token
+      this.emitter
     );
+    await object.isPreLoadedAsync();
+    await object.loadMissingReferences();
+    return object;
   }
 
-  public async createObject(data: Omit<IsData<InstanceType<T>>, "_id">):Promise<AutoUpdated<T>> {
+  public async createObject(
+    data: Omit<IsData<InstanceType<T>>, "_id">
+  ): Promise<AutoUpdated<T>> {
     if (!this.classers) throw new Error(`No classers.`);
     const object = await createAutoUpdatedClass(
       this.classParam,
@@ -167,17 +217,15 @@ export class AutoUpdateClientManager<
       data as any,
       this.loggers,
       this,
-      this.emitter,
-      this.token
+      this.emitter
     );
+    await object.isPreLoadedAsync();
+    await object.loadMissingReferences();
     this.classes[object._id] = object;
     return object;
   }
 }
 
-export type UnwrapRef<T, D extends number = 5> =
-  D extends 0 ? T : T extends any ? UnwrapRef<T, Prev[D]> : T extends (infer A)[] ? UnwrapRef<A, Prev[D]>[] : T extends object ? {
-    [K in keyof T]: UnwrapRef<T[K], Prev[D]>;
-  } : T;
-export type AutoUpdated<T extends Constructor<any>> =
-  AutoUpdatedClientObject<T> & UnwrapRef<InstanceOf<T>>;
+export type AutoUpdated<T, D extends number = 10> = AutoUpdatedClientObject<T> &
+  UnboxConstructor<T>;
+

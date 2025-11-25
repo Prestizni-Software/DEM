@@ -1,10 +1,14 @@
 import { io } from "socket.io-client";
-import { AUCManagerFactory } from "./AutoUpdateClientManagerClass.js";
+import { AUCManagerFactory, AutoUpdated } from "./AutoUpdateClientManagerClass.js";
 import { Objekt, Status } from "./TestTypes.js";
-import { classProp, classRef } from "./CommonTypes.js";
+import { classProp, classRef, populatedRef } from "./CommonTypes.js";
 console.log("Start");
 
-const socket = io("http://localhost:3001");
+const socket = io("http://localhost:3001", {
+  auth: {
+    token: "test",
+  },
+});
 
 export class Test {
   @classProp
@@ -19,11 +23,20 @@ export class Test {
   @classProp
   public description!: string | null;
 
-  @classProp @classRef("Test")
-  public ref!: Test | null;
+  @classProp
+  @classRef()
+  public ref!:AutoUpdated< typeof Test> | null;
 
   @classProp
-  public obj!:Objekt | null
+  @classRef()
+  public refarr!:AutoUpdated< typeof Test>[];
+
+  @classProp
+  public obj!: Objekt | null;
+
+  @classProp
+  @populatedRef("Test")
+  public parent!:AutoUpdated< typeof Test> | null;
 }
 
 const managers = await AUCManagerFactory(
@@ -36,18 +49,15 @@ const managers = await AUCManagerFactory(
     info: (msg: string) => console.log(msg),
     warn: (msg: string) => console.warn(msg),
   },
-  socket,
-  ""
+  socket
 );
 
 console.log("CREATING OBJECT WITH active = true, status = INACTIVE");
 
-const obj = managers.Test.getObject("6915b55f11d9579cc670502f");
-const obj2 = managers.Test.getObject("691702d91a05cb761dfc66f4");
+const obj = managers.Test.objectsAsArray[0];
+const obj2 = managers.Test.objectsAsArray[1];
 
-if(!obj || !obj2)
-  throw new Error("No obj")
-await obj.setValue("ref.obj.obj._id", "23")
-
-
+if (!obj || !obj2) throw new Error("No obj");
+await obj.setValue("ref.obj.obj._id", "23");
+await obj.parent?.parent?.parent?.setValue("active", true);
 console.log(obj.ref?.obj?.obj._id);
