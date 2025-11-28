@@ -136,9 +136,9 @@ export class AutoUpdatedClientObject<T> {
         this.handleNewObject(data as any);
       else {
         this.isLoading = false;
+        if (!this.isServer) this.openSockets();
       }
     }
-    if (!this.isServer) this.openSockets();
     this.generateSettersAndGetters();
   }
 
@@ -149,7 +149,7 @@ export class AutoUpdatedClientObject<T> {
         "Cannot create a new AutoUpdatedClientClass without a class name."
       );
     this.loggers.debug(
-      this.className + "Requesting new object creation on server "
+      this.className + " - Requesting new object creation on server"
     );
     this.socket.emit("new" + this.className, data, (res: ServerResponse<T>) => {
       if (!res.success) {
@@ -161,6 +161,7 @@ export class AutoUpdatedClientObject<T> {
       this.data = res.data as IsData<T>;
       this.isLoading = false;
       this.emitter.emit("pre-loaded" + this.EmitterID);
+      if (!this.isServer) this.openSockets();
     });
   }
 
