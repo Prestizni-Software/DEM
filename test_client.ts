@@ -35,13 +35,19 @@ export class Test {
   public obj!: Objekt | null;
 
   @classProp
-  @populatedRef("Test")
+  @populatedRef("Test:refarr")
   public parent!:AutoUpdated< typeof Test> | null;
+}
+
+class Test2 {
+  @classProp
+  public _id!: string;
 }
 
 const managers = await AUCManagerFactory(
   {
     Test,
+    Test2
   },
   {
     debug: (msg: string) => console.log(msg),

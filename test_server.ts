@@ -42,6 +42,11 @@ export class Test {
   public parent!: Ref<Test> | null;
 }
 
+class Test2 {
+  @classProp
+  public _id!: string;
+}
+
 console.log("Start");
 const server = new Server();
 server.listen(3001);
@@ -50,6 +55,9 @@ const io = new SocketServer(server, { cors: { origin: "*" } });
 await mongoose.connect("mongodb://localhost:27017/GeoDB", { timeoutMS: 5000 });
 const managers = await AUSManagerFactory(
   {
+    Test2: {
+      class: Test2,
+    },
     Test: {
       class: Test,
       options: {

@@ -21,8 +21,12 @@ export async function AUCManagerFactory<
   defs: T,
   loggers: LoggersType,
   socket: Socket,
+  disableDEMDebugMessages: boolean = false,
   emitter: EventEmitter = new EventEmitter()
 ): Promise<WrappedInstances<T>> {
+  if (disableDEMDebugMessages) {
+    loggers.debug = (_) => {};
+  }
   const classers = {} as WrappedInstances<T>;
   for (const key in defs) {
     let message = `Creating manager for: ${key}`;
@@ -52,7 +56,7 @@ export async function AUCManagerFactory<
       loggers.error(error.stack);
       continue;
     }
-    loggers.debug(message);
+    loggers.debug("Created manager: " + key);
   }
   for (const key in defs) {
     try {
@@ -124,7 +128,7 @@ export class AutoUpdateClientManager<
   }
 
   public async loadFromServer() {
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<void>((resolve) => {
       this.socket.emit(
         "startup" + this.classParam.name,
         async (data: string[]) => {

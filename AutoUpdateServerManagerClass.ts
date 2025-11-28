@@ -118,9 +118,18 @@ export async function AUSManagerFactory<
   defs: AUSDefinitions<T>,
   loggers: LoggersType,
   socket: Server,
-  emitter?: EventEmitter3
+  disableDEMDebugMessages: boolean = false,
+  emitter: EventEmitter3 = new EventEmitter(),
 ): Promise<{ [K in keyof T]: T[K] & AutoUpdateServerManager<T[K]> }> {
-  emitter = emitter ?? new EventEmitter();
+  if (disableDEMDebugMessages) {
+    loggers.debug = (_) => {};
+  }
+  socket.use((socket, next) => {
+    socket.onAny((event) => {
+      loggers.debug("Recieved event: " + event + " from client: " + socket.id);
+    })
+    next();
+  })
   const classers: { [K in keyof T]: T[K] & AutoUpdateServerManager<T[K]> } =
     {} as any;
   let i = 0;
@@ -188,10 +197,8 @@ export class AutoUpdateServerManager<
   public readonly model: ReturnModelType<T, BeAnObject>;
   private readonly clientSockets: Set<Socket> = new Set<Socket>();
   public readonly options?: AUSOption<T, any>;
-  private readonly doDebug = false;
   protected override classes: { [_id: string]: AutoUpdated<T> } = {};
   public readonly classers: Record<string, AutoUpdateServerManager<any>>;
-  private readonly token?: string;
   constructor(
     classParam: T,
     loggers: LoggersType,
@@ -231,11 +238,6 @@ export class AutoUpdateServerManager<
   public registerSocket(socket: Socket) {
     this.clientSockets.add(socket);
 
-    if (this.doDebug)
-      socket.onAny((event: string, data: any) => {
-        this.loggers.debug("Client Event", event, data);
-      });
-
     socket.on(
       "startup" + this.className,
       async (ack: (ids: string[]) => void) => {
@@ -260,7 +262,7 @@ export class AutoUpdateServerManager<
         data: IsData<InstanceType<T>>,
         ack: (res: ServerResponse<T>) => void
       ) => {
-        this.loggers.debug("Creating new object in manager " + this.className);
+        this.loggers.debug("Emitting new object creation in manager " + this.className);
         try {
           const newDoc = await this.createObject(data);
           ack({
@@ -268,12 +270,12 @@ export class AutoUpdateServerManager<
             success: true,
             message: "Created successfully",
           });
-        } catch (error) {
+        } catch (error:any) {
           this.loggers.error(
-            "Error creating new object in manager " + this.className
+            "Error emitting new object creation in manager " + this.className + " - " + error.message
           );
-          this.loggers.error(error);
-          ack({ success: false, message: (error as any).message });
+          this.loggers.error(error.stack);
+          ack({ success: false, message: error.message });
         }
       }
     );
@@ -284,7 +286,6 @@ export class AutoUpdateServerManager<
         data: ServerUpdateRequest<T>,
         ack: (res: ServerResponse<T>) => void
       ) => {
-        this.loggers.debug("Recieved event " + event);
         if (
           event.startsWith("update" + this.className) &&
           event.replace("update" + this.className, "").length === 24

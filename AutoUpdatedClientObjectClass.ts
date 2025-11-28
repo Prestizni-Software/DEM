@@ -131,8 +131,19 @@ export class AutoUpdatedClientObject<T> {
     } else {
       this.isLoading = true;
       this.data = data as any;
+      const dataKeys = Object.keys(data);
       for (const key of this.properties) {
-        if (typeof key !== "string") return;
+        if (typeof key !== "string")
+          throw new Error(
+            "only string keys allowed. Not this shit: " + String(key)
+          );
+        if (!dataKeys.includes(key) && key !== "_id")
+          this.loggers.warn(
+            "Property " +
+              key +
+              " not found in data. If should be null/undefined, please say so implicitly."
+          );
+        dataKeys.splice(dataKeys.indexOf(key), 1);
         const isRef = getMetadataRecursive(
           "isRef",
           this.classProp.prototype,
@@ -140,12 +151,23 @@ export class AutoUpdatedClientObject<T> {
         );
         if (isRef) {
           if (Array.isArray(this.data[key])) {
-            this.data[key] = this.data[key].map((obj: any) => obj._id ?? obj) as any;
+            this.data[key] = this.data[key].map(
+              (obj: any) => obj._id ?? obj
+            ) as any;
           } else {
-            this.data[key] = (this.data[key] as any)._id ?? this.data[key];
+            this.data[key] = (this.data[key] as any)?._id ?? this.data[key];
           }
         }
       }
+      if (dataKeys.includes("__v")) dataKeys.splice(dataKeys.indexOf("__v"), 1);
+      if (dataKeys.length > 0)
+        this.loggers.warn(
+          (dataKeys.length > 1 ? "Properties " : "Property ") +
+            dataKeys.join(", ") +
+            (dataKeys.length > 1 ? " were " : " was ") +
+            "unexpected. These properties are not known by the class. Please check your level of skill issue. Known properties are:\n" +
+            this.properties.join("\n")
+        );
 
       if (!this.data._id || this.data._id === "")
         this.handleNewObject(data as any);
@@ -169,7 +191,7 @@ export class AutoUpdatedClientObject<T> {
     this.socket.emit("new" + this.className, data, (res: ServerResponse<T>) => {
       if (!res.success) {
         this.isLoading = false;
-        this.loggers.error("Could not create data on server:", res.message);
+        this.loggers.error("Could not create data on server: " + res.message);
         this.emitter.emit("pre-loaded" + this.EmitterID);
         throw new Error("Error creating new object: " + res.message);
       }
