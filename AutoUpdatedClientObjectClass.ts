@@ -131,6 +131,21 @@ export class AutoUpdatedClientObject<T> {
     } else {
       this.isLoading = true;
       this.data = data as any;
+      for (const key of this.properties) {
+        if (typeof key !== "string") return;
+        const isRef = getMetadataRecursive(
+          "isRef",
+          this.classProp.prototype,
+          key
+        );
+        if (isRef) {
+          if (Array.isArray(this.data[key])) {
+            this.data[key] = this.data[key].map((obj: any) => obj._id ?? obj) as any;
+          } else {
+            this.data[key] = (this.data[key] as any)._id ?? this.data[key];
+          }
+        }
+      }
 
       if (!this.data._id || this.data._id === "")
         this.handleNewObject(data as any);
