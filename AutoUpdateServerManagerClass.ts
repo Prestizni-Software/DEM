@@ -53,15 +53,13 @@ export type AUSDefinitions<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: ServerManagerDefinition<T[K], T>;
 };
 
-type AccessMiddleware<
-  T extends Record<string, Constructor<any>>
-> =  (
-    event: Event,
-    managers: {
-      [K in keyof T]: AutoUpdateServerManager<T[K]>;
-    },
-    userId: string
-  ) => Promise<boolean>;
+type AccessMiddleware<T extends Record<string, Constructor<any>>> = (
+  event: Event,
+  managers: {
+    [K in keyof T]: AutoUpdateServerManager<T[K]>;
+  },
+  userId: string
+) => Promise<boolean>;
 
 export type AUSOption<
   C extends Constructor<any>,
@@ -92,9 +90,7 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
   if (secured) {
     socket_server.use(async (socket, next) => {
       socket.use(async (event, next) => {
-        if (
-          !(await secured(event, managers, socket.handshake.auth.token))
-        ) {
+        if (!(await secured(event, managers, socket.handshake.auth.token))) {
           (loggers.warn ?? loggers.info)(
             "Someone tried to access with invalid token: (" +
               socket.handshake.auth.token +
@@ -119,7 +115,7 @@ export async function AUSManagerFactory<
   loggers: LoggersType,
   socket: Server,
   disableDEMDebugMessages: boolean = false,
-  emitter: EventEmitter3 = new EventEmitter(),
+  emitter: EventEmitter3 = new EventEmitter()
 ): Promise<{ [K in keyof T]: T[K] & AutoUpdateServerManager<T[K]> }> {
   if (disableDEMDebugMessages) {
     loggers.debug = (_) => {};
@@ -127,9 +123,9 @@ export async function AUSManagerFactory<
   socket.use((socket, next) => {
     socket.onAny((event) => {
       loggers.debug("Recieved event: " + event + " from client: " + socket.id);
-    })
+    });
     next();
-  })
+  });
   const classers: { [K in keyof T]: T[K] & AutoUpdateServerManager<T[K]> } =
     {} as any;
   let i = 0;
@@ -240,8 +236,11 @@ export class AutoUpdateServerManager<
 
     socket.on(
       "startup" + this.className,
-      async (ack: (ids: string[]) => void) => {
-        ack(this.objectIDs);
+      async (ack: (data: { ids: string[]; properties: string[] }) => void) => {
+        ack({
+          ids: Object.keys(this.classes),
+          properties: this.properties as string[],
+        });
       }
     );
     socket.on("delete" + this.className, async (id: string) => {
@@ -262,7 +261,9 @@ export class AutoUpdateServerManager<
         data: IsData<InstanceType<T>>,
         ack: (res: ServerResponse<T>) => void
       ) => {
-        this.loggers.debug("Emitting new object creation in manager " + this.className);
+        this.loggers.debug(
+          "Emitting new object creation in manager " + this.className
+        );
         try {
           const newDoc = await this.createObject(data);
           ack({
@@ -270,9 +271,12 @@ export class AutoUpdateServerManager<
             success: true,
             message: "Created successfully",
           });
-        } catch (error:any) {
+        } catch (error: any) {
           this.loggers.error(
-            "Error emitting new object creation in manager " + this.className + " - " + error.message
+            "Error emitting new object creation in manager " +
+              this.className +
+              " - " +
+              error.message
           );
           this.loggers.error(error.stack);
           ack({ success: false, message: error.message });

@@ -38,7 +38,10 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     this.classParam = classParam;
     this.properties = Reflect.getMetadata(
       "props",
-      Object.getPrototypeOf(classParam)
+      classParam
+    ) ?? Reflect.getMetadata(
+      "props",
+      classParam.prototype
     );
     loggers.warn = loggers.warn ?? loggers.info;
     this.loggers = loggers as LoggersTypeInternal;

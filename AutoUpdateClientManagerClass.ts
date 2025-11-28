@@ -138,9 +138,10 @@ export class AutoUpdateClientManager<
               throw new Error(
                 "Only string keys allowed. Not this shit: " + String(property)
               );
-            if (!data.properties.includes(property))
+            if (data.properties.includes(property))
+              data.properties.splice(data.properties.indexOf(property), 1);
+            else
               extraProperties.push(property);
-            data.properties.splice(data.properties.indexOf(property), 1);
           }
           let allowedToLoad = true;
           let errorMessage =
@@ -149,7 +150,7 @@ export class AutoUpdateClientManager<
           if (extraProperties.length > 0) {
             allowedToLoad = false;
             errorMessage +=
-              "\n\nLocal type has " + (data.properties.length > 1 ? "these extra properties" : "this extra property") + ":\n" +
+              "\n\nLocal type has " + (extraProperties.length > 1 ? "these extra properties" : "this extra property") + ":\n" +
               extraProperties.join("\n");
           }
           if (data.properties.length > 0) {
