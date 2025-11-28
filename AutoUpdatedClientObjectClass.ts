@@ -135,7 +135,7 @@ export class AutoUpdatedClientObject<T> {
       for (const key of this.properties) {
         if (typeof key !== "string")
           throw new Error(
-            "only string keys allowed. Not this shit: " + String(key)
+            "Only string keys allowed. Not this shit: " + String(key)
           );
         if (!dataKeys.includes(key) && key !== "_id")
           this.loggers.warn(

@@ -131,16 +131,46 @@ export class AutoUpdateClientManager<
     return new Promise<void>((resolve) => {
       this.socket.emit(
         "startup" + this.classParam.name,
-        async (data: string[]) => {
+        async (data: { ids: string[]; properties: string[] }) => {
+          let extraProperties: string[] = [];
+          for (const property of this.properties) {
+            if (typeof property !== "string")
+              throw new Error(
+                "Only string keys allowed. Not this shit: " + String(property)
+              );
+            if (!data.properties.includes(property))
+              extraProperties.push(property);
+            data.properties.splice(data.properties.indexOf(property), 1);
+          }
+          let allowedToLoad = true;
+          let errorMessage =
+            "Local type does not match server type for manager " +
+            this.className;
+          if (extraProperties.length > 0) {
+            allowedToLoad = false;
+            errorMessage +=
+              "\n\nLocal type has " + (data.properties.length > 1 ? "these extra properties" : "this extra property") + ":\n" +
+              extraProperties.join("\n");
+          }
+          if (data.properties.length > 0) {
+            allowedToLoad = false;
+            errorMessage +=
+              "\n\nLocal type is missing " + (data.properties.length > 1 ? "these properties" : "this property") + ":\n" +
+              data.properties.join("\n");
+          }
+          if(!allowedToLoad){
+            this.loggers.error(errorMessage);
+            throw new Error(errorMessage);
+          }
           this.loggers.debug(
             "Loading manager DB " +
               this.className +
               " - [" +
-              data.length +
+              data.ids.length +
               "] entries"
           );
 
-          for (const id of data) {
+          for (const id of data.ids) {
             try {
               this.classes[id] = await createAutoUpdatedClass(
                 this.classParam,
@@ -153,7 +183,7 @@ export class AutoUpdateClientManager<
               await this.classes[id].isPreLoadedAsync();
               this.loggers.debug(
                 "Loaded object " + id + " from manager " + this.className
-              )
+              );
             } catch (error: any) {
               this.loggers.error(
                 "Error loading object " +
@@ -189,7 +219,7 @@ export class AutoUpdateClientManager<
               " - [" +
               i +
               "] entries"
-          )
+          );
           this.startSocketListeners();
           resolve();
         }
@@ -211,7 +241,9 @@ export class AutoUpdateClientManager<
 
   protected async handleGetMissingObject(_id: string): Promise<AutoUpdated<T>> {
     if (!this.classers) throw new Error(`No classers.`);
-    this.loggers.debug("Getting missing object " + _id + " from manager " + this.className);
+    this.loggers.debug(
+      "Getting missing object " + _id + " from manager " + this.className
+    );
     const object = await createAutoUpdatedClass(
       this.classParam,
       this.socket,
@@ -245,6 +277,4 @@ export class AutoUpdateClientManager<
   }
 }
 
-export type AutoUpdated<T> = AutoUpdatedClientObject<T> &
-  UnboxConstructor<T>;
-
+export type AutoUpdated<T> = AutoUpdatedClientObject<T> & UnboxConstructor<T>;
