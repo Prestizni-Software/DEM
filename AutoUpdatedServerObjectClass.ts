@@ -10,9 +10,9 @@ import {
   IsData,
   ServerUpdateRequest,
   InstanceOf,
-  Prev
+  Prev,
 } from "./CommonTypes.js";
-import { Paths, PathValueOf, Unref, UnwrapRef } from "./CommonTypes_server.js";
+import { Paths, PathValueOf, UnwrapRef } from "./CommonTypes_server.js";
 import { DocumentType } from "@typegoose/typegoose";
 
 type SocketType = Server<
@@ -22,13 +22,13 @@ type SocketType = Server<
   any
 >;
 
-export type AutoUpdated<T, D extends number = 10> =
-  AutoUpdatedServerObject<T> & UnwrapRef<UnboxConstructor<T>, Prev[D]>;
+export type AutoUpdated<T, D extends number = 10> = AutoUpdatedServerObject<T> &
+  UnwrapRef<UnboxConstructor<T>, Prev[D]>;
 
 export async function createAutoUpdatedClass<C extends Constructor<any>>(
   classParam: C,
   socket: SocketType,
-  data: DocumentType<C>,
+  data: DocumentType<InstanceOf<C>>,
   loggers: LoggersType,
   parentClasser: AutoUpdateServerManager<any>,
   emitter: EventEmitter3
@@ -44,21 +44,18 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
     emitter
   );
   await instance.isPreLoadedAsync();
-  await instance.checkAutoStatusChange();
   return instance as AutoUpdated<InstanceType<C>>;
 }
 
 // ---------------------- Class ----------------------
-export class AutoUpdatedServerObject<
-  T
-> extends AutoUpdatedClientObject<T> {
+export class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
   protected readonly isServer: boolean = true;
-  private readonly entry: DocumentType<T>;
+  private readonly entry: DocumentType<InstanceOf<T>>;
   protected declare parentClasser: AutoUpdateServerManager<any>;
 
   constructor(
     socket: SocketType,
-    data: DocumentType<T>,
+    data: DocumentType<InstanceOf<T>>,
     loggers: {
       info: (...args: any[]) => void;
       debug: (...args: any[]) => void;
@@ -87,7 +84,7 @@ export class AutoUpdatedServerObject<
 
   public setValue_<K extends Paths<InstanceOf<T>>>(
     key: K,
-    val: Unref<PathValueOf<T, K>>
+    val: PathValueOf<T, K>
   ): Promise<{ success: boolean; msg: string }> {
     return this.setValue__(key, val);
   }
@@ -104,7 +101,7 @@ export class AutoUpdatedServerObject<
         { $set: { [key]: value } }
       );
 
-      const update: ServerUpdateRequest<T> = this.makeUpdate(key, value);
+      const update = this.makeUpdate(key, value);
       this.socket.emit("update" + this.className + this.data._id, update);
 
       return {
@@ -120,9 +117,28 @@ export class AutoUpdatedServerObject<
     }
   }
 
-  public async destroy(): Promise<void> {
+  public async destroy(once: boolean = false): Promise<void> {
+    if (!once) {
+      await this.autoClasser.deleteObject(this.data._id);
+      return;
+    }
     this.socket.emit("delete" + this.className, this.data._id);
-    await this.entry.deleteOne({ _id: this.data._id });
+    try {
+      const res = await this.entry.deleteOne({ _id: this.data._id });
+      this.loggers.debug("Deleted object from server " + this.className);
+      this.loggers.debug(res.deletedCount + " deleted.");
+    } catch (error: any) {
+      this.loggers.error(
+        "Error deleting object from database - " +
+          this.className +
+          " - " +
+          this.data._id
+      );
+      this.loggers.error(error.message);
+      this.loggers.error(error.stack);
+    }
+    this.socket.removeAllListeners("update" + this.className + this.data._id);
+    this.socket.removeAllListeners("delete" + this.className + this.data._id);
     this.wipeSelf();
   }
 
@@ -134,10 +150,19 @@ export class AutoUpdatedServerObject<
     const statusPath = this.parentClasser.options?.autoStatusDefinitions
       ?.statusProperty as any;
     if (!neededStatus || !statusPath) return;
+    this.loggers.debug("Checking auto status change - " + this.className);
     const currentStatus = this.getValue(
       this.parentClasser.options?.autoStatusDefinitions?.statusProperty as any
     );
     if (neededStatus === currentStatus) return;
+    this.loggers.debug(
+      "Status changed - " +
+        this.className +
+        " - from " +
+        currentStatus +
+        " to " +
+        neededStatus
+    );
     this.setValue(statusPath, neededStatus);
   }
 }

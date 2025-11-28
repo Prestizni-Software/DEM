@@ -1,3 +1,4 @@
+import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
 import {
   Constructor,
   EventEmitter3,
@@ -7,7 +8,7 @@ import {
 } from "./CommonTypes.js";
 import "reflect-metadata";
 export abstract class AutoUpdateManager<T extends Constructor<any>> {
-  protected abstract classes: { [_id: string]: any };
+  protected abstract classes: { [_id: string]: AutoUpdatedClientObject<any> };
   public socket: any;
   protected classParam: T;
   protected properties: (keyof T)[];
@@ -46,13 +47,17 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
   public async loadReferences(): Promise<void> {
     for (const obj of this.objectsAsArray) {
       await obj.loadMissingReferences();
+      await obj.checkAutoStatusChange();
     }
   }
 
   public async deleteObject(_id: string): Promise<void> {
-    if (typeof this.classes[_id] === "string")
-      this.classes[_id] = await this.handleGetMissingObject(this.classes[_id]);
-    this.classes[_id].destroy();
+    if (typeof this.classes[_id] === "string") {
+      const temp = await this.handleGetMissingObject(this.classes[_id]);
+      if (!temp) throw new Error(`No object with id ${_id}`);
+      this.classes[_id] = temp;
+    }
+    await this.classes[_id].destroy(true);
     delete this.classes[_id];
   }
 
@@ -64,10 +69,16 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     return this.classParam.name;
   }
 
-  protected abstract handleGetMissingObject(_id: string): Promise<any>;
-  public abstract createObject(data: IsData<InstanceType<T>>): Promise<any>;
-  public abstract getObject(_id: string): any;
-  public abstract get objects(): { [_id: string]: any };
+  protected abstract handleGetMissingObject(
+    _id: string
+  ): Promise<AutoUpdatedClientObject<any> | null>;
+  public abstract createObject(
+    data: IsData<InstanceType<T>>
+  ): Promise<AutoUpdatedClientObject<any>>;
+  public abstract getObject(_id: string): AutoUpdatedClientObject<any> | null;
+  public abstract get objects(): {
+    [_id: string]: AutoUpdatedClientObject<any>;
+  };
 
   public abstract get objectsAsArray(): any[];
 }

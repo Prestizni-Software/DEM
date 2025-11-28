@@ -8,6 +8,7 @@ import { Server } from "node:http";
 import { Objekt, Status } from "./TestTypes.js";
 import { classProp, classRef, populatedRef } from "./CommonTypes.js";
 import { Types } from "mongoose";
+import { logger } from "@typegoose/typegoose/lib/logSettings.js";
 
 export class Test {
   @classProp
@@ -37,7 +38,7 @@ export class Test {
   @classProp
   public obj!: Objekt | null;
 
-  @classProp @populatedRef("Test")
+  @classProp @populatedRef("Test:refarr")
   public parent!: Ref<Test> | null;
 }
 
@@ -62,12 +63,11 @@ const managers = await AUSManagerFactory(
             return Status.INACTIVE;
           }
         ),
-        accessDefinitions:{
-          login: async (token: string) => true,
-          access: async (data, managers, userId) => {
-            return false;
+        accessDefinitions: async (event, managers, token) => {
+            logger.debug("Access with token: " + token);
+            return true;
           }
-        }
+        
       },
     },
   },
@@ -81,31 +81,57 @@ const managers = await AUSManagerFactory(
 );
 console.log("CREATING OBJECT WITH active = true, status = INACTIVE");
 
-/*for(const obj of managers.Test.objectsAsArray){
+for(const obj of managers.Test.objectsAsArray){
   await obj.destroy();
-}*/
+}
 
-const obj = managers.Test.getObject("69258c5082673d1b24da2d1f")
+const obj1 = await managers.Test.createObject({
+  active: true, status: Status.INACTIVE,
+  description: "Obj1",
+  ref: null,
+  refarr: [],
+  obj: null,
+  parent: null
+});
 
-const obj2 = managers.Test.getObject("69258c5082673d1b24da2d21")
+const obj2 = await managers.Test.createObject({
+  active: true, status: Status.INACTIVE,
+  description: "Obj2",
+  ref: null,
+  refarr: [],
+  obj: null,
+  parent: null
+});
 
-if (!obj || !obj2) throw new Error("No obj");
+const obj3 = await managers.Test.createObject({
+  active: true, status: Status.INACTIVE,
+  description: "Obj3",
+  ref: null,
+  refarr: [],
+  obj: null,
+  parent: null
+});
 
-console.log(obj.status);
+if (!obj1 || !obj2) throw new Error("No obj");
+await obj2.setValue_("parent", obj3);
+
+await obj2.setValue_("refarr", [obj1._id]);
+
+console.log(obj1.status);
 
 console.log("UPDATING ACTIVE STATUS TO TRUE");
-await obj.setValue_("active", true);
-await obj.setValue_("active", false);
+await obj1.setValue_("active", true);
+await obj1.setValue_("active", false);
 
-await obj.setValue_("ref", obj2._id);
+await obj1.setValue_("ref", obj2._id);
 
-const refarr = obj.refarr;
-refarr.splice(0, 0);
+const refarr = obj1.refarr;
+refarr.splice(0, refarr.length);
 refarr.push(obj2._id);
-await obj.setValue_("refarr", refarr.map((r) => r._id));
-const test = await obj.parent?.parent?.setValue_("active", true);
-const testik = obj.ref;
+await obj1.setValue_("refarr", refarr.map((r) => r._id));
+const test = await obj1.parent?.parent?.setValue_("active", true);
+const testik = obj1.ref;
 
 console.log("UPDATING ACTIVE STATUS TO FALSE");
-await obj.setValue_("active", false);
-console.log(obj.status);
+await obj1.setValue_("active", false);
+console.log(obj1.status);

@@ -10,7 +10,6 @@ import {
   ServerResponse,
   ServerUpdateRequest,
   Paths,
-  UnboxConstructor,
 } from "./CommonTypes.js";
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
@@ -112,6 +111,7 @@ export class AutoUpdatedClientObject<T> {
         throw new Error(
           "Cannot create a new AutoUpdatedClientClass with an empty string for ID."
         );
+      this.loggers.debug("Getting new object from server " + this.className);
       this.socket.emit(
         "get" + this.className + data,
         null,
@@ -148,6 +148,9 @@ export class AutoUpdatedClientObject<T> {
       throw new Error(
         "Cannot create a new AutoUpdatedClientClass without a class name."
       );
+    this.loggers.debug(
+      this.className + "Requesting new object creation on server "
+    );
     this.socket.emit("new" + this.className, data, (res: ServerResponse<T>) => {
       if (!res.success) {
         this.isLoading = false;
@@ -206,8 +209,6 @@ export class AutoUpdatedClientObject<T> {
   }
 
   private openSockets() {
-    this.loggers.debug(`[${this.data._id}] Opening socket listeners`);
-
     this.socket.on(
       "update" + this.className + this.data._id.toString(),
       async (update: ServerUpdateRequest<T>) => {
@@ -234,8 +235,12 @@ export class AutoUpdatedClientObject<T> {
 
       // Return success with the applied patch
       return { success: true, data: undefined, message: "" };
-    } catch (error) {
-      this.loggers.error(`[${this.data._id}] Error applying patch:`, error);
+    } catch (error: any) {
+      this.loggers.error(
+        `[${this.data._id}] Error applying patch:`,
+        error.message,
+        error.stack
+      );
       return {
         success: false,
         message: "Error applying update: " + (error as Error).message,
@@ -299,7 +304,7 @@ export class AutoUpdatedClientObject<T> {
     );
     try {
       if (value instanceof AutoUpdatedClientObject)
-        value = (value as any).extractedData._id;
+        value = value.extractedData._id;
       const path = key.split(".");
       let obj = this.data as any;
       let lastClass = this as any;
@@ -360,9 +365,37 @@ export class AutoUpdatedClientObject<T> {
 
       let success;
       try {
-        const res = await this.setValueInternal(lastPath, value);
-        success = res.success;
-        message += "\nReport from inner setValue function: \n " + res.message;
+        let isPopulated = getMetadataRecursive(
+          "refsTo",
+          this.classProp.prototype,
+          lastPath
+        );
+        if (isPopulated) {
+          isPopulated = isPopulated.split(":");
+          const parentObj =
+            this.autoClasser.classers[isPopulated[0]].getObject(value);
+          if (!parentObj) {
+            this.loggers.error(
+              "Failed to set value for " +
+                this.className +
+                " ParentObject not found\n" +
+                message
+            );
+            return { success: false, msg: message };
+          }
+          const res = await parentObj.setValue(isPopulated[1], this.data._id);
+          success = res.success;
+          message += "\nReport from inner setValue function: \n " + res.msg;
+        } else {
+          const originalValue = (this.data as any)[lastPath];
+          if (!Array.isArray(value) && Array.isArray(originalValue)) {
+            originalValue.push(value);
+            value = originalValue;
+          }
+          const res = await this.setValueInternal(lastPath, value);
+          success = res.success;
+          message += "\nReport from inner setValue function: \n " + res.message;
+        }
       } catch (error: any) {
         success = false;
         message += "\nError from inner setValue function: \n  " + error.message;
@@ -373,6 +406,78 @@ export class AutoUpdatedClientObject<T> {
           "Failed to set value for " + this.className + "\n" + message
         );
         return { success: false, msg: message };
+      }
+
+      const isRef = getMetadataRecursive(
+        "isRef",
+        this.classProp.prototype,
+        lastPath
+      );
+      if (isRef) {
+        for (const id of Array.isArray(value) ? value : [value]) {
+          let result;
+          for (const classer of Object.values(this.autoClasser.classers)) {
+            result = classer.getObject(id.toString());
+            if (result) break;
+          }
+          if (!result) {
+            this.loggers.warn(
+              "Failed to update childerns parent for " +
+                this.className +
+                " updating " +
+                id +
+                "'s parent to " +
+                this.data._id
+            );
+            continue;
+          }
+          for (const property of result.properties) {
+            let isPopulated = getMetadataRecursive(
+              "refsTo",
+              result.classProp.prototype,
+              property as any
+            );
+            if (!isPopulated) continue;
+            isPopulated = isPopulated.split(":");
+            if (
+              isPopulated[0] !== this.className ||
+              isPopulated[1] !== lastPath
+            )
+              continue;
+            try {
+              await result.loadMissingReferences();
+              this.loggers.debug(
+                "Successfully set value for " +
+                  this.className +
+                  " updating " +
+                  id +
+                  "'s parent to " +
+                  this.data._id
+              );
+            } catch (error: any) {
+              this.loggers.error(
+                "Failed to set value for " +
+                  this.className +
+                  " updating " +
+                  id +
+                  "'s parent to " +
+                  this.data._id
+              );
+              this.loggers.error(error.message);
+              this.loggers.error(error.stack);
+              return {
+                success: false,
+                msg:
+                  "Failed to set value for " +
+                  this.className +
+                  " updating " +
+                  id +
+                  "'s parent to " +
+                  this.data._id,
+              };
+            }
+          }
+        }
       }
       const pathArr = lastPath.split(".");
       if (pathArr.length === 1) {
@@ -465,13 +570,14 @@ export class AutoUpdatedClientObject<T> {
     return promise;
   }
 
-  protected makeUpdate(key: string, value: any): any {
+  protected makeUpdate(key: string, value: any): ServerUpdateRequest<T> {
     try {
       const id = this.data._id.toString();
       return { _id: id, key, value } as any;
     } catch (error: any) {
       this.loggers.error(
-        "Probably missing the fucking identifier ['_id'] again " + error.message
+        "Probably missing the fucking identifier ['_id'] again: " +
+          error.message
       );
       throw error;
     }
@@ -507,7 +613,6 @@ export class AutoUpdatedClientObject<T> {
       }
 
       const val = obj[key];
-      // If the property itself is a nested object, check deeper
       if (val && typeof val === "object") {
         const nestedProto = Object.getPrototypeOf(val);
         if (nestedProto && !alreadySeen.includes(nestedProto)) {
@@ -532,9 +637,12 @@ export class AutoUpdatedClientObject<T> {
       }
     }
   }
-  public async destroy(): Promise<void> {
+  public async destroy(once: boolean = false): Promise<void> {
+    if (!once) {
+      await this.autoClasser.deleteObject(this.data._id);
+      return;
+    }
     this.socket.emit("delete" + this.className, this.data._id);
-
     this.socket.removeAllListeners("update" + this.className + this.data._id);
     this.socket.removeAllListeners("delete" + this.className + this.data._id);
     this.wipeSelf();
@@ -616,12 +724,17 @@ function checkForMissingRefs<C extends Constructor<any>>(
   if (typeof data !== "string") {
     const entryKeys = Object.keys(data);
     for (const prop of props) {
-      const pointer = getMetadataRecursive(
+      let pointer = getMetadataRecursive(
         "refsTo",
         classParam.prototype,
         prop.toString()
       );
       if (!entryKeys.includes(prop.toString()) && pointer) {
+        pointer = pointer.split(":");
+        if (pointer.length != 2)
+          throw new Error(
+            "population rf incorrectly defined. Sould be 'ParentClass:PropName'"
+          );
         findMissingObjectReference(data, prop, autoClassers.classers, pointer);
       }
     }
@@ -631,24 +744,24 @@ function findMissingObjectReference(
   data: any,
   prop: any,
   autoClassers: { [key: string]: AutoUpdateManager<any> },
-  acName: string
+  pointer: string[]
 ) {
   let foundAnAC = false;
   for (const ac of Object.values(autoClassers)) {
-    if (ac.className !== acName) {
+    if (ac.className !== pointer[0]) {
       continue;
     }
     foundAnAC = true;
     for (const obj of ac.objectsAsArray) {
-      const eData = obj.extractedData;
-      const found = Object.keys(eData).find((key) =>
-        Array.isArray(eData[key])
-          ? eData[key]
-              .map((v: any) => v?.toString?.())
-              .includes(data._id.toString()) && key !== "_id"
-          : eData[key]?.toString?.() === data?._id?.toString?.() &&
-            key !== "_id"
-      );
+      let eData = obj.extractedData;
+      let found;
+      for (const pathPart of pointer[1].split(".")) {
+        if (!eData[pathPart]) {
+          found = false;
+          break;
+        }
+        found = eData = eData[pathPart];
+      }
       if (found) {
         data[prop] = obj._id;
         return;
@@ -656,6 +769,6 @@ function findMissingObjectReference(
     }
   }
   if (!foundAnAC) {
-    throw new Error(`No AutoUpdateManager found for class ${acName}`);
+    throw new Error(`No AutoUpdateManager found for class ${pointer[0]}`);
   }
 }

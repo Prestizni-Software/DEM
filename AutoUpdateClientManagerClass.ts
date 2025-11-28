@@ -8,7 +8,6 @@ import {
   Constructor,
   IsData,
   LoggersType,
-  Prev,
   UnboxConstructor,
 } from "./CommonTypes.js";
 import EventEmitter from "eventemitter3";
@@ -53,6 +52,7 @@ export async function AUCManagerFactory<
       loggers.error(error.stack);
       continue;
     }
+    loggers.debug(message);
   }
   for (const key in defs) {
     try {
@@ -64,6 +64,7 @@ export async function AUCManagerFactory<
       loggers.error(message);
       loggers.error(error.stack);
     }
+    loggers.debug("Loaded manager references: " + key);
   }
   return classers;
 }
@@ -146,6 +147,9 @@ export class AutoUpdateClientManager<
                 this.emitter
               );
               await this.classes[id].isPreLoadedAsync();
+              this.loggers.debug(
+                "Loaded object " + id + " from manager " + this.className
+              )
             } catch (error: any) {
               this.loggers.error(
                 "Error loading object " +
@@ -158,9 +162,11 @@ export class AutoUpdateClientManager<
               this.loggers.error(error.stack);
             }
           }
+          let i = 0;
           for (const id in this.classes) {
             try {
               await this.classes[id].loadMissingReferences();
+              i++;
             } catch (error: any) {
               this.loggers.error(
                 "Error loading missing references for object " +
@@ -173,6 +179,13 @@ export class AutoUpdateClientManager<
               this.loggers.error(error.stack);
             }
           }
+          this.loggers.debug(
+            "Loaded missing references for " +
+              this.className +
+              " - [" +
+              i +
+              "] entries"
+          )
           this.startSocketListeners();
           resolve();
         }
@@ -194,6 +207,7 @@ export class AutoUpdateClientManager<
 
   protected async handleGetMissingObject(_id: string): Promise<AutoUpdated<T>> {
     if (!this.classers) throw new Error(`No classers.`);
+    this.loggers.debug("Getting missing object " + _id + " from manager " + this.className);
     const object = await createAutoUpdatedClass(
       this.classParam,
       this.socket,
@@ -211,6 +225,7 @@ export class AutoUpdateClientManager<
     data: Omit<IsData<InstanceType<T>>, "_id">
   ): Promise<AutoUpdated<T>> {
     if (!this.classers) throw new Error(`No classers.`);
+    this.loggers.debug("Creating new object from manager " + this.className);
     const object = await createAutoUpdatedClass(
       this.classParam,
       this.socket,
@@ -226,6 +241,6 @@ export class AutoUpdateClientManager<
   }
 }
 
-export type AutoUpdated<T, D extends number = 10> = AutoUpdatedClientObject<T> &
+export type AutoUpdated<T> = AutoUpdatedClientObject<T> &
   UnboxConstructor<T>;
 

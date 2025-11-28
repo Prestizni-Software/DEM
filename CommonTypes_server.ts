@@ -9,7 +9,7 @@ import {
   Split,
   StripPrototypePrefix,
 } from "./CommonTypes";
-import { ObjectId, Types } from "mongoose";
+import { Types } from "mongoose";
 import { AutoUpdated } from "./AutoUpdatedServerObjectClass";
 
 // ---------------------- DeRef ----------------------
@@ -22,12 +22,6 @@ export type DeRef<T> = {
     ? U
     : T[K];
 };
-
-export type Unref<T> = [T] extends [Ref<infer U>]
-  ? U extends Constructor<any>
-    ? AutoUpdated<U>
-    : U | ObjectId | string
-  : T;
 
 export type RefToId<T> = {
   [K in keyof T]: T[K] extends Ref<infer U> ? U | string : T[K];
@@ -57,7 +51,7 @@ type PathsHelper<
   : `${K}` | Join<K, Paths<DeRef<NonOptional<V>>, Prev[Depth], OriginalDepth>>;
 
 // ---------------------- PathValueOf ----------------------
-export type ResolveRef<T> = T extends Ref<infer U> ? U : T;
+export type ResolveRef<T> = T extends Ref<infer U> ? AutoUpdated<U> | Types.ObjectId | string : T;
 
 export type PathValue<
   T,
@@ -71,8 +65,7 @@ export type PathValue<
     ? K extends string
       ? K extends keyof T
         ? Rest extends string[]
-          ? // unwrap at every step; recursion will also distribute
-            ResolveRef<
+          ? ResolveRef<
               Rest["length"] extends 0
                 ? T[K]
                 : PathValue<ResolveRef<T[K]>, Rest, Prev[Depth]>
@@ -89,25 +82,20 @@ export type PathValueOf<
   Depth extends number = 6
 > = PathValue<InstanceOf<T>, Split<P>, Depth>;
 
-export type UnwrapRef<T, D extends number = 10> =
-  D extends 0
-    ? T
-
-    // arrays
-    : T extends (infer A)[]
-      ? UnwrapRef<A, Prev[D]>[]
-    : // special case: Ref<ObjectId> → never
-    T extends Ref<infer U>
-      ? U extends Types.ObjectId
-        ? never
-        : AutoUpdated<U, D>
-
-    // leaf Types.ObjectId: return it, do NOT unwrap as never
-    : T extends Types.ObjectId
-      ? Types.ObjectId
-
-    // objects
-    : T extends object
-      ? { [K in keyof T]: UnwrapRef<T[K], Prev[D]> }
-
-    : T;
+export type UnwrapRef<T, D extends number = 10> = D extends 0
+  ? T
+  : // arrays
+  T extends (infer A)[]
+  ? UnwrapRef<A, Prev[D]>[]
+  : // special case: Ref<ObjectId> → never
+  T extends Ref<infer U>
+  ? U extends Types.ObjectId
+    ? never
+    : AutoUpdated<Constructor<U>, D>
+  : // leaf Types.ObjectId: return it, do NOT unwrap as never
+  T extends Types.ObjectId
+  ? Types.ObjectId
+  : // objects
+  T extends object
+  ? { [K in keyof T]: UnwrapRef<T[K], Prev[D]> }
+  : T;

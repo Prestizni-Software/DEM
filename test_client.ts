@@ -25,7 +25,7 @@ export class Test {
 
   @classProp
   @classRef()
-  public ref!:AutoUpdated< typeof Test> | null;
+  public ref!:AutoUpdated<typeof Test> | null;
 
   @classProp
   @classRef()
