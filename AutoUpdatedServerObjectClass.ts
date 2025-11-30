@@ -27,7 +27,7 @@ export type AutoUpdated<T, D extends number = 10> = AutoUpdatedServerObject<T> &
 export async function createAutoUpdatedClass<C extends Constructor<any>>(
   classParam: C,
   socket: SocketType,
-  data: DocumentType<InstanceOf<C>>,
+  data: IsData<InstanceOf<C>>,
   loggers: LoggersType,
   parentClasser: AutoUpdateServerManager<any>,
   emitter: EventEmitter3
@@ -42,25 +42,21 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
     parentClasser,
     emitter
   );
+  await instance.loadFromDB();
   await instance.isPreLoadedAsync();
   return instance as AutoUpdated<InstanceType<C>>;
 }
 
 // ---------------------- Class ----------------------
-export class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
-  protected readonly isServer: boolean = true;
-  private readonly entry: DocumentType<InstanceOf<T>>;
+class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
+  protected override readonly isServer: boolean = true;
+  private entry: DocumentType<InstanceOf<T>>;
   protected declare parentClasser: AutoUpdateServerManager<any>;
 
   constructor(
     socket: SocketType,
-    data: DocumentType<InstanceOf<T>>,
-    loggers: {
-      info: (...args: any[]) => void;
-      debug: (...args: any[]) => void;
-      error: (...args: any[]) => void;
-      warn?: (...args: any[]) => void;
-    },
+    data: IsData<T>,
+    loggers: LoggersType,
     properties: (keyof T)[],
     className: string,
     classProp: Constructor<T>,
@@ -69,16 +65,31 @@ export class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
   ) {
     super(
       socket as any,
-      data.toObject() as any,
+      data,
       loggers,
       properties,
       className,
       classProp,
       parentClasser as any,
-      emitter
+      emitter,
+      true
     );
     this.parentClasser = parentClasser;
-    this.entry = data;
+    this.entry = null as any;
+  }
+
+  public async loadFromDB() {
+    try {
+    this.entry = await this.parentClasser.classers[this.className].model.findOne({
+      _id: this.data._id,
+    });
+    if(!this.entry)
+      this.entry = await this.parentClasser.classers[this.className].model.create(this.data);
+    this.data = this.entry.toObject() as any;
+    } catch (error: any) {
+      this.loggers.error("Error loading object from database: " + error.message);
+      this.loggers.error(error.stack);
+    }
   }
 
   public setValue_<K extends Paths<InstanceOf<T>>>(
@@ -108,7 +119,8 @@ export class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
         message: "Updated",
       };
     } catch (error) {
-      this.loggers.error("Error saving object:", error);
+      this.loggers.error("Error saving object: " + (error as Error).message);
+      this.loggers.error((error as any).stack);
       return {
         success: false,
         message: "Error saving object: " + (error as Error).message,

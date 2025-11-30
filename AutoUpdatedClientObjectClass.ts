@@ -5,7 +5,6 @@ import {
   InstanceOf,
   IsData,
   LoggersType,
-  LoggersTypeInternal,
   PathValueOf,
   ServerResponse,
   ServerUpdateRequest,
@@ -47,7 +46,7 @@ export class AutoUpdatedClientObject<T> {
   //protected updates: string[] = [];
   protected data: IsData<T>;
   protected readonly isServer: boolean = false;
-  protected readonly loggers: LoggersTypeInternal = {
+  protected readonly loggers: LoggersType = {
     info: () => {},
     debug: () => {},
     error: () => {},
@@ -61,13 +60,13 @@ export class AutoUpdatedClientObject<T> {
   protected isLoadingReferences = false;
   public readonly classProp: Constructor<T>;
   private readonly EmitterID = new ObjectId().toHexString();
-  private readonly token?: string;
   private readonly loadShit = async (): Promise<void> => {
     if (this.isLoaded) {
       try {
         await this.loadForceReferences();
       } catch (error) {
-        this.loggers.error(error);
+        this.loggers.error("Error loading references");
+        this.loggers.error((error as any).message);
       }
       this.isLoadingReferences = false;
       return;
@@ -77,7 +76,8 @@ export class AutoUpdatedClientObject<T> {
         try {
           await this.loadForceReferences();
         } catch (error) {
-          this.loggers.error(error);
+          this.loggers.error("Error loading references");
+          this.loggers.error((error as any).message);
         }
         this.isLoadingReferences = false;
         resolve();
@@ -92,8 +92,10 @@ export class AutoUpdatedClientObject<T> {
     className: string,
     classProperty: Constructor<T>,
     autoClasser: AutoUpdateManager<any>,
-    emitter: EventEmitter3
+    emitter: EventEmitter3,
+    isServer = false
   ) {
+    this.isServer = isServer;
     this.emitter = emitter;
     this.classProp = classProperty;
     this.isLoadingReferences = true;
@@ -101,13 +103,30 @@ export class AutoUpdatedClientObject<T> {
     this.autoClasser = autoClasser;
     this.className = className;
     this.properties = properties;
-    this.loggers.debug = loggers.debug;
-    this.loggers.info = loggers.info;
-    this.loggers.error = loggers.error;
-    this.loggers.warn = loggers.warn ?? loggers.info;
+    this.loggers.debug = (s: string) =>
+      loggers.debug(
+        "[DEM - " + this.className + ": " + (this.data._id ?? "not loaded") + "] " + s
+      );
+    this.loggers.info = (s: string) =>
+      loggers.info(
+        "[DEM - " + this.className + ": " + (this.data._id ?? "not loaded") + "] " + s
+      );
+    this.loggers.error = (s: string) =>
+      loggers.error(
+        "[DEM - " + this.className + ": " + (this.data._id ?? "not loaded") + "] " + s
+      );
+    this.loggers.warn = (s: string) =>
+      loggers.warn(
+        "[DEM - " + this.className + ": " + (this.data._id ?? "not loaded") + "] " + s
+      );
     this.socket = socket;
     if (typeof data === "string") {
-      if (data === "")
+      if (this.isServer) {
+    this.isLoading = false;
+        this.data = { _id: data } as IsData<T>;
+        return;
+      }
+      if (!data || data === "")
         throw new Error(
           "Cannot create a new AutoUpdatedClientClass with an empty string for ID."
         );
@@ -118,7 +137,9 @@ export class AutoUpdatedClientObject<T> {
         (res: ServerResponse<T>) => {
           if (!res.success) {
             this.isLoading = false;
-            this.loggers.error("Could not load data from server:", res.message);
+            this.loggers.error(
+              "Could not load data from server: " + res.message
+            );
             this.emitter.emit("pre-loaded" + this.EmitterID);
             return;
           }
@@ -169,7 +190,7 @@ export class AutoUpdatedClientObject<T> {
             this.properties.join("\n")
         );
 
-      if (!this.data._id || this.data._id === "")
+      if ((!this.data._id || this.data._id === "") && !this.isServer)
         this.handleNewObject(data as any);
       else {
         this.isLoading = false;
@@ -275,9 +296,10 @@ export class AutoUpdatedClientObject<T> {
       return { success: true, data: undefined, message: "" };
     } catch (error: any) {
       this.loggers.error(
-        `[${this.data._id}] Error applying patch:`,
-        error.message,
-        error.stack
+        `[${this.data._id}] Error applying patch: ` +
+          error.message +
+          "\n" +
+          error.stack
       );
       return {
         success: false,
@@ -337,9 +359,7 @@ export class AutoUpdatedClientObject<T> {
   ): Promise<{ success: boolean; msg: string }> {
     let message = "Setting value " + key + " of " + this.className;
     let value = Array.isArray(val) ? val.map((v) => v._id ?? v) : val;
-    this.loggers.debug(
-      `[${(this.data as any)._id}] Setting ${key} to ${value}`
-    );
+    this.loggers.debug(message);
     try {
       if (value instanceof AutoUpdatedClientObject)
         value = value.extractedData._id;
@@ -576,8 +596,8 @@ export class AutoUpdatedClientObject<T> {
             key +
             " on index " +
             part +
-            ":",
-          error.message
+            ":" +
+            error.message
         );
       }
     }
@@ -596,11 +616,12 @@ export class AutoUpdatedClientObject<T> {
             "update" + this.className + this.data._id,
             update,
             (res: ServerResponse<T>) => {
-              resolve({ success: res.success, message: res.message });
+              resolve({ success: res.success, message: "Success" });
             }
           );
         } catch (error: any) {
-          this.loggers.error("Error sending update:", error);
+          this.loggers.error("Error sending update:" + error.message);
+          this.loggers.error(error.stack);
           resolve({ success: false, message: error.message });
         }
       }
@@ -621,7 +642,7 @@ export class AutoUpdatedClientObject<T> {
     }
   }
 
-  protected async checkAutoStatusChange() {
+  public async checkAutoStatusChange() {
     return;
   }
 
@@ -687,10 +708,11 @@ export class AutoUpdatedClientObject<T> {
   }
 
   protected wipeSelf() {
+    const _id = this.data._id.toString();
     for (const key of Object.keys(this.data)) {
       delete (this.data as any)[key];
     }
-    this.loggers.info(`[${this.data._id}] ${this.className} object wiped`);
+    this.loggers.info(`[${_id}] ${this.className} object wiped`);
   }
 }
 
@@ -760,14 +782,13 @@ function checkForMissingRefs<C extends Constructor<any>>(
   autoClassers: AutoUpdateManager<any>
 ) {
   if (typeof data !== "string") {
-    const entryKeys = Object.keys(data);
     for (const prop of props) {
       let pointer = getMetadataRecursive(
         "refsTo",
         classParam.prototype,
         prop.toString()
       );
-      if (!entryKeys.includes(prop.toString()) && pointer) {
+      if (pointer) {
         pointer = pointer.split(":");
         if (pointer.length != 2)
           throw new Error(
@@ -801,7 +822,7 @@ function findMissingObjectReference(
         found = eData = eData[pathPart];
       }
       if (found) {
-        data[prop] = obj._id;
+        data[prop] = (obj as any)._id;
         return;
       }
     }

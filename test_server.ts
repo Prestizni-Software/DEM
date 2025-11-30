@@ -8,7 +8,6 @@ import { Server } from "node:http";
 import { Objekt, Status } from "./TestTypes.js";
 import { classProp, classRef, populatedRef } from "./CommonTypes.js";
 import { Types } from "mongoose";
-import { logger } from "@typegoose/typegoose/lib/logSettings.js";
 
 export class Test {
   @classProp
@@ -71,10 +70,18 @@ const managers = await AUSManagerFactory(
             return Status.INACTIVE;
           }
         ),
-        accessDefinitions: async (event, managers, token) => {
-            logger.debug("Access with token: " + token);
-            return true;
-          }
+        accessDefinitions: {
+          startupMiddleware: async (objects, classers, auth) => {
+            const jsičůrák = false;
+            if(jsičůrák) throw new Error("Jsičůrák");
+            const returns = objects.filter((obj) => true);
+            return returns;
+          },
+          eventMiddleware: async (event, classers, auth) => {
+            const veryBad = false;
+            if(veryBad) throw new Error("Very bad");
+          },
+        }
         
       },
     },

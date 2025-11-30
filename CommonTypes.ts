@@ -16,33 +16,26 @@ export type UnboxConstructor<T> = T extends new (...args: any[]) => infer I
   : T;
 
 export type LoggersType = {
-  info: (...args: any[]) => void;
-  debug: (...args: any[]) => void;
-  error: (...args: any[]) => void;
-  warn?: (...args: any[]) => void;
+  info: (s:string) => void;
+  debug: (s:string) => void;
+  error: (s:string) => void;
+  warn: (s:string) => void;
 };
-export type LoggersTypeInternal = LoggersType & {
-  warn: (...args: any[]) => void;
-};
+
 export type IsData<T> = T extends { _id: any } ? T : never;
+
+export type SocketEvent = [string, any, (res:ServerResponse<any>) => void]
+
 export type ServerResponse<T> =
   | {
-      data: T; // in this case, the applied patch
-      message: string;
+      data: T;
+      message?: string;
       success: true;
     }
   | {
-      data?: null;
       message: string;
       success: false;
     };
-
-export type ServerUpdateResponse<T> = {
-  data: Partial<IsData<T>>;
-  message: string;
-  success: true;
-  updateId: string;
-};
 
 export type ServerUpdateRequest<T> = {
   _id: RefType;

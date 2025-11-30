@@ -9,7 +9,6 @@ const socket = io("http://localhost:3001", {
     token: "test",
   },
 });
-
 export class Test {
   @classProp
   public _id!: string;

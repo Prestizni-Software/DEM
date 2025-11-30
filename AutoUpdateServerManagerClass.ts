@@ -1,4 +1,4 @@
-import { Event, Server, Socket } from "socket.io";
+import { ExtendedError, Server, Socket } from "socket.io";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 import {
   AutoUpdated,
@@ -12,6 +12,7 @@ import {
   LoggersType,
   ServerResponse,
   ServerUpdateRequest,
+  SocketEvent,
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
@@ -53,19 +54,31 @@ export type AUSDefinitions<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: ServerManagerDefinition<T[K], T>;
 };
 
-type AccessMiddleware<T extends Record<string, Constructor<any>>> = (
-  event: Event,
-  managers: {
-    [K in keyof T]: AutoUpdateServerManager<T[K]>;
-  },
-  userId: string
-) => Promise<boolean>;
+type AccessMiddleware<
+  T extends Record<string, Constructor<any>>,
+  C extends Constructor<any>
+> = {
+  eventMiddleware: (
+    event: SocketEvent,
+    managers: {
+      [K in keyof T]: AutoUpdateServerManager<T[K]>;
+    },
+    auth: { [key: string]: any }
+  ) => Promise<void>;
+  startupMiddleware: (
+    ids: AutoUpdated<C, 10>[],
+    managers: {
+      [K in keyof T]: AutoUpdateServerManager<T[K]>;
+    },
+    auth: { [key: string]: any }
+  ) => Promise<AutoUpdated<C, 10>[]>;
+};
 
 export type AUSOption<
   C extends Constructor<any>,
   T extends Record<string, Constructor<any>>
 > = {
-  accessDefinitions?: AccessMiddleware<T>;
+  accessDefinitions?: AccessMiddleware<T, C>;
   autoStatusDefinitions?: AutoStatusDefinitions<
     C,
     { [k: string]: string | number },
@@ -85,24 +98,58 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
   socket_server: Server,
   loggers: LoggersType,
   managers: WrappedInstances<T>,
-  secured?: AccessMiddleware<any>
+  secured?: AccessMiddleware<any, any>
 ) {
   if (secured) {
     socket_server.use(async (socket, next) => {
-      socket.use(async (event, next) => {
-        if (!(await secured(event, managers, socket.handshake.auth.token))) {
-          (loggers.warn ?? loggers.info)(
-            "Someone tried to access with invalid token: (" +
-              socket.handshake.auth.token +
-              ")\nWith ID:" +
-              socket.id +
-              "\nFrom: " +
-              socket.handshake.address
+      socket.use((async (
+        event: SocketEvent,
+        next: (err?: ExtendedError | undefined) => void
+      ) => {
+        if (
+          event.length !== 3 ||
+          typeof event[0] !== "string" ||
+          typeof event[2] !== "function"
+        ) {
+          loggers.warn(
+            "Invalid event: [" +
+              event.map((e) => JSON.stringify(e)).join("], [") +
+              "]"
           );
+          return next(new Error("Invalid event"));
+        }
+        try {
+          await secured.eventMiddleware(
+            event as any,
+            managers,
+            socket.handshake.auth
+          );
+        } catch (error) {
+          loggers.warn(
+            "Someone got access denied: (" +
+              JSON.stringify(socket.handshake.auth) +
+              ")\nWith ID: '" +
+              socket.id +
+              "'\nFrom: '" +
+              socket.handshake.address +
+              "'\nTo the event: '" +
+              event[0] +
+              "'\nFor: '" +
+              (error as any).message +
+              "'"
+          );
+          event[2]({
+            success: false,
+            message:
+              "You were denied access to this event '" +
+              event[0] +
+              "' by the server.\n" +
+              (error as any).message,
+          });
           return;
         }
         next();
-      });
+      }) as any);
       next();
     });
   }
@@ -213,9 +260,9 @@ export class AutoUpdateServerManager<
   public async preLoad() {
     this.loggers.debug("Loading manager DB " + this.className);
     const docs = await this.model.find({});
-    for (const doc of docs) {
-      this.classes[(doc as any)._id] =
-        this.classes[(doc as any)._id] ??
+    for (const doc of docs.map((d) => (d._id as any).toString() as string)) {
+      this.classes[doc] =
+        this.classes[doc] ??
         (await createAutoUpdatedClass<T>(
           this.classParam,
           this.socket,
@@ -224,7 +271,7 @@ export class AutoUpdateServerManager<
           this,
           this.emitter
         ));
-      await this.classes[(doc as any)._id].isPreLoadedAsync();
+      await this.classes[doc].isPreLoadedAsync();
     }
     this.loggers.debug(
       "Loaded manager DB " + this.className + " - [" + docs.length + "] entries"
@@ -236,23 +283,53 @@ export class AutoUpdateServerManager<
 
     socket.on(
       "startup" + this.className,
-      async (ack: (data: { ids: string[]; properties: string[] }) => void) => {
-        ack({
-          ids: Object.keys(this.classes),
-          properties: this.properties as string[],
-        });
+      async (
+        _,
+        ack: (
+          res: ServerResponse<{ ids: string[]; properties: string[] }>
+        ) => void
+      ) => {
+        try {
+          const ids =
+            (
+              await this.options?.accessDefinitions?.startupMiddleware(
+                this.objectsAsArray,
+                this.classers,
+                socket.handshake.auth
+              )
+            )?.map((obj) => obj._id) ?? Object.keys(this.classes);
+          this.loggers.debug(
+            "Sending startup data for manager " + this.className
+          );
+          ack({
+            data: { ids, properties: this.properties as string[] },
+            success: true,
+          });
+        } catch (error: any) {
+          ack({
+            success: false,
+            message: error.message,
+          });
+        }
       }
     );
     socket.on("delete" + this.className, async (id: string) => {
-      this.loggers.debug("Deleting object from manager " + this.className, id);
+      this.loggers.debug(
+        "Deleting object from manager " + this.className + " - " + id
+      );
       try {
         this.classes[id].destroy();
         delete this.classes[id];
-      } catch (error) {
+      } catch (error: any) {
         this.loggers.error(
-          "Error deleting object from manager " + this.className + " - " + id
+          "Error deleting object from manager " +
+            this.className +
+            " - " +
+            id +
+            ": " +
+            error.message
         );
-        this.loggers.error(error);
+        this.loggers.error(error.stack);
       }
     });
     socket.on(
@@ -379,15 +456,14 @@ export class AutoUpdateServerManager<
     return object;
   }
 
-  public async createObject(data: Omit<IsData<InstanceType<T>>, "_id">) {
+  public async createObject(data: Omit<InstanceType<T>, "_id">) {
     if (!this.classers) throw new Error(`No classers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
     (data as any)._id = undefined;
-    const entry = await this.model.create(data);
     const object = await createAutoUpdatedClass<T>(
       this.classParam,
       this.socket,
-      entry as any,
+      data as any,
       this.loggers,
       this,
       this.emitter

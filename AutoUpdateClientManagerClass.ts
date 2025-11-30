@@ -8,6 +8,7 @@ import {
   Constructor,
   IsData,
   LoggersType,
+  ServerResponse,
   UnboxConstructor,
 } from "./CommonTypes.js";
 import EventEmitter from "eventemitter3";
@@ -131,7 +132,16 @@ export class AutoUpdateClientManager<
     return new Promise<void>((resolve) => {
       this.socket.emit(
         "startup" + this.classParam.name,
-        async (data: { ids: string[]; properties: string[] }) => {
+        null,
+        async (
+          res: ServerResponse<{ ids: string[]; properties: string[] }>
+        ) => {
+          if (!res.success) {
+            this.loggers.error("Error loading ids from server for manager");
+            this.loggers.error(res.message);
+            throw new Error(res.message);
+          }
+          const data = res.data;
           let extraProperties: string[] = [];
           for (const property of this.properties) {
             if (typeof property !== "string")
@@ -140,8 +150,7 @@ export class AutoUpdateClientManager<
               );
             if (data.properties.includes(property))
               data.properties.splice(data.properties.indexOf(property), 1);
-            else
-              extraProperties.push(property);
+            else extraProperties.push(property);
           }
           let allowedToLoad = true;
           let errorMessage =
@@ -150,16 +159,24 @@ export class AutoUpdateClientManager<
           if (extraProperties.length > 0) {
             allowedToLoad = false;
             errorMessage +=
-              "\n\nLocal type has " + (extraProperties.length > 1 ? "these extra properties" : "this extra property") + ":\n" +
+              "\n\nLocal type has " +
+              (extraProperties.length > 1
+                ? "these extra properties"
+                : "this extra property") +
+              ":\n" +
               extraProperties.join("\n");
           }
           if (data.properties.length > 0) {
             allowedToLoad = false;
             errorMessage +=
-              "\n\nLocal type is missing " + (data.properties.length > 1 ? "these properties" : "this property") + ":\n" +
+              "\n\nLocal type is missing " +
+              (data.properties.length > 1
+                ? "these properties"
+                : "this property") +
+              ":\n" +
               data.properties.join("\n");
           }
-          if(!allowedToLoad){
+          if (!allowedToLoad) {
             this.loggers.error(errorMessage);
             throw new Error(errorMessage);
           }

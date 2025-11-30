@@ -4,7 +4,6 @@ import {
   EventEmitter3,
   IsData,
   LoggersType,
-  LoggersTypeInternal,
 } from "./CommonTypes.js";
 import "reflect-metadata";
 export abstract class AutoUpdateManager<T extends Constructor<any>> {
@@ -15,7 +14,7 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
   public readonly classers: Record<string, AutoUpdateManager<any>>;
   protected preloaded = false;
   protected waitingToResolveReferences: { [_id: string]: string } = {};
-  protected loggers: LoggersTypeInternal = {
+  protected loggers: LoggersType = {
     info: () => {},
     debug: () => {},
     error: () => {},
@@ -43,8 +42,7 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
       "props",
       classParam.prototype
     );
-    loggers.warn = loggers.warn ?? loggers.info;
-    this.loggers = loggers as LoggersTypeInternal;
+    this.loggers = loggers;
   }
 
   public async loadReferences(): Promise<void> {
@@ -83,5 +81,5 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     [_id: string]: AutoUpdatedClientObject<any>;
   };
 
-  public abstract get objectsAsArray(): any[];
+  public abstract get objectsAsArray(): AutoUpdatedClientObject<any>[];
 }
