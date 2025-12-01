@@ -51,7 +51,9 @@ type PathsHelper<
   : `${K}` | Join<K, Paths<DeRef<NonOptional<V>>, Prev[Depth], OriginalDepth>>;
 
 // ---------------------- PathValueOf ----------------------
-export type ResolveRef<T> = T extends Ref<infer U> ? AutoUpdated<U> | Types.ObjectId | string : T;
+export type ResolveRef<T> = T extends Ref<infer U>
+  ? AutoUpdated<U> | Types.ObjectId | string
+  : T;
 
 export type PathValue<
   T,
@@ -84,18 +86,12 @@ export type PathValueOf<
 
 export type UnwrapRef<T, D extends number = 10> = D extends 0
   ? T
-  : // arrays
-  T extends (infer A)[]
+  : T extends (infer A)[]
   ? UnwrapRef<A, Prev[D]>[]
-  : // special case: Ref<ObjectId> → never
-  T extends Ref<infer U>
-  ? U extends Types.ObjectId
+  : T extends Ref<infer U>
+  ? Exclude<U, Types.ObjectId> extends never
     ? never
-    : AutoUpdated<Constructor<U>, D>
-  : // leaf Types.ObjectId: return it, do NOT unwrap as never
-  T extends Types.ObjectId
-  ? Types.ObjectId
-  : // objects
-  T extends object
+    : AutoUpdated<Constructor<Exclude<U, Types.ObjectId>>, D>
+  : T extends object
   ? { [K in keyof T]: UnwrapRef<T[K], Prev[D]> }
   : T;

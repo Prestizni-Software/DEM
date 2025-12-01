@@ -41,7 +41,7 @@ export class Test {
   public parent!: Ref<Test> | null;
 }
 
-class Test2 {
+export class Test2 {
   @classProp
   public _id!: string;
 }
@@ -65,7 +65,6 @@ const managers = await AUSManagerFactory(
           "status",
           Status,
           async (obj) => {
-            if (obj.description) return;
             if (obj.active) return Status.ACTIVE;
             return Status.INACTIVE;
           }
@@ -146,7 +145,9 @@ refarr.push(obj2._id);
 await obj1.setValue_("refarr", refarr.map((r) => r._id));
 const test = await obj1.parent?.parent?.setValue_("active", true);
 const testik = obj1.ref;
-
+type refff = Ref<Test>
+type x = Exclude<refff, Types.ObjectId>
+type test = x extends Ref<infer U> ? U : false
 console.log("UPDATING ACTIVE STATUS TO FALSE");
 await obj1.setValue_("active", false);
 console.log(obj1.status);

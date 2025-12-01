@@ -116,7 +116,7 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
               event.map((e) => JSON.stringify(e)).join("], [") +
               "]"
           );
-          return next(new Error("Invalid event"));
+          return;
         }
         try {
           await secured.eventMiddleware(
@@ -163,7 +163,7 @@ export async function AUSManagerFactory<
   socket: Server,
   disableDEMDebugMessages: boolean = false,
   emitter: EventEmitter3 = new EventEmitter()
-): Promise<{ [K in keyof T]: T[K] & AutoUpdateServerManager<T[K]> }> {
+): Promise<{ [K in keyof T]: AutoUpdateServerManager<T[K]> }> {
   if (disableDEMDebugMessages) {
     loggers.debug = (_) => {};
   }
@@ -173,7 +173,7 @@ export async function AUSManagerFactory<
     });
     next();
   });
-  const classers: { [K in keyof T]: T[K] & AutoUpdateServerManager<T[K]> } =
+  const classers: { [K in keyof T]: AutoUpdateServerManager<T[K]> } =
     {} as any;
   let i = 0;
   for (const key in defs) {
@@ -472,6 +472,22 @@ export class AutoUpdateServerManager<
     await object.loadMissingReferences();
     object.checkAutoStatusChange();
     this.classes[object._id] = object;
+    for (const socket of this.clientSockets) {
+      if (this.options?.accessDefinitions?.startupMiddleware) {
+        try {
+          const theTruth =
+            await this.options?.accessDefinitions?.startupMiddleware(
+              [object],
+              this.classers,
+              socket.handshake.auth
+            );
+          if (theTruth.length > 0)
+            socket.emit("new" + this.classParam.name, object._id);
+        } catch (error) {
+          const _ = error;
+        }
+      } else socket.emit("new" + this.classParam.name, object._id);
+    }
     return object;
   }
 }

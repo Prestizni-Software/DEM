@@ -105,19 +105,19 @@ export class AutoUpdatedClientObject<T> {
     this.properties = properties;
     this.loggers.debug = (s: string) =>
       loggers.debug(
-        "[DEM - " + this.className + ": " + (this.data._id ?? "not loaded") + "] " + s
+        "[DEM - " + this.className + ": " + (this.data?._id ?? "not loaded") + "] " + s
       );
     this.loggers.info = (s: string) =>
       loggers.info(
-        "[DEM - " + this.className + ": " + (this.data._id ?? "not loaded") + "] " + s
+        "[DEM - " + this.className + ": " + (this.data?._id ?? "not loaded") + "] " + s
       );
     this.loggers.error = (s: string) =>
       loggers.error(
-        "[DEM - " + this.className + ": " + (this.data._id ?? "not loaded") + "] " + s
+        "[DEM - " + this.className + ": " + (this.data?._id ?? "not loaded") + "] " + s
       );
     this.loggers.warn = (s: string) =>
       loggers.warn(
-        "[DEM - " + this.className + ": " + (this.data._id ?? "not loaded") + "] " + s
+        "[DEM - " + this.className + ": " + (this.data?._id ?? "not loaded") + "] " + s
       );
     this.socket = socket;
     if (typeof data === "string") {
@@ -146,6 +146,7 @@ export class AutoUpdatedClientObject<T> {
           this.data = res.data as IsData<T>;
           this.isLoading = false;
           this.emitter.emit("pre-loaded" + this.EmitterID);
+          this.openSockets();
         }
       );
       this.data = { _id: data } as IsData<T>;
@@ -268,8 +269,9 @@ export class AutoUpdatedClientObject<T> {
   }
 
   private openSockets() {
+    const event = "update" + this.className + this.data._id.toString()
     this.socket.on(
-      "update" + this.className + this.data._id.toString(),
+      event,
       async (update: ServerUpdateRequest<T>) => {
         await this.handleUpdateRequest(update);
       }
@@ -402,7 +404,9 @@ export class AutoUpdatedClientObject<T> {
           }
           lastClass = temp;
           lastPath = path.slice(i + 1).join(".");
-          return await lastClass.setValue(lastPath, value);
+          const res = await lastClass.setValue(lastPath, value);
+          this.checkAutoStatusChange();
+          return res;
         } else obj = obj[path[i]];
       }
 
@@ -619,6 +623,7 @@ export class AutoUpdatedClientObject<T> {
               resolve({ success: res.success, message: "Success" });
             }
           );
+          this.checkAutoStatusChange();
         } catch (error: any) {
           this.loggers.error("Error sending update:" + error.message);
           this.loggers.error(error.stack);

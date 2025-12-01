@@ -112,7 +112,8 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
       );
 
       const update = this.makeUpdate(key, value);
-      this.socket.emit("update" + this.className + this.data._id, update);
+      const event = "update" + this.className + this.data._id
+      this.socket.emit(event, update);
 
       return {
         success: true,
@@ -161,7 +162,6 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
     const statusPath = this.parentClasser.options?.autoStatusDefinitions
       ?.statusProperty as any;
     if (!neededStatus || !statusPath) return;
-    this.loggers.debug("Checking auto status change - " + this.className);
     const currentStatus = this.getValue(
       this.parentClasser.options?.autoStatusDefinitions?.statusProperty as any
     );
@@ -174,6 +174,6 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
         " to " +
         neededStatus
     );
-    this.setValue(statusPath, neededStatus);
+    await this.setValue(statusPath, neededStatus);
   }
 }

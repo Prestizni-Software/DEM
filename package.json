@@ -17,7 +17,8 @@
   "scripts": {
     "release": "npm run release_client && npm run release_server",
     "release_client": "xcopy .\\tsconfig.json ..\\client\\ /Y && xcopy .\\AutoUpdateClientManagerClass.ts ..\\client\\ /Y && xcopy .\\AutoUpdatedClientObjectClass.ts ..\\client\\ /Y && xcopy .\\CommonTypes.ts ..\\client\\ /Y && xcopy .\\AutoUpdateManagerClass.ts ..\\client\\ /Y && xcopy .\\client.ts ..\\client\\ /Y && cd ..\\client && npm run release && cd ..\\src",
-    "release_server": "xcopy .\\tsconfig.json ..\\server\\ /Y && xcopy .\\AutoUpdatedClientObjectClass.ts ..\\server\\ /Y && xcopy .\\AutoUpdateManagerClass.ts ..\\server\\ /Y && xcopy .\\server.ts ..\\server\\ /Y && xcopy .\\CommonTypes.ts ..\\server\\ /Y && xcopy .\\CommonTypes_server.ts ..\\server\\ /Y && xcopy .\\AutoUpdateServerManagerClass.ts ..\\server\\ /Y && xcopy .\\AutoUpdatedServerObjectClass.ts ..\\server\\ /Y && cd ..\\server && npm run release && cd ..\\src"
+    "release_server": "xcopy .\\tsconfig.json ..\\server\\ /Y && xcopy .\\AutoUpdatedClientObjectClass.ts ..\\server\\ /Y && xcopy .\\AutoUpdateManagerClass.ts ..\\server\\ /Y && xcopy .\\server.ts ..\\server\\ /Y && xcopy .\\CommonTypes.ts ..\\server\\ /Y && xcopy .\\CommonTypes_server.ts ..\\server\\ /Y && xcopy .\\AutoUpdateServerManagerClass.ts ..\\server\\ /Y && xcopy .\\AutoUpdatedServerObjectClass.ts ..\\server\\ /Y && cd ..\\server && npm run release && cd ..\\src",
+    "test": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js tests/"
   },
   "dependencies": {
     "@typegoose/typegoose": "^12.20.0",
@@ -25,5 +26,12 @@
     "mongoose": "^8.19.2",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }
