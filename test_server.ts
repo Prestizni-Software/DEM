@@ -48,13 +48,13 @@ await obj1.setValue_("active", false);
 await obj1.setValue_("obj", { _id: "1", obj: { _id: "2" } });
 await obj1.setValue_("obj._id", "gay");
 await obj1.setValue_("ref", obj2._id);
-await obj1.setValue_("ref.description", obj2._id);
+await obj1.setValue_("ref.description", obj2._id.toString());
 
 const refarr = obj1.refarr;
 refarr.splice(0, refarr.length);
 refarr.push(obj2._id);
 await obj1.setValue_(
   "refarr",
-  refarr.map((r) => r._id)
+  refarr
 );
 await obj1.setValue_("active", false);
