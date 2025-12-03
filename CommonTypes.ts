@@ -1,6 +1,7 @@
-import EventEmitter from "eventemitter3";
+import {EventEmitter} from "eventemitter3";
 import { ObjectId } from "bson";
 import "reflect-metadata";
+import { AutoUpdated } from "./AutoUpdateClientManagerClass";
 
 type RefType = string | ObjectId;
 export type EventEmitter3 = EventEmitter;
@@ -83,11 +84,14 @@ export type Split<S extends string> = S extends `${infer L}.${infer R}`
   ? [L, ...Split<R>]
   : [S];
 export type NonOptional<T> = Exclude<T, null | undefined>;
+
+export type DeAutoUpdate<T> = T extends AutoUpdated<infer I> ? I | string | T : T;
+
 export type PathValueOf<
   T,
   P extends string,
   Depth extends number = 6
-> = PathValue<InstanceOf<T>, Split<P>, Depth>; // ---------------------- PathValueOf ----------------------
+> = PathValue<DeAutoUpdate<InstanceOf<T>>, Split<P>, Depth>; // ---------------------- PathValueOf ----------------------
 
 export type PathValue<
   T,
@@ -101,12 +105,12 @@ export type PathValue<
       ? K extends keyof T
         ? Rest extends string[]
           ? Rest["length"] extends 0
-            ? T[K]
+            ? DeAutoUpdate<T[K]>
             : PathValue<T[K], Rest, Prev[Depth]>
           : never
         : never
       : never
-    : T
+    : DeAutoUpdate<T>
   : never; // ---------------------- Paths ----------------------
 export type Paths<
   T,

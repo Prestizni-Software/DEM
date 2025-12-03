@@ -18,7 +18,7 @@
     "release": "npm run release_client && npm run release_server",
     "release_client": "xcopy .\\tsconfig.json ..\\client\\ /Y && xcopy .\\AutoUpdateClientManagerClass.ts ..\\client\\ /Y && xcopy .\\AutoUpdatedClientObjectClass.ts ..\\client\\ /Y && xcopy .\\CommonTypes.ts ..\\client\\ /Y && xcopy .\\AutoUpdateManagerClass.ts ..\\client\\ /Y && xcopy .\\client.ts ..\\client\\ /Y && cd ..\\client && npm run release && cd ..\\src",
     "release_server": "xcopy .\\tsconfig.json ..\\server\\ /Y && xcopy .\\AutoUpdatedClientObjectClass.ts ..\\server\\ /Y && xcopy .\\AutoUpdateManagerClass.ts ..\\server\\ /Y && xcopy .\\server.ts ..\\server\\ /Y && xcopy .\\CommonTypes.ts ..\\server\\ /Y && xcopy .\\CommonTypes_server.ts ..\\server\\ /Y && xcopy .\\AutoUpdateServerManagerClass.ts ..\\server\\ /Y && xcopy .\\AutoUpdatedServerObjectClass.ts ..\\server\\ /Y && cd ..\\server && npm run release && cd ..\\src",
-    "test": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js tests/"
+    "test": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js tests/ --detectOpenHandles "
   },
   "dependencies": {
     "@typegoose/typegoose": "^12.20.0",

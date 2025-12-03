@@ -1,15 +1,16 @@
-import { Test, Test2 } from "../test_server";
+
 import {
   AUSManagerFactory,
   createAutoStatusDefinitions,
-} from "../AutoUpdateServerManagerClass";
+} from "../AutoUpdateServerManagerClass.js";
 import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
-import { Status } from "../TestTypes";
+import { Status } from "../TestTypes.js";
 import mongoose from "mongoose";
 import { io } from "socket.io-client";
-import { AUCManagerFactory } from "../AutoUpdateClientManagerClass";
-import { ClientTest, ClientTest2 } from "../test_client";
+import { AUCManagerFactory } from "../AutoUpdateClientManagerClass.js";
+import { Test as ClientTest, Test2 as ClientTest2 } from "../ClientTypes.js";
+import { Test2 as ServerTest2, Test as ServerTest} from "../ServerTypes.js";
 
 export const initServerManagers = async () => {
   const server = new Server();
@@ -22,13 +23,13 @@ export const initServerManagers = async () => {
   const managers = await AUSManagerFactory(
     {
       Test2: {
-        class: Test2,
+        class: ServerTest2,
       },
       Test: {
-        class: Test,
+        class: ServerTest,
         options: {
           autoStatusDefinitions: createAutoStatusDefinitions(
-            Test,
+            ServerTest,
             "status",
             Status,
             async (obj) => {
@@ -38,13 +39,13 @@ export const initServerManagers = async () => {
           ),
           accessDefinitions: {
             startupMiddleware: async (objects, classers, auth) => {
-              const returns = objects.filter(
+              const returns = auth.token == "Client2" ? objects : objects.filter(
                 (obj) => obj.description && obj.description !== ""
               );
               return returns;
             },
-            eventMiddleware: async (event, classers, auth) => {
-              if (event[0].includes("fail")) throw new Error("Fail");
+            eventMiddleware: async (event, data, classers, auth) => {
+              if (auth.token == "Client2" && event.startsWith("delete")) throw new Error("Fail");
             },
           },
         },
@@ -61,17 +62,17 @@ export const initServerManagers = async () => {
   return managers;
 };
 
-export const initClientManagers = async () => {
+export const initClientManagers = async (id:string) => {
   const socket = io("http://localhost:3001", {
     auth: {
-      token: "test",
+      token: id,
     },
   });
 
   const managers = await AUCManagerFactory(
     {
-      ClientTest: ClientTest,
-      ClientTest2: ClientTest2,
+      Test: ClientTest,
+      Test2: ClientTest2,
     },
     {
       debug: (msg: string) => console.log(msg),

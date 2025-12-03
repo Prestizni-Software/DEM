@@ -17,7 +17,7 @@ import {
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
 import { Paths } from "./CommonTypes_server.js";
-import EventEmitter from "eventemitter3";
+import {EventEmitter} from "eventemitter3";
 
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateServerManager<T[K]>;
@@ -59,7 +59,8 @@ type AccessMiddleware<
   C extends Constructor<any>
 > = {
   eventMiddleware: (
-    event: SocketEvent,
+    event: string,
+    data: any,
     managers: {
       [K in keyof T]: AutoUpdateServerManager<T[K]>;
     },
@@ -120,7 +121,8 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
         }
         try {
           await secured.eventMiddleware(
-            event as any,
+            event[0],
+            event[1],
             managers,
             socket.handshake.auth
           );
@@ -313,13 +315,13 @@ export class AutoUpdateServerManager<
         }
       }
     );
-    socket.on("delete" + this.className, async (id: string) => {
+    socket.on("delete" + this.className, async (id: string, ack:(res: ServerResponse<undefined>) => void) => {
       this.loggers.debug(
         "Deleting object from manager " + this.className + " - " + id
       );
       try {
-        this.classes[id].destroy();
-        delete this.classes[id];
+        (await this.classes[id]?.destroy());
+        ack({ success: true, message: "Deleted successfully", data: undefined });
       } catch (error: any) {
         this.loggers.error(
           "Error deleting object from manager " +
@@ -330,6 +332,7 @@ export class AutoUpdateServerManager<
             error.message
         );
         this.loggers.error(error.stack);
+        ack({ success: false, message: error.message });
       }
     });
     socket.on(
@@ -452,7 +455,8 @@ export class AutoUpdateServerManager<
       this.emitter
     );
     await object.isPreLoadedAsync();
-    await object.loadMissingReferences();
+    object.loadMissingReferences();
+    await object.contactChildren();
     return object;
   }
 
@@ -468,10 +472,10 @@ export class AutoUpdateServerManager<
       this,
       this.emitter
     );
-    await object.isPreLoadedAsync();
-    await object.loadMissingReferences();
-    object.checkAutoStatusChange();
+    object.loadMissingReferences();
+    await object.checkAutoStatusChange();
     this.classes[object._id] = object;
+    await object.contactChildren();
     for (const socket of this.clientSockets) {
       if (this.options?.accessDefinitions?.startupMiddleware) {
         try {

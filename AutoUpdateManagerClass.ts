@@ -35,31 +35,31 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     });
     this.socket = socket;
     this.classParam = classParam;
-    this.properties = Reflect.getMetadata(
-      "props",
-      classParam
-    ) ?? Reflect.getMetadata(
-      "props",
-      classParam.prototype
-    );
+    this.properties =
+      Reflect.getMetadata("props", classParam) ??
+      Reflect.getMetadata("props", classParam.prototype);
     this.loggers = loggers;
   }
 
   public async loadReferences(): Promise<void> {
     for (const obj of this.objectsAsArray) {
-      await obj.loadMissingReferences();
+      obj.loadMissingReferences();
       await obj.checkAutoStatusChange();
+      await obj.contactChildren();
     }
   }
 
-  public async deleteObject(_id: string): Promise<void> {
+  public async deleteObject(
+    _id: string
+  ): Promise<{ success: boolean; message: string }> {
     if (typeof this.classes[_id] === "string") {
       const temp = await this.handleGetMissingObject(this.classes[_id]);
       if (!temp) throw new Error(`No object with id ${_id}`);
       this.classes[_id] = temp;
     }
-    await this.classes[_id].destroy(true);
-    delete this.classes[_id];
+    const res = await this.classes[_id].destroy(true);
+    if (res.success) delete this.classes[_id];
+    return res;
   }
 
   public get objectIDs(): string[] {

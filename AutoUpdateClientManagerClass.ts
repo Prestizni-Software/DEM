@@ -11,7 +11,7 @@ import {
   ServerResponse,
   UnboxConstructor,
 } from "./CommonTypes.js";
-import EventEmitter from "eventemitter3";
+import { EventEmitter } from "eventemitter3";
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateClientManager<T[K]>;
 };
@@ -217,7 +217,7 @@ export class AutoUpdateClientManager<
           let i = 0;
           for (const id in this.classes) {
             try {
-              await this.classes[id].loadMissingReferences();
+              this.classes[id].loadMissingReferences();
               i++;
             } catch (error: any) {
               this.loggers.error(
@@ -271,7 +271,7 @@ export class AutoUpdateClientManager<
       this.emitter
     );
     await object.isPreLoadedAsync();
-    await object.loadMissingReferences();
+    object.loadMissingReferences();
     return object;
   }
 
@@ -289,7 +289,7 @@ export class AutoUpdateClientManager<
       this.emitter
     );
     await object.isPreLoadedAsync();
-    await object.loadMissingReferences();
+    object.loadMissingReferences();
     this.classes[object._id] = object;
     return object;
   }

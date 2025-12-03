@@ -8,9 +8,9 @@ import {
   Recurseable,
   Split,
   StripPrototypePrefix,
-} from "./CommonTypes";
+} from "./CommonTypes.js";
 import { Types } from "mongoose";
-import { AutoUpdated } from "./AutoUpdatedServerObjectClass";
+import { AutoUpdated } from "./AutoUpdatedServerObjectClass.js";
 
 // ---------------------- DeRef ----------------------
 export type NonOptional<T> = Exclude<T, null | undefined>;

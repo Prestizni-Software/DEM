@@ -1,4 +1,7 @@
-import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
+import {
+  AutoUpdatedClientObject,
+  getMetadataRecursive,
+} from "./AutoUpdatedClientObjectClass.js";
 import { AutoUpdateServerManager } from "./AutoUpdateServerManagerClass.js";
 import "reflect-metadata";
 import { DefaultEventsMap, Server } from "socket.io";
@@ -80,23 +83,43 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
 
   public async loadFromDB() {
     try {
-    this.entry = await this.parentClasser.classers[this.className].model.findOne({
-      _id: this.data._id,
-    });
-    if(!this.entry)
-      this.entry = await this.parentClasser.classers[this.className].model.create(this.data);
-    this.data = this.entry.toObject() as any;
+      this.entry = await this.parentClasser.classers[
+        this.className
+      ].model.findOne({
+        _id: this.data._id,
+      });
+      if (!this.entry) {
+        this.entry = await this.parentClasser.classers[
+          this.className
+        ].model.create(this.data);
+        for (const prop of this.properties) {
+          const pointer = getMetadataRecursive(
+            "refsTo",
+            this.classProp.prototype,
+            prop.toString()
+          );
+          if (!pointer || !this.data[prop]) continue;
+          this.data["_id"] = this.entry._id;
+          await this.createdWithParent(
+            pointer.split(":"),
+            (this.data[prop] as any).toString()
+          );
+        }
+      }
+      this.data = this.entry.toObject() as any;
     } catch (error: any) {
-      this.loggers.error("Error loading object from database: " + error.message);
+      this.loggers.error(
+        "Error loading object from database: " + error.message
+      );
       this.loggers.error(error.stack);
     }
   }
 
-  public setValue_<K extends Paths<InstanceOf<T>>>(
+  public async setValue_<K extends Paths<InstanceOf<T>>>(
     key: K,
     val: PathValueOf<T, K>
   ): Promise<{ success: boolean; msg: string }> {
-    return this.setValue__(key, val);
+    return await this.setValue__(key, val);
   }
   protected handleNewObject(_data: IsData<T>) {
     throw new Error("Cannot create new objects like this.");
@@ -112,7 +135,7 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
       );
 
       const update = this.makeUpdate(key, value);
-      const event = "update" + this.className + this.data._id
+      const event = "update" + this.className + this.data._id;
       this.socket.emit(event, update);
 
       return {
@@ -129,12 +152,12 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
     }
   }
 
-  public async destroy(once: boolean = false): Promise<void> {
+  public async destroy(
+    once: boolean = false
+  ): Promise<{ success: boolean; message: string }> {
     if (!once) {
-      await this.autoClasser.deleteObject(this.data._id);
-      return;
+      return await this.autoClasser.deleteObject(this.data._id);
     }
-    this.socket.emit("delete" + this.className, this.data._id);
     try {
       const res = await this.entry.deleteOne({ _id: this.data._id });
       this.loggers.debug("Deleted object from server " + this.className);
@@ -148,10 +171,19 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
       );
       this.loggers.error(error.message);
       this.loggers.error(error.stack);
+      return {
+        success: false,
+        message: "Deletion uncussessful: " + error.message,
+      };
     }
+    this.socket.emit("delete" + this.className, this.data._id);
     this.socket.removeAllListeners("update" + this.className + this.data._id);
     this.socket.removeAllListeners("delete" + this.className + this.data._id);
     this.wipeSelf();
+    return {
+      success: true,
+      message: "Deleted",
+    };
   }
 
   public override async checkAutoStatusChange() {
