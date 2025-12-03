@@ -6,9 +6,17 @@ import {
 } from "./AutoUpdatedClientObjectClass.js";
 import {
   Constructor,
+  InstanceOf,
   IsData,
+  Join,
   LoggersType,
+  NonOptional,
+  OnlyClassKeys,
+  Prev,
+  Recurseable,
   ServerResponse,
+  Split,
+  StripPrototypePrefix,
   UnboxConstructor,
 } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
@@ -295,4 +303,32 @@ export class AutoUpdateClientManager<
   }
 }
 
-export type AutoUpdated<T> = AutoUpdatedClientObject<T> & UnboxConstructor<T>;
+export type AutoUpdated<T> = AutoUpdatedClientObject<T> & UnboxConstructor<T>;export type DeAutoUpdate<T> = T extends AutoUpdatedClientObject<infer I> ? I | string | T : T;
+
+export type PathValueOf<
+  T,
+  P extends string,
+  Depth extends number = 6
+> = PathValue<DeAutoUpdate<InstanceOf<T>>, Split<P>, Depth>; // ---------------------- PathValueOf ----------------------
+
+export type PathValue<
+  T,
+  Parts extends string[],
+  Depth extends number = 5
+> = Depth extends 0 ? never : T extends unknown ? Parts extends [infer K, ...infer Rest] ? K extends string ? K extends keyof T ? Rest extends string[] ? Rest["length"] extends 0 ? DeAutoUpdate<T[K]> : PathValue<T[K], Rest, Prev[Depth]> : never : never : never : DeAutoUpdate<T> : never; // ---------------------- Paths ----------------------
+export type Paths<
+  T,
+  Depth extends number = 5,
+  OriginalDepth extends number = Depth
+> = Depth extends never ? never : {
+  [K in OnlyClassKeys<NonOptional<T>>]: K extends "_id" ? StripPrototypePrefix<`${K}`> : StripPrototypePrefix<
+    PathsHelper<K, NonOptional<T>[K], Depth, OriginalDepth>
+  >;
+}[OnlyClassKeys<NonOptional<T>>];
+type PathsHelper<
+  K extends string,
+  V,
+  Depth extends number,
+  OriginalDepth extends number
+> = Recurseable<V> extends never ? `${K}` : `${K}` | Join<K, Paths<NonOptional<V>, Prev[Depth], OriginalDepth>>;
+

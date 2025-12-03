@@ -1,7 +1,6 @@
 import {EventEmitter} from "eventemitter3";
 import { ObjectId } from "bson";
 import "reflect-metadata";
-import { AutoUpdated } from "./AutoUpdateClientManagerClass";
 
 type RefType = string | ObjectId;
 export type EventEmitter3 = EventEmitter;
@@ -85,52 +84,4 @@ export type Split<S extends string> = S extends `${infer L}.${infer R}`
   : [S];
 export type NonOptional<T> = Exclude<T, null | undefined>;
 
-export type DeAutoUpdate<T> = T extends AutoUpdated<infer I> ? I | string | T : T;
-
-export type PathValueOf<
-  T,
-  P extends string,
-  Depth extends number = 6
-> = PathValue<DeAutoUpdate<InstanceOf<T>>, Split<P>, Depth>; // ---------------------- PathValueOf ----------------------
-
-export type PathValue<
-  T,
-  Parts extends string[],
-  Depth extends number = 5
-> = Depth extends 0
-  ? never
-  : T extends unknown
-  ? Parts extends [infer K, ...infer Rest]
-    ? K extends string
-      ? K extends keyof T
-        ? Rest extends string[]
-          ? Rest["length"] extends 0
-            ? DeAutoUpdate<T[K]>
-            : PathValue<T[K], Rest, Prev[Depth]>
-          : never
-        : never
-      : never
-    : DeAutoUpdate<T>
-  : never; // ---------------------- Paths ----------------------
-export type Paths<
-  T,
-  Depth extends number = 5,
-  OriginalDepth extends number = Depth
-> = Depth extends never
-  ? never
-  : {
-      [K in OnlyClassKeys<NonOptional<T>>]: K extends "_id"
-        ? StripPrototypePrefix<`${K}`>
-        : StripPrototypePrefix<
-            PathsHelper<K, NonOptional<T>[K], Depth, OriginalDepth>
-          >;
-    }[OnlyClassKeys<NonOptional<T>>];
-type PathsHelper<
-  K extends string,
-  V,
-  Depth extends number,
-  OriginalDepth extends number
-> = Recurseable<V> extends never
-  ? `${K}`
-  : `${K}` | Join<K, Paths<NonOptional<V>, Prev[Depth], OriginalDepth>>;
 
