@@ -5,10 +5,11 @@ import {
   InstanceOf,
   IsData,
   LoggersType,
+  PathValueOf,
   ServerResponse,
   ServerUpdateRequest,
+  Paths,
 } from "./CommonTypes.js";
-import { PathValueOf, Paths } from "./AutoUpdateClientManagerClass.js";
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";

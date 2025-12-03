@@ -1,4 +1,4 @@
-import { AutoUpdated } from "./AutoUpdateClientManagerClass.js";
+import { AutoUpdated } from "./CommonTypes.js";
 import { classProp, classRef, populatedRef } from "./CommonTypes.js";
 import { Status, Objekt } from "./TestTypes.js";
 
