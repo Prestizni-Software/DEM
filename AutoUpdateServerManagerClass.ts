@@ -392,8 +392,6 @@ export class AutoUpdateServerManager<
             const id = event.replace("update" + this.className, "");
             let obj = this.classes[id];
             if (typeof obj === "string")
-              this.classes[id] = obj = await this.handleGetMissingObject(obj);
-            if (typeof obj === "string")
               throw new Error(`Never... failed to get object somehow: ${obj}`);
             const res = await obj.setValue(data.key as any, data.value);
 

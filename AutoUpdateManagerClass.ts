@@ -61,6 +61,14 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
       );
   }
 
+  public close() {
+    for (const id of this.objectIDs) {
+      delete this.classes[id];
+    }
+    this.socket.disconnect?.() ?? this.socket.disconnectSockets(true);
+    this.loggers.info("Goodbye, see you next time!");
+  }
+
   public async loadReferences(): Promise<void> {
     for (const obj of this.objectsAsArray) {
       obj.loadMissingReferences();
@@ -72,11 +80,6 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
   public async deleteObject(
     _id: string
   ): Promise<{ success: boolean; message: string }> {
-    if (typeof this.classes[_id] === "string") {
-      const temp = await this.handleGetMissingObject(this.classes[_id]);
-      if (!temp) throw new Error(`No object with id ${_id}`);
-      this.classes[_id] = temp;
-    }
     const res = await this.classes[_id].destroy(true);
     if (res.success) delete this.classes[_id];
     return res;

@@ -1,13 +1,12 @@
 import { Socket } from "socket.io-client";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
+import { createAutoUpdatedClass } from "./AutoUpdatedClientObjectClass.js";
 import {
-  createAutoUpdatedClass,
-} from "./AutoUpdatedClientObjectClass.js";
-import {
-  AutoUpdated, Constructor,
+  AutoUpdated,
+  Constructor,
   IsData,
   LoggersType,
-  ServerResponse
+  ServerResponse,
 } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
@@ -42,6 +41,12 @@ export async function AUCManagerFactory<
       try {
         await c.loadFromServer();
       } catch (error: any) {
+        if (
+          error.message.includes(
+            "Local type does not match server type for manager"
+          )
+        )
+          throw error;
         message += "\n Error loading data from server for manager: " + key;
         message += "\n " + error.message;
         loggers.error(message);
@@ -49,6 +54,12 @@ export async function AUCManagerFactory<
         continue;
       }
     } catch (error: any) {
+      if (
+        error.message.includes(
+          "Local type does not match server type for manager"
+        )
+      )
+        throw error;
       message += "\n Error creating manager: " + key;
       message += "\n " + error.message;
       loggers.error(message);
@@ -127,7 +138,7 @@ export class AutoUpdateClientManager<
   }
 
   public async loadFromServer() {
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve,reject) => {
       this.socket.emit(
         "startup" + this.classParam.name,
         null,
@@ -176,7 +187,8 @@ export class AutoUpdateClientManager<
           }
           if (!allowedToLoad) {
             this.loggers.error(errorMessage);
-            throw new Error(errorMessage);
+            reject(new Error(errorMessage));
+            return;
           }
           this.loggers.debug(
             "Loading manager DB " +
@@ -292,5 +304,3 @@ export class AutoUpdateClientManager<
     return object;
   }
 }
-
-

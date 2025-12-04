@@ -3,6 +3,9 @@ import mongoose from "mongoose";
 import { getModelForClass } from "@typegoose/typegoose";
 import { Status } from "../TestTypes.js";
 import { Test, Test2 } from "../ServerTypes.js";
+import { AUCManagerFactory } from "../AutoUpdateClientManagerClass.js";
+import { classProp, classRef } from "../CommonTypes.js";
+import { io } from "socket.io-client";
 
 await mongoose.connect("mongodb://localhost:27017/GeoDB", {
   timeoutMS: 5000,
@@ -10,11 +13,10 @@ await mongoose.connect("mongodb://localhost:27017/GeoDB", {
 await getModelForClass(Test).deleteMany({});
 await getModelForClass(Test2).deleteMany({});
 const serverManagers = await initServerManagers();
-
 afterAll(async () => {
   await mongoose.disconnect();
+  for(const manager of Object.values(serverManagers)) await manager.close();
 });
-
 const testServerObject1 = await serverManagers.Test.createObject({
   active: true,
   status: Status.INACTIVE,
@@ -57,7 +59,10 @@ const testServerObject3 = await serverManagers.Test.createObject({
 const clientManagers1 = await initClientManagers("Client1");
 
 const clientManagers2 = await initClientManagers("Client2");
-
+afterAll(async () => {
+  for(const manager of Object.values(clientManagers1)) await manager.close();
+  for(const manager of Object.values(clientManagers2)) await manager.close();
+});
 const testClient1Object1 =
   clientManagers1.Test.objects[testServerObject1._id.toString()];
 
@@ -325,5 +330,54 @@ describe("Server ", () => {
 
   test("End", async () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
+  }, 1000);
+
+  test("Creating manager with an invalid type", async () => {
+    class Test {
+      @classProp
+      public _id!: string;
+
+      @classProp
+      public isActive!: boolean;
+
+      @classProp
+      public status!: Status;
+
+      @classProp
+      public someGayText!: string;
+
+      @classProp
+      @classRef()
+      public referance!: Test | null;
+    }
+    const socket = io("http://localhost:3001", {
+      auth: {
+        token: "GayClient",
+      },
+    });
+    try {
+      await AUCManagerFactory(
+        {
+          Test,
+        },
+        {
+          info: () => console.log,
+          debug: () => console.debug,
+          error: () => console.error,
+          warn: () => console.warn,
+        },
+        socket,
+        true
+      );
+    } catch (e: any) {
+      expect(e).toBeInstanceOf(Error);
+      expect(e.message).toContain(
+        "Local type does not match server type for manager"
+      );
+      socket.disconnect();
+      return;
+    }
+    expect(false).toBe(true);
+    socket.disconnect();
   }, 1000);
 });
