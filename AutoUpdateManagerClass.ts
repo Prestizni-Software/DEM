@@ -30,15 +30,35 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
   ) {
     this.classers = classers;
     this.emitter = emitter;
-    this.emitter.on("*", (e) => {
-      console.log("a");
-    });
     this.socket = socket;
     this.classParam = classParam;
     this.properties =
       Reflect.getMetadata("props", classParam) ??
       Reflect.getMetadata("props", classParam.prototype);
-    this.loggers = loggers;
+    this.loggers.debug = (s: string) =>
+      loggers.debug(
+        "[DEM - " +
+          classParam.name +" MANAGER] " +
+          s
+      );
+    this.loggers.info = (s: string) =>
+      loggers.info(
+        "[DEM - " +
+          classParam.name +" MANAGER] " +
+          s
+      );
+    this.loggers.error = (s: string) =>
+      loggers.error(
+        "[DEM - " +
+          classParam.name +" MANAGER] " +
+          s
+      );
+    this.loggers.warn = (s: string) =>
+      loggers.warn(
+        "[DEM - " +
+          classParam.name +" MANAGER] " +
+          s
+      );
   }
 
   public async loadReferences(): Promise<void> {

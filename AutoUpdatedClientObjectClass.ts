@@ -464,13 +464,13 @@ export class AutoUpdatedClientObject<T> {
         } else {
           if (this.getValue(key) && Array.isArray(this.getValue(key))) {
             if (this.getValue(key).includes(value)) value = this.getValue(key);
-            else value = this.getValue(key).concat(value);
+            else value = [...new Set(this.getValue(key).concat(value))];
           }
           const res = await this.setValueInternal(lastPath, value);
           if (res.success) {
             const originalValue = obj[path.at(-1)];
             if (!Array.isArray(value) && Array.isArray(originalValue)) {
-              originalValue.push(value);
+              if (!originalValue.includes(value)) originalValue.push(value);
               value = originalValue;
             } else obj[path.at(-1)] = value;
           }
@@ -490,6 +490,7 @@ export class AutoUpdatedClientObject<T> {
       }
       const pathArr = lastPath.split(".");
       if (pathArr.length === 1) {
+        if (Array.isArray(value)) value = [...new Set(value)];
         (this.data as any)[key] = value;
         await this.checkAutoStatusChange();
         this.findAndLoadReferences(lastPath, value);
@@ -503,6 +504,7 @@ export class AutoUpdatedClientObject<T> {
       for (const p of pathMinusLast) {
         ref = ref[p];
       }
+      if (Array.isArray(value)) value = [...new Set(value)];
       ref[pathArr.at(-1)!] = value;
       await this.checkAutoStatusChange();
       this.findAndLoadReferences(lastPath, value);
@@ -699,7 +701,7 @@ export class AutoUpdatedClientObject<T> {
     if (!val) return;
     if (Array.isArray(val)) {
       if (val.includes(this.data._id)) await obj?.contactChildren();
-      else await obj?.setValue(pointer[1], [...val, this.data._id]);
+      else await obj?.setValue(pointer[1], [...new Set(val), this.data._id]);
     } else if (val.toString() === this.data._id.toString())
       await obj?.contactChildren();
     else await obj?.setValue(pointer[1], this.data._id.toString());

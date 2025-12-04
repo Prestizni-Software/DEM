@@ -58,17 +58,23 @@ const clientManagers1 = await initClientManagers("Client1");
 
 const clientManagers2 = await initClientManagers("Client2");
 
-const testClient1Object1 = clientManagers1.Test.objects[testServerObject1._id.toString()];
+const testClient1Object1 =
+  clientManagers1.Test.objects[testServerObject1._id.toString()];
 
-const testClient1Object2 = clientManagers1.Test.objects[testServerObject2._id.toString()];
+const testClient1Object2 =
+  clientManagers1.Test.objects[testServerObject2._id.toString()];
 
-const testClient1Object3 = clientManagers1.Test.objects[testServerObject3._id.toString()];
+const testClient1Object3 =
+  clientManagers1.Test.objects[testServerObject3._id.toString()];
 
-const testClient2Object1 = clientManagers2.Test.objects[testServerObject1._id.toString()];
+const testClient2Object1 =
+  clientManagers2.Test.objects[testServerObject1._id.toString()];
 
-const testClient2Object2 = clientManagers2.Test.objects[testServerObject2._id.toString()];
+const testClient2Object2 =
+  clientManagers2.Test.objects[testServerObject2._id.toString()];
 
-const testClient2Objekt3 = clientManagers2.Test.objects[testServerObject3._id.toString()];
+const testClient2Object3 =
+  clientManagers2.Test.objects[testServerObject3._id.toString()];
 
 describe("Server ", () => {
   test("Managers created", async () => {
@@ -84,7 +90,6 @@ describe("Server ", () => {
 
   test("Default object loaded", async () => {
     expect(clientManagers1.Test.objectsAsArray.length).toBe(3);
-    expect(clientManagers2.Test.objectsAsArray.length).toBe(3);
   }, 1000);
 
   test("Object created", async () => {
@@ -127,6 +132,11 @@ describe("Server ", () => {
       })
     );
   }, 1000);
+
+  test("Client2 redacted object not loaded", async () => {
+    expect(testClient2Object3).toBeUndefined();
+    expect(clientManagers2.Test.objectsAsArray.length).toBe(2);
+  });
 
   test("Autostatus at creation - Client", async () => {
     expect(testServerObject1.status).toBe(Status.ACTIVE);
@@ -244,10 +254,6 @@ describe("Server ", () => {
     expect(testServerObject2.parent?.description).toBe(
       testServerObject3.description
     );
-    while (testClient2Object2.parent?.description !== "TestObj3") {
-      await new Promise((resolve) => setTimeout(resolve, 1));
-    }
-    expect(testClient2Object2.parent?.description).toBe("TestObj3");
   }, 1000);
 
   test("Denied deletion from client", async () => {
@@ -256,6 +262,65 @@ describe("Server ", () => {
 
   test("Allowed deletion from server", async () => {
     expect((await testClient1Object2.destroy()).success).toBe(true);
+  }, 1000);
+  let newObjectId: string;
+  test("Creation of new object from server", async () => {
+    newObjectId = (
+      await serverManagers.Test.createObject({
+        description: "TestObj4",
+        active: true,
+        status: Status.INACTIVE,
+        ref: null,
+        refarr: [],
+        obj: null,
+        parent: null,
+      })
+    )._id.toString();
+    expect(serverManagers.Test.getObject(newObjectId)?.description).toBe(
+      "TestObj4"
+    );
+    while (
+      clientManagers1.Test.getObject(newObjectId)?.description !== "TestObj4"
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    expect(clientManagers1.Test.getObject(newObjectId)?.description).toBe(
+      "TestObj4"
+    );
+  }, 1000);
+
+  test("Client2 not notified of object creation", async () => {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(clientManagers2.Test.getObject(newObjectId)).toBeUndefined();
+    expect(clientManagers2.Test.objectsAsArray.length).toBe(2);
+  });
+
+  test("Creation of new object from client", async () => {
+    newObjectId = (
+      await clientManagers1.Test.createObject({
+        description: "TestObj5",
+        active: true,
+        status: Status.INACTIVE,
+        ref: null,
+        refarr: [],
+        obj: null,
+        parent: null,
+      })
+    )._id.toString();
+    expect(clientManagers1.Test.getObject(newObjectId)?.description).toBe(
+      "TestObj5"
+    );
+    expect(serverManagers.Test.getObject(newObjectId)?.description).toBe(
+      "TestObj5"
+    );
+    while (
+      clientManagers2.Test.getObject(newObjectId)?.description !== "TestObj5"
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    expect(clientManagers2.Test.getObject(newObjectId)?.description).toBe(
+      "TestObj5"
+    );
   }, 1000);
 
   test("End", async () => {

@@ -39,8 +39,8 @@ export const initServerManagers = async () => {
           ),
           accessDefinitions: {
             startupMiddleware: async (objects, classers, auth) => {
-              const returns = auth.token == "Client2" ? objects : objects.filter(
-                (obj) => obj.description && obj.description !== ""
+              const returns = auth.token == "Client1" ? objects : objects.filter(
+                (obj) => obj.description && obj.description !== "TestObj3" && obj.description !== "TestObj4"
               );
               return returns;
             },
