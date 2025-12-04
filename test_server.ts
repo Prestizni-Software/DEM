@@ -52,7 +52,7 @@ await obj1.setValue_("ref.description", obj2._id.toString());
 
 const refarr = obj1.refarr;
 refarr.splice(0, refarr.length);
-refarr.push(obj2._id);
+refarr.push(obj2 as any);
 await obj1.setValue_(
   "refarr",
   refarr

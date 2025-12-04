@@ -243,8 +243,8 @@ export class AutoUpdateClientManager<
     });
   }
 
-  public getObject(_id: string): AutoUpdated<T> | null {
-    return this.classes[_id];
+  public getObject(_id?: string): AutoUpdated<T> | null {
+    return _id ? this.classes[_id] : null;
   }
 
   public get objects(): { [_id: string]: AutoUpdated<T> } {

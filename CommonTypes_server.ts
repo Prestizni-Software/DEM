@@ -93,10 +93,7 @@ export type UnwrapRef<T, D extends number = 10> = D extends 0
   : T extends Ref<infer U>
   ? Exclude<U, Types.ObjectId> extends never
     ? never
-    :
-        | AutoUpdated<Exclude<U, Types.ObjectId>, D>
-        | string
-        | Types.ObjectId
+    : AutoUpdated<Exclude<U, Types.ObjectId>, D>
   : T extends object
   ? { [K in keyof T]: K extends "_id" ? T[K] : UnwrapRef<T[K], Prev[D]> }
   : T;

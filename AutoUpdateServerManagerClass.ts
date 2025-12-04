@@ -17,7 +17,7 @@ import {
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
 import { Paths } from "./CommonTypes_server.js";
-import {EventEmitter} from "eventemitter3";
+import { EventEmitter } from "eventemitter3";
 
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateServerManager<T[K]>;
@@ -175,8 +175,7 @@ export async function AUSManagerFactory<
     });
     next();
   });
-  const classers: { [K in keyof T]: AutoUpdateServerManager<T[K]> } =
-    {} as any;
+  const classers: { [K in keyof T]: AutoUpdateServerManager<T[K]> } = {} as any;
   let i = 0;
   for (const key in defs) {
     loggers.debug(`Creating manager for ${key}`);
@@ -315,26 +314,33 @@ export class AutoUpdateServerManager<
         }
       }
     );
-    socket.on("delete" + this.className, async (id: string, ack:(res: ServerResponse<undefined>) => void) => {
-      this.loggers.debug(
-        "Deleting object from manager " + this.className + " - " + id
-      );
-      try {
-        (await this.classes[id]?.destroy());
-        ack({ success: true, message: "Deleted successfully", data: undefined });
-      } catch (error: any) {
-        this.loggers.error(
-          "Error deleting object from manager " +
-            this.className +
-            " - " +
-            id +
-            ": " +
-            error.message
+    socket.on(
+      "delete" + this.className,
+      async (id: string, ack: (res: ServerResponse<undefined>) => void) => {
+        this.loggers.debug(
+          "Deleting object from manager " + this.className + " - " + id
         );
-        this.loggers.error(error.stack);
-        ack({ success: false, message: error.message });
+        try {
+          await this.classes[id]?.destroy();
+          ack({
+            success: true,
+            message: "Deleted successfully",
+            data: undefined,
+          });
+        } catch (error: any) {
+          this.loggers.error(
+            "Error deleting object from manager " +
+              this.className +
+              " - " +
+              id +
+              ": " +
+              error.message
+          );
+          this.loggers.error(error.stack);
+          ack({ success: false, message: error.message });
+        }
       }
-    });
+    );
     socket.on(
       "new" + this.className,
       async (
@@ -427,8 +433,8 @@ export class AutoUpdateServerManager<
     });
   }
 
-  public getObject(_id: string): AutoUpdated<InstanceOf<T>> | null {
-    return this.classes[_id];
+  public getObject(_id?: string): AutoUpdated<T> | null {
+    return _id ? this.classes[_id] : null;
   }
 
   public get objects(): { [_id: string]: AutoUpdated<InstanceOf<T>> } {

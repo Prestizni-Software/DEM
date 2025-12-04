@@ -58,17 +58,17 @@ const clientManagers1 = await initClientManagers("Client1");
 
 const clientManagers2 = await initClientManagers("Client2");
 
-const testClient1Object1 = clientManagers1.Test.objects[testServerObject1._id];
+const testClient1Object1 = clientManagers1.Test.objects[testServerObject1._id.toString()];
 
-const testClient1Object2 = clientManagers1.Test.objects[testServerObject2._id];
+const testClient1Object2 = clientManagers1.Test.objects[testServerObject2._id.toString()];
 
-const testClient1Object3 = clientManagers1.Test.objects[testServerObject3._id];
+const testClient1Object3 = clientManagers1.Test.objects[testServerObject3._id.toString()];
 
-const testClient2Object1 = clientManagers2.Test.objects[testServerObject1._id];
+const testClient2Object1 = clientManagers2.Test.objects[testServerObject1._id.toString()];
 
-const testClient2Object2 = clientManagers2.Test.objects[testServerObject2._id];
+const testClient2Object2 = clientManagers2.Test.objects[testServerObject2._id.toString()];
 
-const testClient2Objekt3 = clientManagers2.Test.objects[testServerObject3._id];
+const testClient2Objekt3 = clientManagers2.Test.objects[testServerObject3._id.toString()];
 
 describe("Server ", () => {
   test("Managers created", async () => {
