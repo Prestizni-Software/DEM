@@ -1,12 +1,19 @@
 import { Status } from "./TestTypes.js";
-import { initServerManagers } from "./tests/test_lib.js";
+import { initServerManagers } from "./test_lib.js";
 
 const managers = await initServerManagers();
 console.log("CREATING OBJECT WITH active = true, status = INACTIVE");
 
-for (const obj of managers.Test.objectsAsArray) {
-  await obj.destroy();
+
+while(true){
+  
+for(const obj of managers.Test.objectsAsArray){
+  await obj.setValue_("parent", managers.Test.objectsAsArray[0]._id);
 }
+await new Promise((resolve) => setTimeout(resolve, 1000));
+}
+
+
 
 const obj1 = await managers.Test.createObject({
   active: true,

@@ -138,7 +138,7 @@ export class AutoUpdateClientManager<
   }
 
   public async loadFromServer() {
-    return new Promise<void>((resolve,reject) => {
+    return new Promise<void>((resolve, reject) => {
       this.socket.emit(
         "startup" + this.classParam.name,
         null,
@@ -197,6 +197,7 @@ export class AutoUpdateClientManager<
               data.ids.length +
               "] entries"
           );
+          this.loggers.debug(data.ids.join(", "));
 
           for (const id of data.ids) {
             try {

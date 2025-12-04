@@ -1,5 +1,5 @@
 import { Status } from "./TestTypes.js";
-import { initClientManagers } from "./tests/test_lib.js";
+import { initClientManagers } from "./test_lib.js";
 
 
 const managers = await initClientManagers("test"+Math.random().toString(36).substring(7));

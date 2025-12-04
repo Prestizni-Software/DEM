@@ -125,9 +125,23 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
     throw new Error("Cannot create new objects like this.");
   }
   protected async setValueInternal(
-    key: string,
-    value: any
+    key: any,
+    value: any,
+    _silent: boolean = false
   ): Promise<{ success: boolean; message: string }> {
+    if (
+      this.getValue(key) &&
+      Array.isArray(this.getValue(key)) &&
+      !Array.isArray(value)
+    ) {
+      value = [
+        ...new Set(
+          this.getValue(key)
+            .concat(value)
+            .map((v: any) => v.toString())
+        ),
+      ];
+    }
     try {
       await this.parentClasser.classers[this.className].model.updateOne(
         { _id: this.data._id },

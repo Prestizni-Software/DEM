@@ -261,7 +261,15 @@ export class AutoUpdateServerManager<
   public async preLoad() {
     this.loggers.debug("Loading manager DB " + this.className);
     const docs = await this.model.find({});
+    let i = 0;
     for (const doc of docs.map((d) => (d._id as any).toString() as string)) {
+      if (!doc) {
+        this.loggers.debug(
+          "Invalid document, no _id: " + JSON.stringify(docs[i])
+        );
+        continue;
+      }
+      i++;
       this.classes[doc] =
         this.classes[doc] ??
         (await createAutoUpdatedClass<T>(
@@ -291,17 +299,22 @@ export class AutoUpdateServerManager<
         ) => void
       ) => {
         try {
-          const ids =
+          const ids = (
             (
               await this.options?.accessDefinitions?.startupMiddleware(
                 this.objectsAsArray,
                 this.classers,
                 socket.handshake.auth
               )
-            )?.map((obj) => obj._id) ?? Object.keys(this.classes);
+            )?.map((obj) => obj._id) ?? this.objectIDs
+          ).filter(Boolean);
           this.loggers.debug(
             "Sending startup data for manager " + this.className
           );
+          if (ids.some((id) => this.classes[id] === "undefined"))
+            this.loggers.error(
+              ids.find((id) => this.classes[id] === "undefined")
+            );
           ack({
             data: { ids, properties: this.properties as string[] },
             success: true,
@@ -348,7 +361,7 @@ export class AutoUpdateServerManager<
         ack: (res: ServerResponse<T>) => void
       ) => {
         this.loggers.debug(
-          "Emitting new object creation in manager " + this.className
+          "Recieved new object creation in manager " + this.className
         );
         try {
           const newDoc = await this.createObject(data);
@@ -359,7 +372,7 @@ export class AutoUpdateServerManager<
           });
         } catch (error: any) {
           this.loggers.error(
-            "Error emitting new object creation in manager " +
+            "Error creating new object creation in manager " +
               this.className +
               " - " +
               error.message
@@ -374,7 +387,7 @@ export class AutoUpdateServerManager<
       async (
         event: string,
         data: ServerUpdateRequest<T>,
-        ack: (res: ServerResponse<T>) => void
+        ack: (res: ServerResponse<null>) => void
       ) => {
         if (
           event.startsWith("update" + this.className) &&
@@ -397,7 +410,7 @@ export class AutoUpdateServerManager<
 
             res.success
               ? ack({
-                  data: obj.extractedData,
+                  data: null,
                   success: res.success,
                   message: res.msg,
                 })
@@ -460,7 +473,7 @@ export class AutoUpdateServerManager<
     );
     await object.isPreLoadedAsync();
     object.loadMissingReferences();
-    await object.contactChildren();
+    object.contactChildren();
     return object;
   }
 
@@ -479,7 +492,7 @@ export class AutoUpdateServerManager<
     object.loadMissingReferences();
     await object.checkAutoStatusChange();
     this.classes[object._id] = object;
-    await object.contactChildren();
+    object.contactChildren();
     for (const socket of this.clientSockets) {
       if (this.options?.accessDefinitions?.startupMiddleware) {
         try {
@@ -489,11 +502,20 @@ export class AutoUpdateServerManager<
               this.classers,
               socket.handshake.auth
             );
-          if (theTruth.length > 0)
+          if (theTruth.length > 0) {
+            if (!object._id)
+              this.loggers.error(
+                "Object ID is undefined for object: " + object
+              );
+            this.loggers.debug("Emitting new object " + object._id);
             socket.emit("new" + this.classParam.name, object._id);
+          }
         } catch (error) {
           const _ = error;
         }
+        if (!object._id)
+          throw new Error(`Never... failed to get object somehow: ${object}`);
+        this.loggers.debug("Emitting new object " + object._id);
       } else socket.emit("new" + this.classParam.name, object._id);
     }
     return object;

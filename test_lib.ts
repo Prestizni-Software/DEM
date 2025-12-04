@@ -1,16 +1,16 @@
-
 import {
   AUSManagerFactory,
   createAutoStatusDefinitions,
-} from "../AutoUpdateServerManagerClass.js";
+} from "./AutoUpdateServerManagerClass.js";
 import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
-import { Status } from "../TestTypes.js";
+import { Status } from "./TestTypes.js";
 import mongoose from "mongoose";
 import { io } from "socket.io-client";
-import { AUCManagerFactory } from "../AutoUpdateClientManagerClass.js";
-import { Test as ClientTest, Test2 as ClientTest2 } from "../ClientTypes.js";
-import { Test2 as ServerTest2, Test as ServerTest} from "../ServerTypes.js";
+import { AUCManagerFactory } from "./AutoUpdateClientManagerClass.js";
+import { Test as ClientTest, Test2 as ClientTest2 } from "./ClientTypes.js";
+import { Test2 as ServerTest2, Test as ServerTest } from "./ServerTypes.js";
+import { logger } from "@typegoose/typegoose/lib/logSettings.js";
 
 export const initServerManagers = async () => {
   const server = new Server();
@@ -39,13 +39,26 @@ export const initServerManagers = async () => {
           ),
           accessDefinitions: {
             startupMiddleware: async (objects, classers, auth) => {
-              const returns = auth.token == "Client1" ? objects : objects.filter(
-                (obj) => obj.description && obj.description !== "TestObj3" && obj.description !== "TestObj4"
+              const returns =
+                auth.token == "Client1"
+                  ? objects
+                  : objects.filter(
+                      (obj) =>
+                        obj.description &&
+                        obj.description !== "TestObj3" &&
+                        obj.description !== "TestObj4"
+                    );
+              logger.error(
+                objects.map((obj) => obj.description ?? "" + obj._id)
+              );
+              logger.error(
+                returns.map((obj) => obj.description ?? "" + obj._id)
               );
               return returns;
             },
             eventMiddleware: async (event, data, classers, auth) => {
-              if (auth.token == "Client2" && event.startsWith("delete")) throw new Error("Fail");
+              if (auth.token == "Client2" && event.startsWith("delete"))
+                throw new Error("Fail");
             },
           },
         },
@@ -62,7 +75,7 @@ export const initServerManagers = async () => {
   return managers;
 };
 
-export const initClientManagers = async (id:string) => {
+export const initClientManagers = async (id: string) => {
   const socket = io("http://localhost:3001", {
     auth: {
       token: id,

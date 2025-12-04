@@ -145,11 +145,20 @@ export class AutoUpdatedClientObject<T> {
         this.data = { _id: data } as IsData<T>;
         return;
       }
-      if (!data || data === "")
+      if (!data || data === "" || data === "undefined") {
+        this.loggers.error(
+          "Cannot create a new AutoUpdatedClientClass with an empty string for ID. Data typeof: " +
+            typeof data +
+            " Data: " +
+            data
+        );
         throw new Error(
           "Cannot create a new AutoUpdatedClientClass with an empty string for ID."
         );
-      this.loggers.debug("Getting new object from server " + this.className);
+      }
+      this.loggers.debug(
+        "Getting new object from server " + this.className + " - " + data
+      );
       this.socket.emit(
         "get" + this.className + data,
         null,
@@ -280,8 +289,8 @@ export class AutoUpdatedClientObject<T> {
     return true;
   }
 
-  public loadMissingReferences(obj?: AutoUpdatedClientObject<any>): void {
-    this.checkForMissingRefs(obj);
+  public loadMissingReferences(): void {
+    this.checkForMissingRefs();
     this.generateSettersAndGetters();
   }
 
@@ -296,15 +305,7 @@ export class AutoUpdatedClientObject<T> {
     update: ServerUpdateRequest<T>
   ): Promise<ServerResponse<undefined>> {
     try {
-      const path = update.key.split(".");
-      let dataRef: any = this.data;
-      for (let i = 0; i < path.length - 1; i++) {
-        if (!dataRef[path[i]]) dataRef[path[i]] = {};
-        dataRef = dataRef[path[i]];
-      }
-      dataRef[path.at(-1)!] = update.value;
-      await this.loadForceReferences();
-      await this.contactChildren();
+      await this.setValue__(update.key, update.value, true);
       this.loggers.debug(`Applied patch ${update.key} set to ${update.value}`);
 
       // Return success with the applied patch
@@ -370,14 +371,15 @@ export class AutoUpdatedClientObject<T> {
 
   protected async setValue__(
     key: any,
-    val: any
+    val: any,
+    silent: boolean = false
   ): Promise<{ success: boolean; msg: string }> {
     let message = "Setting value " + key + " of " + this.className;
-    let value = Array.isArray(val) ? val.map((v) => v._id ?? v) : val;
+    const isRef = getMetadataRecursive("isRef", this.classProp.prototype, key);
+    if (isRef) val = Array.isArray(val) ? val.map((v) => v._id ?? v) : val;
     this.loggers.debug(message);
     try {
-      if (value instanceof AutoUpdatedClientObject)
-        value = value.extractedData._id;
+      if (val instanceof AutoUpdatedClientObject) val = val.extractedData._id;
       const path = key.split(".");
       let obj = this.data as any;
       let lastClass = this as any;
@@ -417,7 +419,7 @@ export class AutoUpdatedClientObject<T> {
           }
           lastClass = temp;
           lastPath = path.slice(i + 1).join(".");
-          const res = await lastClass.setValue(lastPath, value);
+          const res = await lastClass.setValue(lastPath, val);
           this.checkAutoStatusChange();
           return res;
         } else obj = obj[path[i]];
@@ -448,7 +450,7 @@ export class AutoUpdatedClientObject<T> {
         if (isPopulated) {
           isPopulated = isPopulated.split(":");
           const parentObj =
-            this.autoClasser.classers[isPopulated[0]].getObject(value);
+            this.autoClasser.classers[isPopulated[0]].getObject(val);
           if (!parentObj) {
             this.loggers.error(
               "Failed to set value for " +
@@ -462,17 +464,22 @@ export class AutoUpdatedClientObject<T> {
           success = res.success;
           message += "\nReport from inner setValue function: \n " + res.msg;
         } else {
+          const res = await this.setValueInternal(lastPath, val, silent);
           if (this.getValue(key) && Array.isArray(this.getValue(key))) {
-            if (this.getValue(key).includes(value)) value = this.getValue(key);
-            else value = [...new Set(this.getValue(key).concat(value))];
+            val = [
+              ...new Set(
+                this.getValue(key)
+                  .concat(val)
+                  .map((v: any) => v.toString())
+              ),
+            ];
           }
-          const res = await this.setValueInternal(lastPath, value);
           if (res.success) {
             const originalValue = obj[path.at(-1)];
-            if (!Array.isArray(value) && Array.isArray(originalValue)) {
-              if (!originalValue.includes(value)) originalValue.push(value);
-              value = originalValue;
-            } else obj[path.at(-1)] = value;
+            if (!Array.isArray(val) && Array.isArray(originalValue)) {
+              if (!originalValue.includes(val)) originalValue.push(val);
+              val = originalValue;
+            } else obj[path.at(-1)] = val;
           }
           success = res.success;
           message += "\nReport from inner setValue function: \n " + res.message;
@@ -490,27 +497,28 @@ export class AutoUpdatedClientObject<T> {
       }
       const pathArr = lastPath.split(".");
       if (pathArr.length === 1) {
-        if (Array.isArray(value)) value = [...new Set(value)];
-        (this.data as any)[key] = value;
-        await this.checkAutoStatusChange();
-        this.findAndLoadReferences(lastPath, value);
-        return {
-          success: true,
-          msg: "Successfully set " + key + " to " + value,
-        };
+        (this.data as any)[key] = val;
+      } else {
+        const last = pathArr.splice(-1, 1);
+        let ref = this as any;
+        for (const p of pathArr) {
+          ref = ref[p];
+        }
+        ref[last.at(-1)!] = val;
       }
-      const pathMinusLast = pathArr.splice(0, 1);
-      let ref = this as any;
-      for (const p of pathMinusLast) {
-        ref = ref[p];
-      }
-      if (Array.isArray(value)) value = [...new Set(value)];
-      ref[pathArr.at(-1)!] = value;
       await this.checkAutoStatusChange();
-      this.findAndLoadReferences(lastPath, value);
+      this.findAndLoadReferences(lastPath, val);
+      const isRef = getMetadataRecursive(
+        "isRef",
+        this.classProp.prototype,
+        path.at(-1)
+      );
+      if (isRef) {
+        this.contactChildren();
+      }
       return {
         success: true,
-        msg: "Successfully set " + key + " to " + value,
+        msg: "Successfully set " + key + " to " + val,
       };
     } catch (error: any) {
       this.loggers.error(
@@ -560,7 +568,7 @@ export class AutoUpdatedClientObject<T> {
           );
           continue;
         }
-        result.loadMissingReferences(this);
+        result.loadMissingReferences();
       }
     }
   }
@@ -590,20 +598,28 @@ export class AutoUpdatedClientObject<T> {
 
   protected async setValueInternal(
     key: string,
-    value: any
+    value: any,
+    silent: boolean = false
   ): Promise<{ success: boolean; message: string }> {
     const update: ServerUpdateRequest<T> = this.makeUpdate(key, value);
     const promise = new Promise<{ success: boolean; message: string }>(
       (resolve) => {
+        if (silent) {
+          this.checkAutoStatusChange();
+          return resolve({ success: true, message: "Success - silent" });
+        }
         try {
           this.socket.emit(
             "update" + this.className + this.data._id,
             update,
-            (res: ServerResponse<T>) => {
-              resolve({ success: res.success, message: "Success" });
+            async (res: ServerResponse<null>) => {
+              await this.checkAutoStatusChange();
+              resolve({
+                success: res.success,
+                message: res.message ?? "Success",
+              });
             }
           );
-          this.checkAutoStatusChange();
         } catch (error: any) {
           this.loggers.error("Error sending update:" + error.message);
           this.loggers.error(error.stack);
@@ -659,7 +675,7 @@ export class AutoUpdatedClientObject<T> {
         await this.handleLoad(obj, key, alreadySeen);
       }
 
-      const val = obj[key];
+      const val = obj ? obj[key] : null;
       if (val && typeof val === "object") {
         const nestedProto = Object.getPrototypeOf(val);
         if (nestedProto && !alreadySeen.includes(val)) {
@@ -700,10 +716,10 @@ export class AutoUpdatedClientObject<T> {
     const val = obj?.getValue(pointer[1]);
     if (!val) return;
     if (Array.isArray(val)) {
-      if (val.includes(this.data._id)) await obj?.contactChildren();
-      else await obj?.setValue(pointer[1], [...new Set(val), this.data._id]);
+      if (val.includes(this.data._id)) obj?.contactChildren();
+      else await obj?.setValue(pointer[1], [...val, this.data._id]);
     } else if (val.toString() === this.data._id.toString())
-      await obj?.contactChildren();
+      obj?.contactChildren();
     else await obj?.setValue(pointer[1], this.data._id.toString());
   }
 
@@ -751,7 +767,7 @@ export class AutoUpdatedClientObject<T> {
     return res;
   }
 
-  private checkForMissingRefs(obj?: AutoUpdatedClientObject<any>) {
+  private checkForMissingRefs() {
     for (const prop of this.properties) {
       let pointer = getMetadataRecursive(
         "refsTo",
@@ -764,19 +780,11 @@ export class AutoUpdatedClientObject<T> {
           throw new Error(
             "population rf incorrectly defined. Sould be 'ParentClass:PropName'"
           );
-        this.findMissingObjectReference(prop, pointer, obj);
+        this.findMissingObjectReference(prop, pointer);
       }
     }
   }
-  private findMissingObjectReference(
-    prop: any,
-    pointer: string[],
-    obj?: AutoUpdatedClientObject<any>
-  ) {
-    if (obj) {
-      (this.data as any)[prop] = (obj as any)._id;
-      return;
-    }
+  private findMissingObjectReference(prop: any, pointer: string[]) {
     let foundAnAC = false;
     for (const ac of Object.values(this.autoClasser.classers)) {
       if (ac.className !== pointer[0]) {
@@ -798,7 +806,10 @@ export class AutoUpdatedClientObject<T> {
             found = false;
             break;
           }
-          if (eData[pathPart].toString() !== this.data._id.toString()) {
+          if (
+            !Array.isArray(eData[pathPart]) &&
+            eData[pathPart].toString() !== this.data._id.toString()
+          ) {
             found = false;
             break;
           }
@@ -824,7 +835,7 @@ export class AutoUpdatedClientObject<T> {
     this.loggers.info(`[${_id}] ${this.className} object wiped`);
   }
 
-  public async contactChildren() {
+  public contactChildren() {
     for (const prop of this.properties) {
       const pointer = getMetadataRecursive(
         "refsTo",
@@ -840,9 +851,9 @@ export class AutoUpdatedClientObject<T> {
         if (!(this as any)[prop]) continue;
         if (Array.isArray((this as any)[prop])) {
           for (const child of (this as any)[prop]) {
-            child?.loadMissingReferences(this);
+            child?.loadMissingReferences();
           }
-        } else (this as any)[prop]?.loadMissingReferences(this);
+        } else (this as any)[prop]?.loadMissingReferences();
       }
     }
   }
