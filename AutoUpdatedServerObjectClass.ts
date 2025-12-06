@@ -112,6 +112,7 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
         "Error loading object from database: " + error.message
       );
       this.loggers.error(error.stack);
+      throw error;
     }
   }
 
@@ -129,19 +130,6 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
     value: any,
     _silent: boolean = false
   ): Promise<{ success: boolean; message: string }> {
-    if (
-      this.getValue(key) &&
-      Array.isArray(this.getValue(key)) &&
-      !Array.isArray(value)
-    ) {
-      value = [
-        ...new Set(
-          this.getValue(key)
-            .concat(value)
-            .map((v: any) => v.toString())
-        ),
-      ];
-    }
     try {
       await this.parentClasser.classers[this.className].model.updateOne(
         { _id: this.data._id },

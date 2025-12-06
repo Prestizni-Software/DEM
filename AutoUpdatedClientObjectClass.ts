@@ -22,7 +22,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   autoClassers: AutoUpdateManager<any>,
   emitter: EventEmitter3
 ): Promise<any> {
-  if (typeof data !== "string") {
+  if (typeof data !== "string" && data._id) {
     processIsRefProperties(data, classParam.prototype, undefined, [], loggers);
   }
   const props = Reflect.getMetadata("props", classParam.prototype);
@@ -202,10 +202,12 @@ export class AutoUpdatedClientObject<T> {
         if (isRef) {
           if (Array.isArray(this.data[key])) {
             this.data[key] = this.data[key].map(
-              (obj: any) => obj._id ?? obj
+              (obj: any) => obj._id?.toString() ?? obj?.toString()
             ) as any;
           } else {
-            this.data[key] = (this.data[key] as any)?._id ?? this.data[key];
+            this.data[key] =
+              (this.data[key] as any)?._id?.toString() ??
+              (this.data[key] as any)?.toString();
           }
         }
       }
@@ -238,17 +240,30 @@ export class AutoUpdatedClientObject<T> {
     this.loggers.debug(
       this.className + " - Requesting new object creation on server"
     );
-    this.socket.emit("new" + this.className, data, (res: ServerResponse<T>) => {
-      if (!res.success) {
-        this.isLoading = false;
-        this.loggers.error("Could not create data on server: " + res.message);
-        this.emitter.emit("pre-loaded" + this.EmitterID);
-        throw new Error("Error creating new object: " + res.message);
-      }
-      this.data = res.data as IsData<T>;
-      this.isLoading = false;
-      this.emitter.emit("pre-loaded" + this.EmitterID);
-      if (!this.isServer) this.openSockets();
+    new Promise((resolve, reject) =>
+      this.socket.emit(
+        "new" + this.className,
+        data,
+        (res: ServerResponse<T>) => {
+          if (!res.success) {
+            this.isLoading = false;
+            this.loggers.error(
+              "Could not create data on server: " + res.message
+            );
+            this.emitter.emit("pre-loaded" + this.EmitterID);
+            reject(new Error("Error creating new object: " + res.message));
+            return;
+          }
+          this.data = res.data as IsData<T>;
+          this.isLoading = false;
+          this.loggers.debug("Created new object: " + this.data._id);
+          this.emitter.emit("pre-loaded" + this.EmitterID);
+          if (!this.isServer) this.openSockets();
+          resolve(true);
+        }
+      )
+    ).catch((err) => {
+      throw err;
     });
   }
 
@@ -464,8 +479,27 @@ export class AutoUpdatedClientObject<T> {
           success = res.success;
           message += "\nReport from inner setValue function: \n " + res.msg;
         } else {
+          if (
+            this.isServer &&
+            this.getValue(key) &&
+            Array.isArray(this.getValue(key)) &&
+            !Array.isArray(val)
+          ) {
+            val = [
+              ...new Set(
+                this.getValue(key)
+                  .concat(val)
+                  .map((v: any) => v.toString())
+              ),
+            ];
+          }
           const res = await this.setValueInternal(lastPath, val, silent);
-          if (this.getValue(key) && Array.isArray(this.getValue(key))) {
+          if (
+            !this.isServer &&
+            this.getValue(key) &&
+            Array.isArray(this.getValue(key)) &&
+            !Array.isArray(val)
+          ) {
             val = [
               ...new Set(
                 this.getValue(key)

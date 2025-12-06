@@ -291,17 +291,25 @@ export class AutoUpdateClientManager<
   ): Promise<AutoUpdated<T>> {
     if (!this.classers) throw new Error(`No classers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
-    const object = await createAutoUpdatedClass(
-      this.classParam,
-      this.socket,
-      data as any,
-      this.loggers,
-      this,
-      this.emitter
-    );
-    await object.isPreLoadedAsync();
-    object.loadMissingReferences();
-    this.classes[object._id] = object;
-    return object;
+    try {
+      const object = await createAutoUpdatedClass(
+        this.classParam,
+        this.socket,
+        data as any,
+        this.loggers,
+        this,
+        this.emitter
+      );
+      await object.isPreLoadedAsync();
+      object.loadMissingReferences();
+      this.classes[object._id] = object;
+      return object;
+    } catch (error: any) {
+      this.loggers.error(
+        "Error creating new object from manager " + this.className
+      );
+      this.loggers.error(error.message);
+      throw error;
+    }
   }
 }

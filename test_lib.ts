@@ -17,6 +17,12 @@ export const initServerManagers = async () => {
   server.listen(3001);
   const io = new SocketServer(server, { cors: { origin: "*" } });
 
+  io.use(async (socket, next) => {
+    if(!socket.handshake.auth.token)
+      next(new Error("Invalid token"));
+    next();
+  });
+
   await mongoose.connect("mongodb://localhost:27017/GeoDB", {
     timeoutMS: 5000,
   });

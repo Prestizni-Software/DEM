@@ -105,7 +105,7 @@ describe("Server ", () => {
   test("Server object has correct values", async () => {
     expect(testServerObject1.active).toBe(true);
     expect(testServerObject1.description).toBe("TestObj1");
-    expect(testServerObject1.ref).toBe(null);
+    expect(testServerObject1.ref).toBeUndefined();
     console.log(testServerObject1.obj);
     expect(JSON.stringify(testServerObject1.obj)).toBe(
       JSON.stringify({
@@ -329,6 +329,24 @@ describe("Server ", () => {
     expect(clientManagers2.Test.getObject(newObjectId2)?.description).toBe(
       "TestObj5"
     );
+  }, 1000);
+
+  test("Creating Invalid Object", async () => {
+    try {
+      await clientManagers1.Test.createObject({
+        description: "TestObj5",
+        ref: null,
+        refarr: [],
+        obj: null,
+        parent: null,
+      } as any);
+    } catch (e: any) {
+      expect(e).toBeInstanceOf(Error);
+      expect(e.message).toContain(
+        "Local type does not match server type for manager"
+      );
+    }
+    expect(true).toBe(false);
   }, 1000);
 
   test("Creating manager with an invalid type", async () => {

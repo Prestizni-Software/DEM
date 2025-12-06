@@ -1,4 +1,4 @@
-import {EventEmitter} from "eventemitter3";
+import { EventEmitter } from "eventemitter3";
 import { ObjectId } from "bson";
 import "reflect-metadata";
 import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass";
@@ -17,15 +17,15 @@ export type UnboxConstructor<T> = T extends new (...args: any[]) => infer I
   : T;
 
 export type LoggersType = {
-  info: (s:string) => void;
-  debug: (s:string) => void;
-  error: (s:string) => void;
-  warn: (s:string) => void;
+  info: (s: string) => void;
+  debug: (s: string) => void;
+  error: (s: string) => void;
+  warn: (s: string) => void;
 };
 
 export type IsData<T> = T extends { _id: any } ? T : never;
 
-export type SocketEvent = [string, any, (res:ServerResponse<any>) => void]
+export type SocketEvent = [string, any, (res: ServerResponse<any>) => void];
 
 export type ServerResponse<T> =
   | {
@@ -85,13 +85,17 @@ export type Split<S extends string> = S extends `${infer L}.${infer R}`
   : [S];
 export type NonOptional<T> = Exclude<T, null | undefined>;
 
-export type DeAutoUpdate<T> = T extends AutoUpdated<infer I> ? I | string | T : T;
+export type DeAutoUpdate<T> = T extends AutoUpdated<infer I>
+  ? I | string | T
+  : T;
 
 export type PathValueOf<
   T,
   P extends string,
   Depth extends number = 6
-> = PathValue<DeAutoUpdate<InstanceOf<T>>, Split<P>, Depth>; // ---------------------- PathValueOf ----------------------
+> = PathValue<DeAutoUpdate<InstanceOf<T>>, Split<P>, Depth>;
+
+// ---------------------- PathValueOf ----------------------
 
 export type PathValue<
   T,
@@ -105,7 +109,9 @@ export type PathValue<
       ? K extends keyof T
         ? Rest extends string[]
           ? Rest["length"] extends 0
-            ? DeAutoUpdate<T[K]>
+            ? T[K] extends (infer A)[]
+              ? DeAutoUpdate<A>[] | DeAutoUpdate<A>
+              : DeAutoUpdate<T[K]>
             : PathValue<T[K], Rest, Prev[Depth]>
           : never
         : never
@@ -134,4 +140,3 @@ type PathsHelper<
   ? `${K}`
   : `${K}` | Join<K, Paths<NonOptional<V>, Prev[Depth], OriginalDepth>>;
 export type AutoUpdated<T> = AutoUpdatedClientObject<T> & UnboxConstructor<T>;
-

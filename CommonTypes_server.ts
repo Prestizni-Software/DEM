@@ -1,6 +1,5 @@
 import { Ref } from "@typegoose/typegoose";
 import {
-  Constructor,
   InstanceOf,
   Join,
   OnlyClassKeys,
@@ -71,7 +70,9 @@ export type PathValue<
         ? Rest extends string[]
           ? ResolveRef<
               Rest["length"] extends 0
-                ? T[K]
+                ? T[K] extends (infer A)[]
+                  ? A[] | A
+                  : T[K]
                 : PathValue<T[K], Rest, Prev[Depth]>
             >
           : never

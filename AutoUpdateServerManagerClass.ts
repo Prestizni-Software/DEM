@@ -54,25 +54,34 @@ export type AUSDefinitions<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: ServerManagerDefinition<T[K], T>;
 };
 
-type AccessMiddleware<
+export type EventMiddlewareFunction<
+  T extends Record<string, Constructor<any>>
+> = (
+  event: string,
+  data: any,
+  managers: {
+    [K in keyof T]: AutoUpdateServerManager<T[K]>;
+  },
+  auth: { [key: string]: any }
+) => Promise<void>;
+
+export type StartupMiddlewareFunction<
+  T extends Record<string, Constructor<any>>,
+  C extends Constructor<any>
+> = (
+  ids: AutoUpdated<C, 10>[],
+  managers: {
+    [K in keyof T]: AutoUpdateServerManager<T[K]>;
+  },
+  auth: { [key: string]: any }
+) => Promise<AutoUpdated<C, 10>[]>;
+
+export type AccessMiddleware<
   T extends Record<string, Constructor<any>>,
   C extends Constructor<any>
 > = {
-  eventMiddleware: (
-    event: string,
-    data: any,
-    managers: {
-      [K in keyof T]: AutoUpdateServerManager<T[K]>;
-    },
-    auth: { [key: string]: any }
-  ) => Promise<void>;
-  startupMiddleware: (
-    ids: AutoUpdated<C, 10>[],
-    managers: {
-      [K in keyof T]: AutoUpdateServerManager<T[K]>;
-    },
-    auth: { [key: string]: any }
-  ) => Promise<AutoUpdated<C, 10>[]>;
+  eventMiddleware: EventMiddlewareFunction<T>;
+  startupMiddleware: StartupMiddlewareFunction<T, C>;
 };
 
 export type AUSOption<
