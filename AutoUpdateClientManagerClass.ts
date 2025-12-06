@@ -300,7 +300,6 @@ export class AutoUpdateClientManager<
         this,
         this.emitter
       );
-      await object.isPreLoadedAsync();
       object.loadMissingReferences();
       this.classes[object._id] = object;
       return object;

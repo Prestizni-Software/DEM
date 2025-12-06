@@ -340,13 +340,11 @@ describe("Server ", () => {
         obj: null,
         parent: null,
       } as any);
-    } catch (e: any) {
-      expect(e).toBeInstanceOf(Error);
-      expect(e.message).toContain(
-        "Local type does not match server type for manager"
-      );
+      expect(true).toBe(false);
+    } catch (error:any) {
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toContain("validation failed");
     }
-    expect(true).toBe(false);
   }, 1000);
 
   test("Creating manager with an invalid type", async () => {

@@ -63,26 +63,39 @@ export class AutoUpdatedClientObject<T> {
     if (this.isLoaded) {
       try {
         await this.loadForceReferences();
-      } catch (error) {
+      } catch (error: any) {
         this.loggers.error("Error loading references");
-        this.loggers.error((error as any).message);
+        this.loggers.error(error.message);
       }
       this.isLoadingReferences = false;
       return;
     }
-    return new Promise((resolve) => {
-      this.emitter.on("pre-loaded" + this.EmitterID, async () => {
-        try {
-          await this.loadForceReferences();
-        } catch (error) {
-          this.loggers.error("Error loading references");
-          this.loggers.error((error as any).message);
+
+    await new Promise<void>((resolve, reject) => {
+      this.emitter.once(
+        "pre-loaded" + this.EmitterID,
+        (failed: boolean, reason: string) => {
+          if (failed) {
+            reject(new Error(reason));
+            return;
+          }
+
+          this.loadForceReferences()
+            .then(() => {
+              this.isLoadingReferences = false;
+              resolve();
+            })
+            .catch((error: any) => {
+              this.isLoadingReferences = false;
+              this.loggers.error("Error loading references");
+              this.loggers.error(error.message);
+              resolve(); // <- resolves even if references failed
+            });
         }
-        this.isLoadingReferences = false;
-        resolve();
-      });
+      );
     });
   };
+
   constructor(
     socket: SocketType,
     data: string | IsData<T>,
@@ -240,30 +253,18 @@ export class AutoUpdatedClientObject<T> {
     this.loggers.debug(
       this.className + " - Requesting new object creation on server"
     );
-    new Promise((resolve, reject) =>
-      this.socket.emit(
-        "new" + this.className,
-        data,
-        (res: ServerResponse<T>) => {
-          if (!res.success) {
-            this.isLoading = false;
-            this.loggers.error(
-              "Could not create data on server: " + res.message
-            );
-            this.emitter.emit("pre-loaded" + this.EmitterID);
-            reject(new Error("Error creating new object: " + res.message));
-            return;
-          }
-          this.data = res.data as IsData<T>;
-          this.isLoading = false;
-          this.loggers.debug("Created new object: " + this.data._id);
-          this.emitter.emit("pre-loaded" + this.EmitterID);
-          if (!this.isServer) this.openSockets();
-          resolve(true);
-        }
-      )
-    ).catch((err) => {
-      throw err;
+    this.socket.emit("new" + this.className, data, (res: ServerResponse<T>) => {
+      if (!res.success) {
+        this.isLoading = false;
+        this.loggers.error("Could not create data on server: " + res.message);
+        this.emitter.emit("pre-loaded" + this.EmitterID, true, res.message);
+        return;
+      }
+      this.data = res.data as IsData<T>;
+      this.isLoading = false;
+      this.loggers.debug("Created new object: " + this.data._id);
+      this.emitter.emit("pre-loaded" + this.EmitterID);
+      if (!this.isServer) this.openSockets();
     });
   }
 
@@ -293,13 +294,21 @@ export class AutoUpdatedClientObject<T> {
   public async isPreLoadedAsync(): Promise<boolean> {
     await this.loadShit();
     if (this.isLoading)
-      return new Promise((resolve) => {
-        this.emitter.on("pre-loaded" + this.EmitterID, async () => {
-          this.generateSettersAndGetters();
-          resolve(this.isLoading === false);
-        });
+      return new Promise((resolve, reject) => {
+        this.emitter.on(
+          "pre-loaded" + this.EmitterID,
+          async (failed: boolean, reason: string) => {
+            if (failed) {
+              this.isLoading = false;
+              this.loggers.error("Could not load data from server: " + reason);
+              reject(new Error(reason));
+              return;
+            }
+            this.generateSettersAndGetters();
+            resolve(this.isLoading === false);
+          }
+        );
       });
-
     this.generateSettersAndGetters();
     return true;
   }
@@ -835,7 +844,7 @@ export class AutoUpdatedClientObject<T> {
           }
           if (
             Array.isArray(eData[pathPart]) &&
-            !eData[pathPart].includes(this.data._id.toString())
+            !eData[pathPart].includes((this as any)._id.toString())
           ) {
             found = false;
             break;
