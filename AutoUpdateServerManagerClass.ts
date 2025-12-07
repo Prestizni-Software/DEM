@@ -116,12 +116,12 @@ export type DEMEvent =
   | {
       type: DEMEventTypes.delete | DEMEventTypes.get | DEMEventTypes.update;
       manager: AutoUpdateServerManager<any>;
-      id: string;
+      object: AutoUpdated<any>;
     }
   | {
       type: DEMEventTypes.new | DEMEventTypes.startup;
       manager: AutoUpdateServerManager<any>;
-      id: never;
+      object: never;
     };
 
 function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
@@ -153,6 +153,7 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
           const e = event[0];
           let demEvent: DEMEvent = {} as any;
 
+          const id = e.slice(-24);
           switch (true) {
             case e.startsWith("new"):
               demEvent.type = DEMEventTypes.new;
@@ -161,23 +162,22 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
 
             case e.startsWith("update"):
               demEvent.type = DEMEventTypes.update;
-              demEvent.id = e.slice(-24);
               demEvent.manager =
-                managers[e.replace("update", "").replace(demEvent.id, "")];
+                managers[e.replace("update", "").replace(id, "")];
+              demEvent.object = demEvent.manager.getObject(id);
               break;
 
             case e.startsWith("delete"):
               demEvent.type = DEMEventTypes.delete;
-              demEvent.id = e.slice(-24);
               demEvent.manager =
-                managers[e.replace("delete", "").replace(demEvent.id, "")];
+                managers[e.replace("delete", "").replace(id, "")];
+              demEvent.object = demEvent.manager.getObject(id);
               break;
 
             case e.startsWith("get"):
               demEvent.type = DEMEventTypes.get;
-              demEvent.id = e.slice(-24);
-              demEvent.manager =
-                managers[e.replace("get", "").replace(demEvent.id, "")];
+              demEvent.manager = managers[e.replace("get", "").replace(id, "")];
+              demEvent.object = demEvent.manager.getObject(id);
               break;
 
             case e.startsWith("startup"):
@@ -563,27 +563,25 @@ export class AutoUpdateServerManager<
     this.classes[object._id] = object;
     object.contactChildren();
     for (const socket of this.clientSockets) {
-        try {
-          const theTruth =
-            await this.options?.accessDefinitions?.startupMiddleware?.(
-              [object],
-              this.managers,
-              socket
-            ) ?? ["gay"];
-          if (theTruth.length > 0) {
-            if (!object._id)
-              this.loggers.error(
-                "Object ID is undefined for object: " + object
-              );
-            this.loggers.debug("Emitting new object " + object._id);
-            socket.emit("new" + this.classParam.name, object._id);
-          }
-        } catch (error) {
-          const _ = error;
+      try {
+        const theTruth =
+          (await this.options?.accessDefinitions?.startupMiddleware?.(
+            [object],
+            this.managers,
+            socket
+          )) ?? ["gay"];
+        if (theTruth.length > 0) {
+          if (!object._id)
+            this.loggers.error("Object ID is undefined for object: " + object);
+          this.loggers.debug("Emitting new object " + object._id);
+          socket.emit("new" + this.classParam.name, object._id);
         }
-        if (!object._id)
-          throw new Error(`Never... failed to get object somehow: ${object}`);
-        this.loggers.debug("Emitting new object " + object._id);
+      } catch (error) {
+        const _ = error;
+      }
+      if (!object._id)
+        throw new Error(`Never... failed to get object somehow: ${object}`);
+      this.loggers.debug("Emitting new object " + object._id);
     }
     return object;
   }
