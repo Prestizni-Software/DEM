@@ -244,7 +244,7 @@ export async function AUSManagerFactory<
     });
     next();
   });
-  const classers: { [K in keyof T]: AutoUpdateServerManager<T[K]> } = {} as any;
+  const managers: { [K in keyof T]: AutoUpdateServerManager<T[K]> } = {} as any;
   let i = 0;
   for (const key in defs) {
     loggers.debug(`Creating manager for ${key}`);
@@ -255,12 +255,12 @@ export async function AUSManagerFactory<
         loggers,
         socket,
         getModelForClass(def.class),
-        classers,
+        managers,
         emitter,
         def.options
       ) as any;
       i++;
-      classers[key] = c;
+      managers[key] = c;
     } catch (error: any) {
       loggers.error("Error creating manager: " + key);
       loggers.error(error.message);
@@ -272,7 +272,7 @@ export async function AUSManagerFactory<
       setupSocketMiddleware(
         socket,
         loggers,
-        classers,
+        managers,
         def.options?.accessDefinitions
       );
     } catch (error: any) {
@@ -281,19 +281,19 @@ export async function AUSManagerFactory<
       loggers.error(error.stack);
     }
     try {
-      await classers[key].preLoad();
+      await managers[key].preLoad();
     } catch (error: any) {
       loggers.error("Error loading DB for manager: " + key);
       loggers.error(error.message);
       loggers.error(error.stack);
     }
   }
-  for (const manager of Object.values(classers)) {
+  for (const manager of Object.values(managers)) {
     await manager.loadReferences();
   }
   socket.on("connection", async (socket) => {
     loggers.debug(`Client connected: ${socket.id}`);
-    for (const manager of Object.values(classers)) {
+    for (const manager of Object.values(managers)) {
       manager.registerSocket(socket);
     }
     // Client disconnect
@@ -301,7 +301,7 @@ export async function AUSManagerFactory<
       loggers.debug(`Client disconnected: ${socket.id}`);
     });
   });
-  return classers;
+  return managers;
 }
 
 export class AutoUpdateServerManager<
@@ -311,18 +311,18 @@ export class AutoUpdateServerManager<
   private readonly clientSockets: Set<Socket> = new Set<Socket>();
   public readonly options?: AUSOption<T, any>;
   protected override classes: { [_id: string]: AutoUpdated<T> } = {};
-  public readonly classers: Record<string, AutoUpdateServerManager<any>>;
+  public readonly managers: Record<string, AutoUpdateServerManager<any>>;
   constructor(
     classParam: T,
     loggers: LoggersType,
     socket: Server,
     model: ReturnModelType<T, BeAnObject>,
-    classers: Record<string, AutoUpdateServerManager<any>>,
+    managers: Record<string, AutoUpdateServerManager<any>>,
     emitter: EventEmitter3,
     options?: AUSOption<T, any>
   ) {
-    super(classParam, socket, loggers, classers, emitter);
-    this.classers = classers;
+    super(classParam, socket, loggers, managers, emitter);
+    this.managers = managers;
     this.model = model;
     this.options = options;
   }
@@ -372,7 +372,7 @@ export class AutoUpdateServerManager<
             (
               await this.options?.accessDefinitions?.startupMiddleware?.(
                 this.objectsAsArray,
-                this.classers,
+                this.managers,
                 socket
               )
             )?.map((obj) => obj._id) ?? this.objectIDs
@@ -528,7 +528,7 @@ export class AutoUpdateServerManager<
   protected async handleGetMissingObject(_id: string) {
     const document = await this.model.findById(_id);
     if (!document) throw new Error(`No document with id ${_id} in DB.`);
-    if (!this.classers) throw new Error(`No classers.`);
+    if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug(
       "Getting missing object " + _id + " from manager " + this.className
     );
@@ -547,7 +547,7 @@ export class AutoUpdateServerManager<
   }
 
   public async createObject(data: Omit<InstanceType<T>, "_id">) {
-    if (!this.classers) throw new Error(`No classers.`);
+    if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
     (data as any)._id = undefined;
     const object = await createAutoUpdatedClass<T>(
@@ -563,14 +563,13 @@ export class AutoUpdateServerManager<
     this.classes[object._id] = object;
     object.contactChildren();
     for (const socket of this.clientSockets) {
-      if (this.options?.accessDefinitions?.startupMiddleware) {
         try {
           const theTruth =
-            await this.options?.accessDefinitions?.startupMiddleware(
+            await this.options?.accessDefinitions?.startupMiddleware?.(
               [object],
-              this.classers,
+              this.managers,
               socket
-            );
+            ) ?? ["gay"];
           if (theTruth.length > 0) {
             if (!object._id)
               this.loggers.error(
@@ -585,7 +584,6 @@ export class AutoUpdateServerManager<
         if (!object._id)
           throw new Error(`Never... failed to get object somehow: ${object}`);
         this.loggers.debug("Emitting new object " + object._id);
-      } else socket.emit("new" + this.classParam.name, object._id);
     }
     return object;
   }

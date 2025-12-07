@@ -45,7 +45,7 @@ export const initServerManagers = async () => {
             }
           ),
           accessDefinitions: {
-            startupMiddleware: async (objects, classers, socket) => {
+            startupMiddleware: async (objects, managers, socket) => {
               const returns =
                 socket.handshake.auth.token == "Client1"
                   ? objects
@@ -63,7 +63,7 @@ export const initServerManagers = async () => {
               );
               return returns;
             },
-            eventMiddleware: async (event, data, classers, socket) => {
+            eventMiddleware: async (event, data, managers, socket) => {
               if (socket.handshake.auth.token == "Client2" && event.type === DEMEventTypes.delete)
                 throw new Error("Fail");
             },

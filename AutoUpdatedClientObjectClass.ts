@@ -19,7 +19,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   socket: SocketType,
   data: IsData<InstanceType<C>> | string,
   loggers: LoggersType,
-  autoClassers: AutoUpdateManager<any>,
+  parentManager: AutoUpdateManager<any>,
   emitter: EventEmitter3
 ): Promise<any> {
   if (typeof data !== "string" && data._id) {
@@ -33,7 +33,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
     props,
     classParam.name,
     classParam,
-    autoClassers,
+    parentManager,
     emitter
   );
 
@@ -55,7 +55,7 @@ export class AutoUpdatedClientObject<T> {
   protected readonly emitter: EventEmitter3;
   protected readonly properties: (keyof T)[];
   protected readonly className: string;
-  protected autoClasser: AutoUpdateManager<any>;
+  protected parentManager: AutoUpdateManager<any>;
   protected isLoadingReferences = false;
   public readonly classProp: Constructor<T>;
   private readonly EmitterID = new ObjectId().toHexString();
@@ -103,7 +103,7 @@ export class AutoUpdatedClientObject<T> {
     properties: (keyof T)[],
     className: string,
     classProperty: Constructor<T>,
-    autoClasser: AutoUpdateManager<any>,
+    parentManager: AutoUpdateManager<any>,
     emitter: EventEmitter3,
     isServer = false
   ) {
@@ -112,7 +112,7 @@ export class AutoUpdatedClientObject<T> {
     this.classProp = classProperty;
     this.isLoadingReferences = true;
     this.isLoading = true;
-    this.autoClasser = autoClasser;
+    this.parentManager = parentManager;
     this.className = className;
     this.properties = properties;
     this.loggers.debug = (s: string) =>
@@ -380,8 +380,8 @@ export class AutoUpdatedClientObject<T> {
 
   protected findReference(id: string | ObjectId): any {
     if (typeof id !== "string" && !ObjectId.isValid(id)) return id;
-    for (const classer of Object.values(this.autoClasser.classers)) {
-      const result = classer.getObject(id.toString());
+    for (const manager of Object.values(this.parentManager.managers)) {
+      const result = manager.getObject(id.toString());
       if (result) return result;
     }
   }
@@ -474,7 +474,7 @@ export class AutoUpdatedClientObject<T> {
         if (isPopulated) {
           isPopulated = isPopulated.split(":");
           const parentObj =
-            this.autoClasser.classers[isPopulated[0]].getObject(val);
+            this.parentManager.managers[isPopulated[0]].getObject(val);
           if (!parentObj) {
             this.loggers.error(
               "Failed to set value for " +
@@ -596,8 +596,8 @@ export class AutoUpdatedClientObject<T> {
     if (isRef) {
       for (const id of Array.isArray(value) ? value : [value]) {
         let result;
-        for (const classer of Object.values(this.autoClasser.classers)) {
-          result = classer.getObject(id.toString());
+        for (const manager of Object.values(this.parentManager.managers)) {
+          result = manager.getObject(id.toString());
           if (result) break;
         }
         if (!result) {
@@ -693,9 +693,9 @@ export class AutoUpdatedClientObject<T> {
   // return a properly typed AutoUpdatedClientClass (or null)
   // inside AutoUpdatedClientClass
   protected resolveReference(id: string): AutoUpdatedClientObject<any> | null {
-    if (!this.autoClasser) throw new Error("No autoClasser");
-    for (const autoClasser of Object.values(this.autoClasser.classers)) {
-      const data = autoClasser.getObject(id);
+    if (!this.parentManager) throw new Error("No Manager");
+    for (const manager of Object.values(this.parentManager.managers)) {
+      const data = manager.getObject(id);
       if (data) return data;
     }
     return null;
@@ -718,23 +718,31 @@ export class AutoUpdatedClientObject<T> {
         await this.handleLoad(obj, key, alreadySeen);
       }
 
-      const val = obj ? obj[key] : null;
-      if (val && typeof val === "object") {
-        const nestedProto = Object.getPrototypeOf(val);
-        if (nestedProto && !alreadySeen.includes(val)) {
-          alreadySeen.push(val);
-          await this.loadForceReferences(val, nestedProto, alreadySeen);
-        }
+      await this.checkRecursiveReferenceLoading(obj, key, alreadySeen);
+    }
+  }
+
+  private async checkRecursiveReferenceLoading(
+    obj: any,
+    key: string,
+    alreadySeen: any[]
+  ) {
+    const val = obj ? obj[key] : null;
+    if (val && typeof val === "object") {
+      const nestedProto = Object.getPrototypeOf(val);
+      if (nestedProto && !alreadySeen.includes(val)) {
+        alreadySeen.push(val);
+        await this.loadForceReferences(val, nestedProto, alreadySeen);
       }
     }
   }
 
   private async handleLoad(obj: any, key: string, alreadySeen: any[]) {
-    if (!this.autoClasser) throw new Error("No autoClassers");
+    if (!this.parentManager) throw new Error("No manager");
     const refId = obj[key];
     if (refId) {
-      for (const classer of Object.values(this.autoClasser.classers)) {
-        const result = classer.getObject(refId);
+      for (const manager of Object.values(this.parentManager.managers)) {
+        const result = manager.getObject(refId);
         if (result && !alreadySeen.includes(refId)) {
           alreadySeen.push(refId);
           await result.loadForceReferences(undefined, undefined, alreadySeen);
@@ -753,7 +761,7 @@ export class AutoUpdatedClientObject<T> {
         "Invalid pointer: " + JSON.stringify(pointer) + " for " + this.className
       );
     }
-    const obj = this.autoClasser.classers[pointer[0]]?.getObject(
+    const obj = this.parentManager.managers[pointer[0]]?.getObject(
       (parent as any)._id?.toString() ?? (parent as any).toString()
     );
     const val = obj?.getValue(pointer[1]);
@@ -770,7 +778,7 @@ export class AutoUpdatedClientObject<T> {
     once: boolean = false
   ): Promise<{ success: boolean; message: string }> {
     if (!once) {
-      return await this.autoClasser.deleteObject(this.data._id);
+      return await this.parentManager.deleteObject(this.data._id);
     }
     const res = await new Promise<{ success: boolean; message: string }>(
       (resolve) => {
@@ -828,44 +836,30 @@ export class AutoUpdatedClientObject<T> {
     }
   }
   private findMissingObjectReference(prop: any, pointer: string[]) {
-    let foundAnAC = false;
-    for (const ac of Object.values(this.autoClasser.classers)) {
-      if (ac.className !== pointer[0]) {
-        continue;
-      }
-      foundAnAC = true;
-      for (const obj of ac.objectsAsArray) {
-        let eData = obj.extractedData;
-        let found;
-        for (const pathPart of pointer[1].split(".")) {
-          if (!eData[pathPart]) {
-            found = false;
-            break;
-          }
-          if (
-            Array.isArray(eData[pathPart]) &&
-            !eData[pathPart].includes((this as any)._id.toString())
-          ) {
-            found = false;
-            break;
-          }
-          if (
-            !Array.isArray(eData[pathPart]) &&
-            eData[pathPart].toString() !== this.data._id.toString()
-          ) {
-            found = false;
-            break;
-          }
-          found = eData = eData[pathPart];
-        }
-        if (found) {
-          (this.data as any)[prop] = (obj as any)._id;
-          return;
-        }
-      }
-    }
-    if (!foundAnAC) {
+    const ac = this.parentManager.managers[pointer[0]];
+    if (!ac)
       throw new Error(`No AutoUpdateManager found for class ${pointer[0]}`);
+
+    for (const obj of ac.objectsAsArray) {
+      let eData = obj.extractedData;
+      let found;
+      for (const pathPart of pointer[1].split(".")) {
+        if (
+          !eData[pathPart] ||
+          (Array.isArray(eData[pathPart]) &&
+            !eData[pathPart].includes((this as any)._id.toString())) ||
+          (!Array.isArray(eData[pathPart]) &&
+            eData[pathPart].toString() !== this.data._id.toString())
+        ) {
+          found = false;
+          break;
+        }
+        found = eData = eData[pathPart];
+      }
+      if (found) {
+        (this.data as any)[prop] = (obj as any)._id;
+        return;
+      }
     }
   }
   protected wipeSelf() {

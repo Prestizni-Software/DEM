@@ -25,7 +25,7 @@ export async function AUCManagerFactory<
   if (disableDEMDebugMessages) {
     loggers.debug = (_) => {};
   }
-  const classers = {} as WrappedInstances<T>;
+  const managers = {} as WrappedInstances<T>;
   for (const key in defs) {
     let message = `Creating manager for: ${key}`;
     try {
@@ -34,10 +34,10 @@ export async function AUCManagerFactory<
         Model,
         loggers,
         socket,
-        classers,
+        managers,
         emitter
       );
-      classers[key] = c;
+      managers[key] = c;
       try {
         await c.loadFromServer();
       } catch (error: any) {
@@ -70,7 +70,7 @@ export async function AUCManagerFactory<
   }
   for (const key in defs) {
     try {
-      await classers[key].loadReferences();
+      await managers[key].loadReferences();
     } catch (error: any) {
       let message = "Error loading manager: " + key;
       message += "\n Error resolving references in manager";
@@ -80,23 +80,23 @@ export async function AUCManagerFactory<
     }
     loggers.debug("Loaded manager references: " + key);
   }
-  return classers;
+  return managers;
 }
 
 export class AutoUpdateClientManager<
   T extends Constructor<any>
 > extends AutoUpdateManager<T> {
   protected classes: { [_id: string]: AutoUpdated<T> } = {};
-  public readonly classers: Record<string, AutoUpdateClientManager<any>>;
+  public readonly managers: Record<string, AutoUpdateClientManager<any>>;
   constructor(
     classParam: T,
     loggers: LoggersType,
     socket: Socket,
-    classers: Record<string, AutoUpdateClientManager<any>>,
+    managers: Record<string, AutoUpdateClientManager<any>>,
     emitter: EventEmitter
   ) {
-    super(classParam, socket, loggers, classers, emitter);
-    this.classers = classers;
+    super(classParam, socket, loggers, managers, emitter);
+    this.managers = managers;
   }
 
   private startSocketListeners() {
@@ -161,30 +161,7 @@ export class AutoUpdateClientManager<
               data.properties.splice(data.properties.indexOf(property), 1);
             else extraProperties.push(property);
           }
-          let allowedToLoad = true;
-          let errorMessage =
-            "Local type does not match server type for manager " +
-            this.className;
-          if (extraProperties.length > 0) {
-            allowedToLoad = false;
-            errorMessage +=
-              "\n\nLocal type has " +
-              (extraProperties.length > 1
-                ? "these extra properties"
-                : "this extra property") +
-              ":\n" +
-              extraProperties.join("\n");
-          }
-          if (data.properties.length > 0) {
-            allowedToLoad = false;
-            errorMessage +=
-              "\n\nLocal type is missing " +
-              (data.properties.length > 1
-                ? "these properties"
-                : "this property") +
-              ":\n" +
-              data.properties.join("\n");
-          }
+          let { allowedToLoad, errorMessage } = this.checkLoadability(extraProperties, data);
           if (!allowedToLoad) {
             this.loggers.error(errorMessage);
             reject(new Error(errorMessage));
@@ -256,6 +233,33 @@ export class AutoUpdateClientManager<
     });
   }
 
+  private checkLoadability(extraProperties: string[], data: { ids: string[]; properties: string[]; }) {
+    let allowedToLoad = true;
+    let errorMessage = "Local type does not match server type for manager " +
+      this.className;
+    if (extraProperties.length > 0) {
+      allowedToLoad = false;
+      errorMessage +=
+        "\n\nLocal type has " +
+        (extraProperties.length > 1
+          ? "these extra properties"
+          : "this extra property") +
+        ":\n" +
+        extraProperties.join("\n");
+    }
+    if (data.properties.length > 0) {
+      allowedToLoad = false;
+      errorMessage +=
+        "\n\nLocal type is missing " +
+        (data.properties.length > 1
+          ? "these properties"
+          : "this property") +
+        ":\n" +
+        data.properties.join("\n");
+    }
+    return { allowedToLoad, errorMessage };
+  }
+
   public getObject(_id?: string): AutoUpdated<T> | null {
     return _id ? this.classes[_id] : null;
   }
@@ -269,7 +273,7 @@ export class AutoUpdateClientManager<
   }
 
   protected async handleGetMissingObject(_id: string): Promise<AutoUpdated<T>> {
-    if (!this.classers) throw new Error(`No classers.`);
+    if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug(
       "Getting missing object " + _id + " from manager " + this.className
     );
@@ -289,7 +293,7 @@ export class AutoUpdateClientManager<
   public async createObject(
     data: Omit<IsData<InstanceType<T>>, "_id">
   ): Promise<AutoUpdated<T>> {
-    if (!this.classers) throw new Error(`No classers.`);
+    if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
     try {
       const object = await createAutoUpdatedClass(

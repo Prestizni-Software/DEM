@@ -32,7 +32,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   socket: SocketType,
   data: IsData<InstanceOf<C>>,
   loggers: LoggersType,
-  parentClasser: AutoUpdateServerManager<any>,
+  parentManager: AutoUpdateServerManager<any>,
   emitter: EventEmitter3
 ): Promise<AutoUpdated<InstanceType<C>>> {
   const instance = new AutoUpdatedServerObject<C>(
@@ -42,7 +42,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
     Reflect.getMetadata("props", classParam.prototype) as (keyof C)[],
     classParam.name,
     classParam,
-    parentClasser,
+    parentManager,
     emitter
   );
   await instance.loadFromDB();
@@ -54,7 +54,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
 class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
   protected override readonly isServer: boolean = true;
   private entry: DocumentType<InstanceOf<T>>;
-  protected declare parentClasser: AutoUpdateServerManager<any>;
+  protected declare parentManager: AutoUpdateServerManager<any>;
 
   constructor(
     socket: SocketType,
@@ -63,7 +63,7 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
     properties: (keyof T)[],
     className: string,
     classProp: Constructor<T>,
-    parentClasser: AutoUpdateServerManager<any>,
+    parentManager: AutoUpdateServerManager<any>,
     emitter: EventEmitter3
   ) {
     super(
@@ -73,23 +73,23 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
       properties,
       className,
       classProp,
-      parentClasser as any,
+      parentManager as any,
       emitter,
       true
     );
-    this.parentClasser = parentClasser;
+    this.parentManager = parentManager;
     this.entry = null as any;
   }
 
   public async loadFromDB() {
     try {
-      this.entry = await this.parentClasser.classers[
+      this.entry = await this.parentManager.managers[
         this.className
       ].model.findOne({
         _id: this.data._id,
       });
       if (!this.entry) {
-        this.entry = await this.parentClasser.classers[
+        this.entry = await this.parentManager.managers[
           this.className
         ].model.create(this.data);
         for (const prop of this.properties) {
@@ -131,7 +131,7 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
     _silent: boolean = false
   ): Promise<{ success: boolean; message: string }> {
     try {
-      await this.parentClasser.classers[this.className].model.updateOne(
+      await this.parentManager.managers[this.className].model.updateOne(
         { _id: this.data._id },
         { $set: { [key]: value } }
       );
@@ -158,7 +158,7 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
     once: boolean = false
   ): Promise<{ success: boolean; message: string }> {
     if (!once) {
-      return await this.autoClasser.deleteObject(this.data._id);
+      return await this.parentManager.deleteObject(this.data._id);
     }
     try {
       const res = await this.entry.deleteOne({ _id: this.data._id });
@@ -190,14 +190,14 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
 
   public override async checkAutoStatusChange() {
     const neededStatus =
-      (await this.parentClasser.options?.autoStatusDefinitions?.definition(
+      (await this.parentManager.options?.autoStatusDefinitions?.definition(
         this
       )) as any;
-    const statusPath = this.parentClasser.options?.autoStatusDefinitions
+    const statusPath = this.parentManager.options?.autoStatusDefinitions
       ?.statusProperty as any;
     if (!neededStatus || !statusPath) return;
     const currentStatus = this.getValue(
-      this.parentClasser.options?.autoStatusDefinitions?.statusProperty as any
+      this.parentManager.options?.autoStatusDefinitions?.statusProperty as any
     );
     if (neededStatus === currentStatus) return;
     this.loggers.debug(

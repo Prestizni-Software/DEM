@@ -11,7 +11,7 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
   public socket: any;
   protected classParam: T;
   protected properties: (keyof T)[];
-  public readonly classers: Record<string, AutoUpdateManager<any>>;
+  public readonly managers: Record<string, AutoUpdateManager<any>>;
   protected preloaded = false;
   protected waitingToResolveReferences: { [_id: string]: string } = {};
   protected loggers: LoggersType = {
@@ -25,10 +25,10 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     classParam: T,
     socket: any,
     loggers: LoggersType,
-    classers: Record<string, AutoUpdateManager<any>>,
+    managers: Record<string, AutoUpdateManager<any>>,
     emitter: EventEmitter3
   ) {
-    this.classers = classers;
+    this.managers = managers;
     this.emitter = emitter;
     this.socket = socket;
     this.classParam = classParam;
