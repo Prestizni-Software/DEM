@@ -15,7 +15,7 @@ await getModelForClass(Test2).deleteMany({});
 const serverManagers = await initServerManagers();
 afterAll(async () => {
   await mongoose.disconnect();
-  for (const manager of Object.values(serverManagers)) await manager.close();
+  for (const manager of Object.values(serverManagers)) manager.close();
 });
 const testServerObject1 = await serverManagers.Test.createObject({
   active: true,
