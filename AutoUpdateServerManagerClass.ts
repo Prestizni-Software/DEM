@@ -55,9 +55,10 @@ export type AUSDefinitions<T extends Record<string, Constructor<any>>> = {
 };
 
 export type EventMiddlewareFunction<
-  T extends Record<string, Constructor<any>>
+  T extends Record<string, Constructor<any>>,
+  C extends Constructor<any>
 > = (
-  event: DEMEvent,
+  event: DEMEvent<C>,
   data: any,
   managers: {
     [K in keyof T]: AutoUpdateServerManager<T[K]>;
@@ -80,7 +81,7 @@ export type AccessMiddleware<
   T extends Record<string, Constructor<any>>,
   C extends Constructor<any>
 > = {
-  eventMiddleware?: EventMiddlewareFunction<T>;
+  eventMiddleware?: EventMiddlewareFunction<T, C>;
   startupMiddleware?: StartupMiddlewareFunction<T, C>;
 };
 
@@ -112,15 +113,15 @@ export enum DEMEventTypes {
   "startup" = "startup",
 }
 
-export type DEMEvent =
+export type DEMEvent<C extends Constructor<any>> =
   | {
       type: DEMEventTypes.delete | DEMEventTypes.get | DEMEventTypes.update;
-      manager: AutoUpdateServerManager<any>;
-      object: AutoUpdated<any>;
+      manager: AutoUpdateServerManager<C>;
+      object: AutoUpdated<C>;
     }
   | {
       type: DEMEventTypes.new | DEMEventTypes.startup;
-      manager: AutoUpdateServerManager<any>;
+      manager: AutoUpdateServerManager<C>;
       object: never;
     };
 
@@ -151,7 +152,7 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
         try {
           if (!secured?.eventMiddleware) return;
           const e = event[0];
-          let demEvent: DEMEvent = {} as any;
+          let demEvent: DEMEvent<any> = {} as any;
 
           const id = e.slice(-24);
           switch (true) {
