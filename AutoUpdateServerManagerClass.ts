@@ -57,12 +57,12 @@ export type AUSDefinitions<T extends Record<string, Constructor<any>>> = {
 export type EventMiddlewareFunction<
   T extends Record<string, Constructor<any>>
 > = (
-  event: string,
+  event: DEMEvent,
   data: any,
   managers: {
     [K in keyof T]: AutoUpdateServerManager<T[K]>;
   },
-  auth: { [key: string]: any }
+  socket: Socket
 ) => Promise<void>;
 
 export type StartupMiddlewareFunction<
@@ -73,15 +73,15 @@ export type StartupMiddlewareFunction<
   managers: {
     [K in keyof T]: AutoUpdateServerManager<T[K]>;
   },
-  auth: { [key: string]: any }
+  socket: Socket
 ) => Promise<AutoUpdated<C, 10>[]>;
 
 export type AccessMiddleware<
   T extends Record<string, Constructor<any>>,
   C extends Constructor<any>
 > = {
-  eventMiddleware: EventMiddlewareFunction<T>;
-  startupMiddleware: StartupMiddlewareFunction<T, C>;
+  eventMiddleware?: EventMiddlewareFunction<T>;
+  startupMiddleware?: StartupMiddlewareFunction<T, C>;
 };
 
 export type AUSOption<
@@ -104,13 +104,33 @@ export type ServerManagerDefinition<
   options?: AUSOption<C, T>;
 };
 
+export enum DEMEventTypes {
+  "new" = "new",
+  "update" = "update",
+  "delete" = "delete",
+  "get" = "get",
+  "startup" = "startup",
+}
+
+export type DEMEvent =
+  | {
+      type: DEMEventTypes.delete | DEMEventTypes.get | DEMEventTypes.update;
+      manager: AutoUpdateServerManager<any>;
+      id: string;
+    }
+  | {
+      type: DEMEventTypes.new | DEMEventTypes.startup;
+      manager: AutoUpdateServerManager<any>;
+      id: never;
+    };
+
 function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
   socket_server: Server,
   loggers: LoggersType,
   managers: WrappedInstances<T>,
   secured?: AccessMiddleware<any, any>
 ) {
-  if (secured) {
+  if (secured?.eventMiddleware) {
     socket_server.use(async (socket, next) => {
       socket.use((async (
         event: SocketEvent,
@@ -129,12 +149,52 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
           return;
         }
         try {
-          await secured.eventMiddleware(
-            event[0],
-            event[1],
-            managers,
-            socket.handshake.auth
-          );
+          if (!secured?.eventMiddleware) return;
+          const e = event[0];
+          let demEvent: DEMEvent = {} as any;
+
+          switch (true) {
+            case e.startsWith("new"):
+              demEvent.type = DEMEventTypes.new;
+              demEvent.manager = managers[e.replace("new", "")];
+              break;
+
+            case e.startsWith("update"):
+              demEvent.type = DEMEventTypes.update;
+              demEvent.id = e.slice(-24);
+              demEvent.manager =
+                managers[e.replace("update", "").replace(demEvent.id, "")];
+              break;
+
+            case e.startsWith("delete"):
+              demEvent.type = DEMEventTypes.delete;
+              demEvent.id = e.slice(-24);
+              demEvent.manager =
+                managers[e.replace("delete", "").replace(demEvent.id, "")];
+              break;
+
+            case e.startsWith("get"):
+              demEvent.type = DEMEventTypes.get;
+              demEvent.id = e.slice(-24);
+              demEvent.manager =
+                managers[e.replace("get", "").replace(demEvent.id, "")];
+              break;
+
+            case e.startsWith("startup"):
+              demEvent.type = DEMEventTypes.startup;
+              demEvent.manager = managers[e.replace("startup", "")];
+              break;
+
+            default:
+              throw new Error(
+                "Unknown event: " +
+                  e +
+                  " - known events: [" +
+                  Object.values(DEMEventTypes).join(", ") +
+                  "]"
+              );
+          }
+          await secured.eventMiddleware(demEvent, event[1], managers, socket);
         } catch (error) {
           loggers.warn(
             "Someone got access denied: (" +
@@ -310,10 +370,10 @@ export class AutoUpdateServerManager<
         try {
           const ids = (
             (
-              await this.options?.accessDefinitions?.startupMiddleware(
+              await this.options?.accessDefinitions?.startupMiddleware?.(
                 this.objectsAsArray,
                 this.classers,
-                socket.handshake.auth
+                socket
               )
             )?.map((obj) => obj._id) ?? this.objectIDs
           ).filter(Boolean);
@@ -509,7 +569,7 @@ export class AutoUpdateServerManager<
             await this.options?.accessDefinitions?.startupMiddleware(
               [object],
               this.classers,
-              socket.handshake.auth
+              socket
             );
           if (theTruth.length > 0) {
             if (!object._id)

@@ -1,6 +1,7 @@
 import {
   AUSManagerFactory,
   createAutoStatusDefinitions,
+  DEMEventTypes,
 } from "./AutoUpdateServerManagerClass.js";
 import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
@@ -44,9 +45,9 @@ export const initServerManagers = async () => {
             }
           ),
           accessDefinitions: {
-            startupMiddleware: async (objects, classers, auth) => {
+            startupMiddleware: async (objects, classers, socket) => {
               const returns =
-                auth.token == "Client1"
+                socket.handshake.auth.token == "Client1"
                   ? objects
                   : objects.filter(
                       (obj) =>
@@ -62,8 +63,8 @@ export const initServerManagers = async () => {
               );
               return returns;
             },
-            eventMiddleware: async (event, data, classers, auth) => {
-              if (auth.token == "Client2" && event.startsWith("delete"))
+            eventMiddleware: async (event, data, classers, socket) => {
+              if (socket.handshake.auth.token == "Client2" && event.type === DEMEventTypes.delete)
                 throw new Error("Fail");
             },
           },
