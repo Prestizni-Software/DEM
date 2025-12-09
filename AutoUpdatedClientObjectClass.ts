@@ -51,7 +51,7 @@ export class AutoUpdatedClientObject<T> {
     error: () => {},
     warn: () => {},
   };
-  protected isLoading = false;
+  protected isLoading = true;
   protected readonly emitter: EventEmitter3;
   protected readonly properties: (keyof T)[];
   protected readonly className: string;
