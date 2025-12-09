@@ -400,7 +400,7 @@ export class AutoUpdatedClientObject<T> {
   ): Promise<{ success: boolean; msg: string }> {
     let message = "Setting value " + key + " of " + this.className;
     const isRef = getMetadataRecursive("isRef", this.classProp.prototype, key);
-    if (isRef) val = Array.isArray(val) ? val.map((v) => v._id ?? v) : val;
+    if (isRef) val = Array.isArray(val) ? val.map((v) => v._id ?? v) : val._id ?? val;
     this.loggers.debug(message);
     try {
       if (val instanceof AutoUpdatedClientObject) val = val.extractedData._id;

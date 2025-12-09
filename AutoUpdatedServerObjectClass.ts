@@ -4,6 +4,7 @@ import {
 } from "./AutoUpdatedClientObjectClass.js";
 import { AutoUpdateServerManager } from "./AutoUpdateServerManagerClass.js";
 import "reflect-metadata";
+import { ObjectId } from "mongodb";
 import { DefaultEventsMap, Server } from "socket.io";
 import {
   Constructor,
@@ -130,6 +131,11 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
     value: any,
     _silent: boolean = false
   ): Promise<{ success: boolean; message: string }> {
+    const isRef = getMetadataRecursive("isRef", this.classProp.prototype, key);
+    if (isRef)
+      value = Array.isArray(value)
+        ? value.map((v) => new ObjectId(v as string | ObjectId))
+        : new ObjectId(value as string | ObjectId);
     try {
       await this.parentManager.managers[this.className].model.updateOne(
         { _id: this.data._id },
