@@ -54,9 +54,9 @@ export class AutoUpdatedClientObject<T> {
   };
   protected isLoading = true;
   protected readonly emitter: EventEmitter3;
-  protected readonly properties: (keyof T)[];
-  protected readonly className: string;
-  protected parentManager: AutoUpdateManager<any>;
+  public readonly properties: (keyof T)[];
+  public readonly className: string;
+  public parentManager: AutoUpdateManager<any>;
   protected isLoadingReferences = true;
   public readonly classProp: Constructor<T>;
   private readonly EmitterID = new ObjectId().toHexString();

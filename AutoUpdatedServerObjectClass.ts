@@ -55,7 +55,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
 class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
   protected override readonly isServer: boolean = true;
   private entry: DocumentType<InstanceOf<T>>;
-  protected declare parentManager: AutoUpdateServerManager<any>;
+  public declare parentManager: AutoUpdateServerManager<any>;
 
   constructor(
     socket: SocketType,

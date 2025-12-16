@@ -128,103 +128,119 @@ export type DEMEvent<C extends Constructor<any>> =
 function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
   socket_server: Server,
   loggers: LoggersType,
-  managers: WrappedInstances<T>,
-  secured?: AccessMiddleware<any, any>
+  managers: WrappedInstances<T>
 ) {
-  if (secured?.eventMiddleware) {
-    socket_server.use(async (socket, next) => {
-      socket.use((async (
-        event: SocketEvent,
-        next: (err?: ExtendedError | undefined) => void
-      ) => {
-        if (
-          event.length !== 3 ||
-          typeof event[0] !== "string" ||
-          typeof event[2] !== "function"
-        ) {
-          loggers.warn(
-            "Invalid event: [" +
-              event.map((e) => JSON.stringify(e)).join("], [") +
-              "]"
-          );
-          return;
+  socket_server.use(async (socket, next) => {
+    socket.use((async (
+      event: SocketEvent,
+      next: (err?: ExtendedError | undefined) => void
+    ) => {
+      if (
+        event.length !== 3 ||
+        typeof event[0] !== "string" ||
+        typeof event[2] !== "function"
+      ) {
+        loggers.warn(
+          "Invalid event: [" +
+            event.map((e) => JSON.stringify(e)).join("], [") +
+            "]"
+        );
+        return;
+      }
+      if (
+        !socket
+          .eventNames()
+          .some(
+            (e) =>
+              e.toString() === event[0] ||
+              e.toString().slice(0, e.toString().length - 24) === event[0]
+          )
+      ) {
+        loggers.warn(
+          "Undefined event: [" +
+            event.map((e) => JSON.stringify(e)).join("], [") +
+            "]"
+        );
+        event[2]({
+          success: false,
+          message: "Undefined event, event: " + event[0] + " not found",
+        });
+        return;
+      }
+      try {
+        const e = event[0];
+        let demEvent: DEMEvent<any> = {} as any;
+
+        const id = e.slice(-24);
+        switch (true) {
+          case e.startsWith("new"):
+            demEvent.type = DEMEventTypes.new;
+            demEvent.manager = managers[e.replace("new", "")];
+            break;
+
+          case e.startsWith("update"):
+            demEvent.type = DEMEventTypes.update;
+            demEvent.manager =
+              managers[e.replace("update", "").replace(id, "")];
+            demEvent.object = demEvent.manager.getObject(id);
+            break;
+
+          case e.startsWith("delete"):
+            demEvent.type = DEMEventTypes.delete;
+            demEvent.manager =
+              managers[e.replace("delete", "").replace(id, "")];
+            demEvent.object = demEvent.manager.getObject(id);
+            break;
+
+          case e.startsWith("get"):
+            demEvent.type = DEMEventTypes.get;
+            demEvent.manager = managers[e.replace("get", "").replace(id, "")];
+            demEvent.object = demEvent.manager.getObject(id);
+            break;
+
+          case e.startsWith("startup"):
+            demEvent.type = DEMEventTypes.startup;
+            demEvent.manager = managers[e.replace("startup", "")];
+            break;
+
+          default:
+            throw new Error(
+              "Unknown event: " +
+                e +
+                " - known events: [" +
+                Object.values(DEMEventTypes).join(", ") +
+                "]"
+            );
         }
-        try {
-          if (!secured?.eventMiddleware) return;
-          const e = event[0];
-          let demEvent: DEMEvent<any> = {} as any;
-
-          const id = e.slice(-24);
-          switch (true) {
-            case e.startsWith("new"):
-              demEvent.type = DEMEventTypes.new;
-              demEvent.manager = managers[e.replace("new", "")];
-              break;
-
-            case e.startsWith("update"):
-              demEvent.type = DEMEventTypes.update;
-              demEvent.manager =
-                managers[e.replace("update", "").replace(id, "")];
-              demEvent.object = demEvent.manager.getObject(id);
-              break;
-
-            case e.startsWith("delete"):
-              demEvent.type = DEMEventTypes.delete;
-              demEvent.manager =
-                managers[e.replace("delete", "").replace(id, "")];
-              demEvent.object = demEvent.manager.getObject(id);
-              break;
-
-            case e.startsWith("get"):
-              demEvent.type = DEMEventTypes.get;
-              demEvent.manager = managers[e.replace("get", "").replace(id, "")];
-              demEvent.object = demEvent.manager.getObject(id);
-              break;
-
-            case e.startsWith("startup"):
-              demEvent.type = DEMEventTypes.startup;
-              demEvent.manager = managers[e.replace("startup", "")];
-              break;
-
-            default:
-              throw new Error(
-                "Unknown event: " +
-                  e +
-                  " - known events: [" +
-                  Object.values(DEMEventTypes).join(", ") +
-                  "]"
-              );
-          }
-          await secured.eventMiddleware(demEvent, event[1], managers, socket);
-        } catch (error) {
-          loggers.warn(
-            "Someone got access denied: (" +
-              JSON.stringify(socket.handshake.auth) +
-              ")\nWith ID: '" +
-              socket.id +
-              "'\nFrom: '" +
-              socket.handshake.address +
-              "'\nTo the event: '" +
-              event[0] +
-              "'\nFor: '" +
-              (error as any).message +
-              "'"
-          );
-          event[2]({
-            success: false,
-            message:
-              "You were denied access to this event '" +
-              event[0] +
-              "' by the server.\n" +
-              (error as any).message,
-          });
-          return;
-        }
-        next();
-      }) as any);
+        await demEvent.manager.options?.accessDefinitions?.eventMiddleware?.(demEvent, event[1], managers, socket);
+      } catch (error) {
+        loggers.warn(
+          "Someone got access denied: (" +
+            JSON.stringify(socket.handshake.auth) +
+            ")\nWith ID: '" +
+            socket.id +
+            "'\nFrom: '" +
+            socket.handshake.address +
+            "'\nTo the event: '" +
+            event[0] +
+            "'\nFor: '" +
+            (error as any).message +
+            "'"
+        );
+        event[2]({
+          success: false,
+          message:
+            "You were denied access to this event '" +
+            event[0] +
+            "' by the server.\n" +
+            (error as any).message,
+        });
+        return;
+      }
       next();
-    });
-  }
+    }) as any);
+    next();
+  });
 }
 
 export async function AUSManagerFactory<
@@ -270,18 +286,6 @@ export async function AUSManagerFactory<
     }
     loggers.debug("Loading DB for manager: " + key);
     try {
-      setupSocketMiddleware(
-        socket,
-        loggers,
-        managers,
-        def.options?.accessDefinitions
-      );
-    } catch (error: any) {
-      loggers.error("Error setting up socket middleware");
-      loggers.error(error.message);
-      loggers.error(error.stack);
-    }
-    try {
       await managers[key].preLoad();
     } catch (error: any) {
       loggers.error("Error loading DB for manager: " + key);
@@ -302,6 +306,17 @@ export async function AUSManagerFactory<
       loggers.debug(`Client disconnected: ${socket.id}`);
     });
   });
+      try {
+      setupSocketMiddleware(
+        socket,
+        loggers,
+        managers
+      );
+    } catch (error: any) {
+      loggers.error("Error setting up socket middleware");
+      loggers.error(error.message);
+      loggers.error(error.stack);
+    }
   return managers;
 }
 
@@ -390,6 +405,13 @@ export class AutoUpdateServerManager<
             success: true,
           });
         } catch (error: any) {
+          this.loggers.error(
+            "Error sending startup data for manager " +
+              this.className +
+              ": " +
+              error.message
+          );
+          this.loggers.error(error.stack);
           ack({
             success: false,
             message: error.message,
@@ -452,7 +474,8 @@ export class AutoUpdateServerManager<
         }
       }
     );
-
+    socket.on("update" + this.className, async () => {});
+    socket.on("get" + this.className, async () => {});
     socket.onAny(
       async (
         event: string,
@@ -503,8 +526,15 @@ export class AutoUpdateServerManager<
               success: true,
               message: "Updated successfully",
             });
-          } catch (error) {
-            ack({ success: false, message: (error as any).message });
+          } catch (error: any) {
+            this.loggers.error(
+              "Error sending startup data for manager " +
+                this.className +
+                ": " +
+                error.message
+            );
+            this.loggers.error(error.stack);
+            ack({ success: false, message: error.message });
           }
         }
       }
