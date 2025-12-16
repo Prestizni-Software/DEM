@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import _ from "lodash";
 import {
   Constructor,
   EventEmitter3,
@@ -56,7 +57,7 @@ export class AutoUpdatedClientObject<T> {
   protected readonly properties: (keyof T)[];
   protected readonly className: string;
   protected parentManager: AutoUpdateManager<any>;
-  protected isLoadingReferences = false;
+  protected isLoadingReferences = true;
   public readonly classProp: Constructor<T>;
   private readonly EmitterID = new ObjectId().toHexString();
   private readonly loadShit = async (): Promise<void> => {
@@ -77,23 +78,19 @@ export class AutoUpdatedClientObject<T> {
         (failed: boolean, reason: string) => {
           if (failed) {
             reject(new Error(reason));
-            return;
-          }
-
-          this.loadForceReferences()
-            .then(() => {
-              this.isLoadingReferences = false;
-              resolve();
-            })
-            .catch((error: any) => {
-              this.isLoadingReferences = false;
-              this.loggers.error("Error loading references");
-              this.loggers.error(error.message);
-              resolve(); // <- resolves even if references failed
-            });
+          } else resolve();
         }
       );
     });
+    try {
+      await this.loadForceReferences();
+
+      this.isLoadingReferences = false;
+    } catch (error: any) {
+      this.isLoadingReferences = false;
+      this.loggers.error("Error loading references");
+      this.loggers.error(error.message);
+    }
   };
 
   constructor(
@@ -284,7 +281,7 @@ export class AutoUpdatedClientObject<T> {
       this.loggers
     ).newData;
 
-    return structuredClone(extracted);
+    return _.cloneDeep(extracted);
   }
 
   public get isLoaded(): boolean {
@@ -293,22 +290,6 @@ export class AutoUpdatedClientObject<T> {
 
   public async isPreLoadedAsync(): Promise<boolean> {
     await this.loadShit();
-    if (this.isLoading)
-      return new Promise((resolve, reject) => {
-        this.emitter.on(
-          "pre-loaded" + this.EmitterID,
-          async (failed: boolean, reason: string) => {
-            if (failed) {
-              this.isLoading = false;
-              this.loggers.error("Could not load data from server: " + reason);
-              reject(new Error(reason));
-              return;
-            }
-            this.generateSettersAndGetters();
-            resolve(this.isLoading === false);
-          }
-        );
-      });
     this.generateSettersAndGetters();
     return true;
   }
@@ -400,7 +381,8 @@ export class AutoUpdatedClientObject<T> {
   ): Promise<{ success: boolean; msg: string }> {
     let message = "Setting value " + key + " of " + this.className;
     const isRef = getMetadataRecursive("isRef", this.classProp.prototype, key);
-    if (isRef) val = Array.isArray(val) ? val.map((v) => v._id ?? v) : val._id ?? val;
+    if (isRef)
+      val = Array.isArray(val) ? val.map((v) => v._id ?? v) : val._id ?? val;
     this.loggers.debug(message);
     try {
       if (val instanceof AutoUpdatedClientObject) val = val.extractedData._id;
