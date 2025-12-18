@@ -16,7 +16,7 @@ import {
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
-import { Paths } from "./CommonTypes_server.js";
+import { Paths, PathValueOf } from "./CommonTypes_server.js";
 import { EventEmitter } from "eventemitter3";
 
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
@@ -59,7 +59,6 @@ export type EventMiddlewareFunction<
   C extends Constructor<any>
 > = (
   event: DEMEvent<C>,
-  data: any,
   managers: {
     [K in keyof T]: AutoUpdateServerManager<T[K]>;
   },
@@ -115,14 +114,32 @@ export enum DEMEventTypes {
 
 export type DEMEvent<C extends Constructor<any>> =
   | {
-      type: DEMEventTypes.delete | DEMEventTypes.get | DEMEventTypes.update;
+      type: DEMEventTypes.delete | DEMEventTypes.get;
       manager: AutoUpdateServerManager<C>;
       object: AutoUpdated<C>;
+      data: never;
     }
   | {
-      type: DEMEventTypes.new | DEMEventTypes.startup;
+      type: DEMEventTypes.update;
+      manager: AutoUpdateServerManager<C>;
+      object: AutoUpdated<C>;
+      data: {
+        _id: string;
+        key: Paths<InstanceType<C>>;
+        value: any;
+      };
+    }
+  | {
+      type: DEMEventTypes.startup;
       manager: AutoUpdateServerManager<C>;
       object: never;
+      data: never;
+    }
+  | {
+      type: DEMEventTypes.new;
+      manager: AutoUpdateServerManager<C>;
+      object: never;
+      data: IsData<InstanceType<C>>;
     };
 
 function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
@@ -153,7 +170,7 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
           .some(
             (e) =>
               e.toString() === event[0] ||
-              e.toString().slice(0, e.toString().length - 24) === event[0]
+              e.toString() === event[0].slice(0, event[0].length - 24)
           )
       ) {
         loggers.warn(
@@ -176,6 +193,7 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
           case e.startsWith("new"):
             demEvent.type = DEMEventTypes.new;
             demEvent.manager = managers[e.replace("new", "")];
+            demEvent.data = event[1];
             break;
 
           case e.startsWith("update"):
@@ -183,6 +201,7 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
             demEvent.manager =
               managers[e.replace("update", "").replace(id, "")];
             demEvent.object = demEvent.manager.getObject(id);
+            demEvent.data = event[1];
             break;
 
           case e.startsWith("delete"):
@@ -212,7 +231,12 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
                 "]"
             );
         }
-        await demEvent.manager.options?.accessDefinitions?.eventMiddleware?.(demEvent, event[1], managers, socket);
+        await demEvent.manager.options?.accessDefinitions?.eventMiddleware?.(
+          demEvent,
+          managers,
+          socket
+        );
+        next();
       } catch (error) {
         loggers.warn(
           "Someone got access denied: (" +
@@ -237,7 +261,6 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
         });
         return;
       }
-      next();
     }) as any);
     next();
   });
@@ -306,17 +329,13 @@ export async function AUSManagerFactory<
       loggers.debug(`Client disconnected: ${socket.id}`);
     });
   });
-      try {
-      setupSocketMiddleware(
-        socket,
-        loggers,
-        managers
-      );
-    } catch (error: any) {
-      loggers.error("Error setting up socket middleware");
-      loggers.error(error.message);
-      loggers.error(error.stack);
-    }
+  try {
+    setupSocketMiddleware(socket, loggers, managers);
+  } catch (error: any) {
+    loggers.error("Error setting up socket middleware");
+    loggers.error(error.message);
+    loggers.error(error.stack);
+  }
   return managers;
 }
 

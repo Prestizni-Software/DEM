@@ -604,7 +604,7 @@ export class AutoUpdatedClientObject<T> {
     for (const part of key.split(".")) {
       try {
         if (value) value = value[part];
-        else value = (this.data as any)[part];
+        else value = (this as any)[part];
       } catch (error: any) {
         this.loggers.error(
           "Error getting value for " +
@@ -867,12 +867,16 @@ export class AutoUpdatedClientObject<T> {
         prop.toString()
       );
       if (isRef && !pointer) {
-        if (!(this as any)[prop]) continue;
-        if (Array.isArray((this as any)[prop])) {
-          for (const child of (this as any)[prop]) {
-            child?.loadMissingReferences();
+        if (!this.getValue(prop as any)) continue;
+        if (Array.isArray(this.getValue(prop as any))) {
+          for (const child of this.getValue(prop as any)) {
+            try {
+              child?.loadMissingReferences();
+            } catch (error: any) {
+              this.loggers.error(error.message);
+            }
           }
-        } else (this as any)[prop]?.loadMissingReferences();
+        } else this.getValue(prop as any)?.loadMissingReferences();
       }
     }
   }
