@@ -148,7 +148,8 @@ export class AutoUpdateClientManager<
           if (!res.success) {
             this.loggers.error("Error loading ids from server for manager");
             this.loggers.error(res.message);
-            throw new Error(res.message);
+            reject(new Error(res.message));
+            return;
           }
           const data = res.data;
           let extraProperties: string[] = [];

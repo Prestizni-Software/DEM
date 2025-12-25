@@ -16,7 +16,7 @@ import {
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
-import { Paths, PathValueOf } from "./CommonTypes_server.js";
+import { Paths } from "./CommonTypes_server.js";
 import { EventEmitter } from "eventemitter3";
 
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
@@ -170,7 +170,7 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
           .some(
             (e) =>
               e.toString() === event[0] ||
-              e.toString() === event[0].slice(0, event[0].length - 24)
+              e.toString() === event[0].slice(0, - 24)
           )
       ) {
         loggers.warn(
