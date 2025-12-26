@@ -10,6 +10,7 @@ import {
   ServerResponse,
   ServerUpdateRequest,
   Paths,
+  AutoUpdated,
 } from "./CommonTypes.js";
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
@@ -67,6 +68,7 @@ export class AutoUpdatedClientObject<T> {
       } catch (error: any) {
         this.loggers.error("Error loading references");
         this.loggers.error(error.message);
+        this.loggers.error(error.stack);
       }
       this.isLoadingReferences = false;
       return;
@@ -90,6 +92,7 @@ export class AutoUpdatedClientObject<T> {
       this.isLoadingReferences = false;
       this.loggers.error("Error loading references");
       this.loggers.error(error.message);
+      this.loggers.error(error.stack);
     }
   };
 
@@ -749,8 +752,9 @@ export class AutoUpdatedClientObject<T> {
     const val = obj?.getValue(pointer[1]);
     if (!val) return;
     if (Array.isArray(val)) {
-      if (val.includes(this.data._id)) obj?.contactChildren();
-      else await obj?.setValue(pointer[1], [...val, this.data._id]);
+      if (val.map((id: AutoUpdated<any>) => id._id.toString()).includes(this.data._id)) obj?.contactChildren();
+      else
+        await obj?.setValue(pointer[1], [...new Set([...val, this.data._id])]);
     } else if (val.toString() === this.data._id.toString())
       obj?.contactChildren();
     else await obj?.setValue(pointer[1], this.data._id.toString());
