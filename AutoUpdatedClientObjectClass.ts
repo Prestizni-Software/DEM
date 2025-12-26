@@ -743,21 +743,27 @@ export class AutoUpdatedClientObject<T> {
   ) {
     if (pointer.length !== 2) {
       throw new Error(
-        "Invalid pointer: " + JSON.stringify(pointer) + " for " + this.className
+        "Invalid pointer: " + JSON.stringify(pointer) + " for " + this.className + ", poiter must be 'className:pathToParentProperty'"
       );
     }
+    if(!parent)
+      throw new Error("Invalid pointer: " + JSON.stringify(pointer) + " for " + this.className + ", parent is null");
     const obj = this.parentManager.managers[pointer[0]]?.getObject(
       (parent as any)._id?.toString() ?? (parent as any).toString()
     );
     const val = obj?.getValue(pointer[1]);
     if (!val) return;
     if (Array.isArray(val)) {
-      if (val.map((id: AutoUpdated<any>) => id._id.toString()).includes(this.data._id)) obj?.contactChildren();
+      const originalLength = val.length;
+      const filtred = val.filter(Boolean);
+      if(filtred.length !== originalLength)
+        await obj?.setValue(pointer[1], filtred);
+      if (filtred.map((id: AutoUpdated<any>) => id?._id.toString()).includes(this.data._id)) obj?.contactChildren();
       else
-        await obj?.setValue(pointer[1], [...new Set([...val, this.data._id])]);
-    } else if (val.toString() === this.data._id.toString())
+        await obj?.setValue(pointer[1], [...new Set([...filtred, this.data._id])]);
+    } else if (val.toString() === this.data?._id.toString())
       obj?.contactChildren();
-    else await obj?.setValue(pointer[1], this.data._id.toString());
+    else await obj?.setValue(pointer[1], this.data?._id.toString());
   }
 
   public async destroy(
