@@ -640,6 +640,11 @@ export class AutoUpdatedClientObject<T> {
             "update" + this.className + this.data._id,
             update,
             async (res: ServerResponse<null>) => {
+              if (!res.success) {
+                this.loggers.error("Error sending update: " + res.message);
+                resolve({ success: false, message: res.message });
+                return;
+              }
               await this.checkAutoStatusChange();
               resolve({
                 success: res.success,
