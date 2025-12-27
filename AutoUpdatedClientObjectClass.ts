@@ -18,6 +18,7 @@ import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 type SocketType = Socket<any, any>;
 export async function createAutoUpdatedClass<C extends Constructor<any>>(
   classParam: C,
+  className: string,
   socket: SocketType,
   data: IsData<InstanceType<C>> | string,
   loggers: LoggersType,
@@ -33,7 +34,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
     data,
     loggers,
     props,
-    classParam.name,
+    className,
     classParam,
     parentManager,
     emitter

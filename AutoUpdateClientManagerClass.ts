@@ -32,6 +32,7 @@ export async function AUCManagerFactory<
       const Model = defs[key];
       const c = new AutoUpdateClientManager(
         Model,
+        key,
         loggers,
         socket,
         managers,
@@ -90,17 +91,18 @@ export class AutoUpdateClientManager<
   public readonly managers: Record<string, AutoUpdateClientManager<any>>;
   constructor(
     classParam: T,
+    className: string,
     loggers: LoggersType,
     socket: Socket,
     managers: Record<string, AutoUpdateClientManager<any>>,
     emitter: EventEmitter
   ) {
-    super(classParam, socket, loggers, managers, emitter);
+    super(classParam, className, socket, loggers, managers, emitter);
     this.managers = managers;
   }
 
   private startSocketListeners() {
-    this.socket.on("new" + this.classParam.name, async (id: string) => {
+    this.socket.on("new" + this.className, async (id: string) => {
       this.loggers.debug(
         "Applying new object from manager " + this.className + " - " + id
       );
@@ -118,7 +120,7 @@ export class AutoUpdateClientManager<
         this.loggers.error(error.stack);
       }
     });
-    this.socket.on("delete" + this.classParam.name, async (id: string) => {
+    this.socket.on("delete" + this.className, async (id: string) => {
       this.loggers.debug(
         "Applying object deletion from manager " + this.className + " - " + id
       );
@@ -140,7 +142,7 @@ export class AutoUpdateClientManager<
   public async loadFromServer() {
     return new Promise<void>((resolve, reject) => {
       this.socket.emit(
-        "startup" + this.classParam.name,
+        "startup" + this.className,
         null,
         async (
           res: ServerResponse<{ ids: string[]; properties: string[] }>
@@ -181,6 +183,7 @@ export class AutoUpdateClientManager<
             try {
               this.classes[id] = await createAutoUpdatedClass(
                 this.classParam,
+                this.className,
                 this.socket,
                 id,
                 this.loggers,
@@ -280,6 +283,7 @@ export class AutoUpdateClientManager<
     );
     const object = await createAutoUpdatedClass(
       this.classParam,
+      this.className,
       this.socket,
       _id,
       this.loggers,
@@ -299,6 +303,7 @@ export class AutoUpdateClientManager<
     try {
       const object = await createAutoUpdatedClass(
         this.classParam,
+        this.className,
         this.socket,
         data as any,
         this.loggers,

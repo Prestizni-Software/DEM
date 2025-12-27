@@ -8,9 +8,10 @@ import {
 import "reflect-metadata";
 export abstract class AutoUpdateManager<T extends Constructor<any>> {
   protected abstract classes: { [_id: string]: AutoUpdatedClientObject<any> };
-  public socket: any;
+  public readonly socket: any;
   protected classParam: T;
   protected properties: (keyof T)[];
+  public readonly className: string;
   public readonly managers: Record<string, AutoUpdateManager<any>>;
   protected preloaded = false;
   protected waitingToResolveReferences: { [_id: string]: string } = {};
@@ -23,11 +24,13 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
   protected emitter: EventEmitter3;
   constructor(
     classParam: T,
+    className: string,
     socket: any,
     loggers: LoggersType,
     managers: Record<string, AutoUpdateManager<any>>,
     emitter: EventEmitter3
   ) {
+    this.className = className;
     this.managers = managers;
     this.emitter = emitter;
     this.socket = socket;
@@ -38,25 +41,25 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     this.loggers.debug = (s: string) =>
       loggers.debug(
         "[DEM - " +
-          classParam.name +" MANAGER] " +
+          className +" MANAGER] " +
           s
       );
     this.loggers.info = (s: string) =>
       loggers.info(
         "[DEM - " +
-          classParam.name +" MANAGER] " +
+          className +" MANAGER] " +
           s
       );
     this.loggers.error = (s: string) =>
       loggers.error(
         "[DEM - " +
-          classParam.name +" MANAGER] " +
+          className +" MANAGER] " +
           s
       );
     this.loggers.warn = (s: string) =>
       loggers.warn(
         "[DEM - " +
-          classParam.name +" MANAGER] " +
+          className +" MANAGER] " +
           s
       );
   }
@@ -87,10 +90,6 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
 
   public get objectIDs(): string[] {
     return Object.keys(this.classes);
-  }
-
-  public get className(): string {
-    return this.classParam.name;
   }
 
   protected abstract handleGetMissingObject(

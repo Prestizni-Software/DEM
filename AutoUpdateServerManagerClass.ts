@@ -329,6 +329,7 @@ export async function AUSManagerFactory<
     try {
       const c = new AutoUpdateServerManager(
         def.class,
+        key,
         loggers,
         socket,
         getModelForClass(def.class),
@@ -386,6 +387,7 @@ export class AutoUpdateServerManager<
   public readonly managers: Record<string, AutoUpdateServerManager<any>>;
   constructor(
     classParam: T,
+    className: string,
     loggers: LoggersType,
     socket: Server,
     model: ReturnModelType<T, BeAnObject>,
@@ -393,7 +395,7 @@ export class AutoUpdateServerManager<
     emitter: EventEmitter3,
     options?: AUSOption<T, any>
   ) {
-    super(classParam, socket, loggers, managers, emitter);
+    super(classParam, className, socket, loggers, managers, emitter);
     this.managers = managers;
     this.model = model;
     this.options = options;
@@ -415,6 +417,7 @@ export class AutoUpdateServerManager<
         this.classes[doc] ??
         (await createAutoUpdatedClass<T>(
           this.classParam,
+          this.className,
           this.socket,
           doc as any,
           this.loggers,
@@ -621,6 +624,7 @@ export class AutoUpdateServerManager<
     );
     const object = await createAutoUpdatedClass<T>(
       this.classParam,
+      this.className,
       this.socket,
       document as any,
       this.loggers,
@@ -639,6 +643,7 @@ export class AutoUpdateServerManager<
     (data as any)._id = undefined;
     const object = await createAutoUpdatedClass<T>(
       this.classParam,
+      this.className,
       this.socket,
       data as any,
       this.loggers,
@@ -661,7 +666,7 @@ export class AutoUpdateServerManager<
           if (!object._id)
             this.loggers.error("Object ID is undefined for object: " + object);
           this.loggers.debug("Emitting new object " + object._id);
-          socket.emit("new" + this.classParam.name, object._id);
+          socket.emit("new" + this.className, object._id);
         }
       } catch (error) {
         const _ = error;

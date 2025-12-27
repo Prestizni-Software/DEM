@@ -30,6 +30,7 @@ export type AutoUpdated<T, D extends number = 10> = AutoUpdatedServerObject<T> &
 
 export async function createAutoUpdatedClass<C extends Constructor<any>>(
   classParam: C,
+  className: string,
   socket: SocketType,
   data: IsData<InstanceOf<C>>,
   loggers: LoggersType,
@@ -41,7 +42,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
     data,
     loggers,
     Reflect.getMetadata("props", classParam.prototype) as (keyof C)[],
-    classParam.name,
+    className,
     classParam,
     parentManager,
     emitter
