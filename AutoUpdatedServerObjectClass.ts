@@ -187,7 +187,7 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
     }
     this.socket.emit("delete" + this.className, this.data._id);
     this.socket.removeAllListeners("update" + this.className + this.data._id);
-    this.socket.removeAllListeners("delete" + this.className + this.data._id);
+    this.socket.removeAllListeners("delete" + this.className);
     this.wipeSelf();
     return {
       success: true,

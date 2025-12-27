@@ -39,21 +39,6 @@ export async function AUCManagerFactory<
         emitter
       );
       managers[key] = c;
-      try {
-        await c.loadFromServer();
-      } catch (error: any) {
-        if (
-          error.message.includes(
-            "Local type does not match server type for manager"
-          )
-        )
-          throw error;
-        message += "\n Error loading data from server for manager: " + key;
-        message += "\n " + error.message;
-        loggers.error(message);
-        loggers.error(error.stack);
-        continue;
-      }
     } catch (error: any) {
       if (
         error.message.includes(
@@ -68,6 +53,23 @@ export async function AUCManagerFactory<
       continue;
     }
     loggers.debug("Created manager: " + key);
+  }
+  for(const manager of Object.values(managers)) {
+    try {
+        await manager.loadFromServer();
+      } catch (error: any) {
+        if (
+          error.message.includes(
+            "Local type does not match server type for manager"
+          )
+        )
+          throw error;
+        let message = "Error loading data from server for manager: " + manager.className;
+        message += "\n " + error.message;
+        loggers.error(message);
+        loggers.error(error.stack);
+        continue;
+      }
   }
   for (const key in defs) {
     try {
@@ -87,7 +89,7 @@ export async function AUCManagerFactory<
 export class AutoUpdateClientManager<
   T extends Constructor<any>
 > extends AutoUpdateManager<T> {
-  protected classes: { [_id: string]: AutoUpdated<T> } = {};
+  protected objects_: { [_id: string]: AutoUpdated<T> } = {};
   public readonly managers: Record<string, AutoUpdateClientManager<any>>;
   constructor(
     classParam: T,
@@ -107,7 +109,7 @@ export class AutoUpdateClientManager<
         "Applying new object from manager " + this.className + " - " + id
       );
       try {
-        this.classes[id] = await this.handleGetMissingObject(id);
+        this.objects_[id] = await this.handleGetMissingObject(id);
       } catch (error: any) {
         this.loggers.error(
           "Error loading object " +
@@ -181,7 +183,7 @@ export class AutoUpdateClientManager<
 
           for (const id of data.ids) {
             try {
-              this.classes[id] = await createAutoUpdatedClass(
+              this.objects_[id] = await createAutoUpdatedClass(
                 this.classParam,
                 this.className,
                 this.socket,
@@ -206,10 +208,10 @@ export class AutoUpdateClientManager<
             }
           }
           let i = 0;
-          for (const id in this.classes) {
+          for (const id in this.objects_) {
             try {
               
-              await this.classes[id].isPreLoadedAsync();
+              await this.objects_[id].isPreLoadedAsync();
             } catch (error:any) {
               this.loggers.error(
                 "Error preloading object " +
@@ -222,9 +224,9 @@ export class AutoUpdateClientManager<
               this.loggers.error(error.stack);
             }
           }
-          for (const id in this.classes) {
+          for (const id in this.objects_) {
             try {
-              this.classes[id].loadMissingReferences();
+              this.objects_[id].loadMissingReferences();
               i++;
             } catch (error: any) {
               this.loggers.error(
@@ -280,15 +282,15 @@ export class AutoUpdateClientManager<
   }
 
   public getObject(_id?: string): AutoUpdated<T> | null {
-    return _id ? this.classes[_id] : null;
+    return _id ? this.objects_[_id] : null;
   }
 
   public get objects(): { [_id: string]: AutoUpdated<T> } {
-    return this.classes;
+    return this.objects_;
   }
 
   public get objectsAsArray(): AutoUpdated<T>[] {
-    return Object.values(this.classes);
+    return Object.values(this.objects_);
   }
 
   protected async handleGetMissingObject(_id: string): Promise<AutoUpdated<T>> {
@@ -327,7 +329,7 @@ export class AutoUpdateClientManager<
       );
       await object.isPreLoadedAsync();
       object.loadMissingReferences();
-      this.classes[object._id] = object;
+      this.objects_[object._id] = object;
       return object;
     } catch (error: any) {
       this.loggers.error(

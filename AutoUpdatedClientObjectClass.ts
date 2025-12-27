@@ -384,7 +384,11 @@ export class AutoUpdatedClientObject<T> {
     let message = "Setting value " + key + " of " + this.className;
     const isRef = getMetadataRecursive("isRef", this.classProp.prototype, key);
     if (isRef)
-      val = Array.isArray(val) ? val.map((v) => v._id ?? v) : val._id ?? val;
+      val = Array.isArray(val)
+        ? val.map((v) => {
+            return v._id?.toString() ?? v;
+          })
+        : val._id ?? val;
     this.loggers.debug(message);
     try {
       if (val instanceof AutoUpdatedClientObject) val = val.extractedData._id;
@@ -470,7 +474,9 @@ export class AutoUpdatedClientObject<T> {
           }
           const res = await parentObj.setValue(isPopulated[1], this.data._id);
           success = res.success;
-          message += "\nReport from inner setValue function: \n " + res.msg;
+          message +=
+            "\nReport from inner setValue function: " +
+            res.msg.split("\n").join("\n  ");
         } else {
           if (
             this.isServer &&
@@ -478,13 +484,7 @@ export class AutoUpdatedClientObject<T> {
             Array.isArray(this.getValue(key)) &&
             !Array.isArray(val)
           ) {
-            val = [
-              ...new Set(
-                this.getValue(key)
-                  .concat(val)
-                  .map((v: any) => v.toString())
-              ),
-            ];
+            val = this.getValue(key).concat(val);
           }
           const res = await this.setValueInternal(lastPath, val, silent);
           if (
@@ -824,9 +824,7 @@ export class AutoUpdatedClientObject<T> {
             this.socket.removeAllListeners(
               "update" + this.className + this.data._id
             );
-            this.socket.removeAllListeners(
-              "delete" + this.className + this.data._id
-            );
+            this.socket.removeAllListeners("delete" + this.className);
             this.wipeSelf();
             resolve({
               success: true,

@@ -7,7 +7,7 @@ import {
 } from "./CommonTypes.js";
 import "reflect-metadata";
 export abstract class AutoUpdateManager<T extends Constructor<any>> {
-  protected abstract classes: { [_id: string]: AutoUpdatedClientObject<any> };
+  protected abstract objects_: { [_id: string]: AutoUpdatedClientObject<any> };
   public readonly socket: any;
   protected classParam: T;
   protected properties: (keyof T)[];
@@ -66,7 +66,7 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
 
   public close() {
     for (const id of this.objectIDs) {
-      delete this.classes[id];
+      delete this.objects_[id];
     }
     this.socket.disconnect?.() ?? this.socket.disconnectSockets(true);
     this.loggers.info("Goodbye, see you next time!");
@@ -83,13 +83,13 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
   public async deleteObject(
     _id: string
   ): Promise<{ success: boolean; message: string }> {
-    const res = await this.classes[_id].destroy(true);
-    if (res.success) delete this.classes[_id];
+    const res = await this.objects_[_id].destroy(true);
+    if (res.success) delete this.objects_[_id];
     return res;
   }
 
   public get objectIDs(): string[] {
-    return Object.keys(this.classes);
+    return Object.keys(this.objects_);
   }
 
   protected abstract handleGetMissingObject(
