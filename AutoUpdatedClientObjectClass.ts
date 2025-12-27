@@ -639,7 +639,7 @@ export class AutoUpdatedClientObject<T> {
           this.socket.emit(
             "update" + this.className + this.data._id,
             update,
-            async (res: ServerResponse<null>) => {
+            async (res: ServerResponse<never>) => {
               if (!res.success) {
                 this.loggers.error("Error sending update: " + res.message);
                 resolve({ success: false, message: res.message });
