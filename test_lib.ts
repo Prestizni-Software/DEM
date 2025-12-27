@@ -63,7 +63,7 @@ export const initServerManagers = async () => {
               );
               return returns;
             },
-            eventMiddleware: async (event, data, managers, socket) => {
+            eventMiddleware: async (event, managers, socket) => {
               if (socket.handshake.auth.token == "Client2" && event.type === DEMEventTypes.delete)
                 throw new Error("Fail");
             },

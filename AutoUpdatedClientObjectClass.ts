@@ -39,8 +39,6 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
     parentManager,
     emitter
   );
-
-  await instance.isPreLoadedAsync();
   return instance as any;
 }
 

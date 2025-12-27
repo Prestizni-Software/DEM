@@ -190,7 +190,6 @@ export class AutoUpdateClientManager<
                 this,
                 this.emitter
               );
-              await this.classes[id].isPreLoadedAsync();
               this.loggers.debug(
                 "Loaded object " + id + " from manager " + this.className
               );
@@ -207,6 +206,22 @@ export class AutoUpdateClientManager<
             }
           }
           let i = 0;
+          for (const id in this.classes) {
+            try {
+              
+              await this.classes[id].isPreLoadedAsync();
+            } catch (error:any) {
+              this.loggers.error(
+                "Error preloading object " +
+                  id +
+                  " from manager " +
+                  this.className +
+                  " - " +
+                  error.message
+              )
+              this.loggers.error(error.stack);
+            }
+          }
           for (const id in this.classes) {
             try {
               this.classes[id].loadMissingReferences();
@@ -310,6 +325,7 @@ export class AutoUpdateClientManager<
         this,
         this.emitter
       );
+      await object.isPreLoadedAsync();
       object.loadMissingReferences();
       this.classes[object._id] = object;
       return object;
