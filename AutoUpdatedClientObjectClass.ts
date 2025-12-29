@@ -388,7 +388,7 @@ export class AutoUpdatedClientObject<T> {
         ? val.map((v) => {
             return v._id?.toString() ?? v;
           })
-        : val._id ?? val;
+        : val?._id ?? val;
     this.loggers.debug(message);
     try {
       if (val instanceof AutoUpdatedClientObject) val = val.extractedData._id;
