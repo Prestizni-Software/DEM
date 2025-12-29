@@ -345,9 +345,19 @@ export class AutoUpdatedClientObject<T> {
       Object.defineProperty(this, key, {
         get: () => {
           if (isRef) {
-            if (Array.isArray(this.data[k]))
-              return this.data[k].map((id: string) => this.findReference(id));
-            else return this.findReference(this.data[k] as any);
+            if (Array.isArray(this.data[k])) {
+              const filtered = this.data[k]
+                .map((id: string) => this.findReference(id))
+                .filter(Boolean);
+              if (filtered.length !== this.data[k].length)
+                this.setValue__(key, filtered);
+
+              return filtered;
+            } else {
+              const result = this.findReference(this.data[k] as any);
+              if (!result && this.data[k]) this.setValue__(key, result);
+              return result;
+            }
           } else return this.data[k];
         },
         set: () => {
@@ -790,7 +800,7 @@ export class AutoUpdatedClientObject<T> {
         await obj?.setValue(pointer[1], [
           ...new Set([...filtred, this.data._id]),
         ]);
-    } else if (val.toString() === this.data?._id.toString())
+    } else if (val?.toString() === this.data?._id.toString())
       obj?.contactChildren();
     else await obj?.setValue(pointer[1], this.data?._id.toString());
   }

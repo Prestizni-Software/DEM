@@ -614,7 +614,7 @@ export class AutoUpdateServerManager<
   }
 
   public getObject(_id?: string): AutoUpdated<T> | null {
-    return _id ? this.objects_[_id] : null;
+    return _id ? this.objects_[_id]._id : null;
   }
 
   public get objects(): { [_id: string]: AutoUpdated<T> } {
