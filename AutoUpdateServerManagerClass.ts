@@ -8,7 +8,6 @@ import {
 import {
   Constructor,
   EventEmitter3,
-  InstanceOf,
   IsData,
   LoggersType,
   ServerResponse,
@@ -227,6 +226,14 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
               managers[e.replace("delete", "")];
             loggers.error(event[1]);
             demEvent.object = demEvent.manager.getObject(event[1]);
+            if(!demEvent.object){
+              event[2]({
+                success: true,
+                message: "Object already deleted",
+                data: undefined
+              })
+              return
+            }
             break;
 
           case e.startsWith("get"):
@@ -610,11 +617,11 @@ export class AutoUpdateServerManager<
     return _id ? this.objects_[_id] : null;
   }
 
-  public get objects(): { [_id: string]: AutoUpdated<InstanceOf<T>> } {
+  public get objects(): { [_id: string]: AutoUpdated<T> } {
     return this.objects_ as any;
   }
 
-  public get objectsAsArray(): AutoUpdated<InstanceOf<T>>[] {
+  public get objectsAsArray(): AutoUpdated<T>[] {
     return Object.values(this.objects_) as any;
   }
 
