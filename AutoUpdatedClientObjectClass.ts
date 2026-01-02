@@ -60,8 +60,7 @@ export class AutoUpdatedClientObject<T> {
   protected isLoadingReferences = true;
   public readonly classProp: Constructor<T>;
   private readonly EmitterID = new ObjectId().toHexString();
-  protected readonly toChangeOnParents: { key: string; value: any }[] =
-    [];
+  protected readonly toChangeOnParents: { key: string; value: any }[] = [];
   private readonly loadShit = async (): Promise<void> => {
     if (this.isLoaded) {
       try {
@@ -91,7 +90,7 @@ export class AutoUpdatedClientObject<T> {
     try {
       await this.loadForceReferences();
       for (const thing of this.toChangeOnParents) {
-          await this.setValue__(thing.key, thing.value);
+        await this.setValue__(thing.key, thing.value);
       }
       this.isLoadingReferences = false;
     } catch (error: any) {
@@ -514,20 +513,34 @@ export class AutoUpdatedClientObject<T> {
           const parentObj =
             this.parentManager.managers[isPopulated[0]].getObject(val);
           if (!parentObj) {
-            message += 
+            message +=
               "\nFailed to set value for " +
-                this.className +
-                " parent not found"
-            this.loggers.error(
-                message
-            );
+              this.className +
+              " parent not found";
+            this.loggers.error(message);
             return { success: false, msg: message };
           }
           let res;
-          if(this.isServer)
-          res = await parentObj.setValue(isPopulated[1], this.data._id);
-        else 
-          ({ res, val } = await this.preInnerSetValue(noGet, key, val, lastPath, silent));
+          if (this.isServer) {
+            const value = parentObj.getValue(isPopulated[1]);
+            if (Array.isArray(value)) {
+              res = await parentObj.setValue(
+                isPopulated[1],
+                value.concat(this.data._id.toString())
+              );
+            } else
+              res = await parentObj.setValue(
+                isPopulated[1],
+                this.data._id.toString()
+              );
+          } else
+            ({ res, val } = await this.preInnerSetValue(
+              noGet,
+              key,
+              val,
+              lastPath,
+              silent
+            ));
           success = res.success;
           message +=
             "\nReport from inner setValue function: " +
@@ -543,7 +556,13 @@ export class AutoUpdatedClientObject<T> {
               ? val.map((v) => new ObjectId(v as string | ObjectId))
               : new ObjectId(val as string | ObjectId);
           let res;
-          ({ res, val } = await this.preInnerSetValue(noGet, key, val, lastPath, silent));
+          ({ res, val } = await this.preInnerSetValue(
+            noGet,
+            key,
+            val,
+            lastPath,
+            silent
+          ));
           if (res.success) {
             const originalValue = obj[path.at(-1)];
             if (!Array.isArray(val) && Array.isArray(originalValue)) {
@@ -614,20 +633,30 @@ export class AutoUpdatedClientObject<T> {
     }
   }
 
-  private async preInnerSetValue(noGet: boolean, key: any, val: any, lastPath: string, silent: boolean) {
-    if (!noGet &&
+  private async preInnerSetValue(
+    noGet: boolean,
+    key: any,
+    val: any,
+    lastPath: string,
+    silent: boolean
+  ) {
+    if (
+      !noGet &&
       this.isServer &&
       this.getValue(key) &&
       Array.isArray(this.getValue(key)) &&
-      !Array.isArray(val)) {
+      !Array.isArray(val)
+    ) {
       val = this.getValue(key).concat(val);
     }
     const res = await this.setValueInternal(lastPath, val, silent);
-    if (!noGet &&
+    if (
+      !noGet &&
       !this.isServer &&
       this.getValue(key) &&
       Array.isArray(this.getValue(key)) &&
-      !Array.isArray(val)) {
+      !Array.isArray(val)
+    ) {
       val = [
         ...new Set(
           this.getValue(key)
@@ -1007,11 +1036,17 @@ export function processIsRefProperties(
       : instance[prop];
     if (Reflect.getMetadata("isRef", target, prop)) {
       if (Array.isArray(instance[prop]))
-        newData[prop] = instance[prop].map(
-          (item: any) => item?._id?.toString() ?? item?.toString() ?? undefined
-        ).filter(Boolean);
+        newData[prop] = instance[prop]
+          .map(
+            (item: any) =>
+              item?._id?.toString() ?? item?.toString() ?? undefined
+          )
+          .filter(Boolean);
       else
-        newData[prop] = instance[prop]?._id?.toString() ?? instance[prop]?.toString() ?? undefined;
+        newData[prop] =
+          instance[prop]?._id?.toString() ??
+          instance[prop]?.toString() ??
+          undefined;
     }
 
     const type = Reflect.getMetadata("design:type", target, prop);
