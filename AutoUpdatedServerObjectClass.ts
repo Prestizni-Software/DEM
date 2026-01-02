@@ -17,7 +17,6 @@ import {
 } from "./CommonTypes.js";
 import { Paths, PathValueOf, UnwrapRef } from "./CommonTypes_server.js";
 import { DocumentType } from "@typegoose/typegoose";
-import { cloneDeep } from "lodash";
 
 type SocketType = Server<
   DefaultEventsMap,
@@ -38,7 +37,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   parentManager: AutoUpdateServerManager<any>,
   emitter: EventEmitter3
 ): Promise<AutoUpdated<InstanceType<C>>> {
-  data = cloneDeep(data);
+  
   const instance = new AutoUpdatedServerObject<C>(
     socket,
     data,

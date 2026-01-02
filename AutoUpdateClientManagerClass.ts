@@ -9,7 +9,6 @@ import {
   ServerResponse,
 } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
-import { cloneDeep } from "lodash";
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateClientManager<T[K]>;
 };
@@ -325,7 +324,7 @@ export class AutoUpdateClientManager<
   ): Promise<AutoUpdated<T>> {
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
-    data = cloneDeep(data);
+    
     try {
       const object = await createAutoUpdatedClass(
         this.classParam,

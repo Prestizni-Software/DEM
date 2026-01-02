@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import _, { cloneDeep } from "lodash";
+import _ from "lodash";
 import {
   Constructor,
   EventEmitter3,
@@ -27,7 +27,6 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
 ): Promise<any> {
   if (typeof data !== "string" && data._id) {
     processIsRefProperties(data, classParam.prototype, undefined, [], loggers);
-    data = cloneDeep(data);
   }
   const props = Reflect.getMetadata("props", classParam.prototype);
   const instance = new AutoUpdatedClientObject<C>(
@@ -61,16 +60,14 @@ export class AutoUpdatedClientObject<T> {
   protected isLoadingReferences = true;
   public readonly classProp: Constructor<T>;
   private readonly EmitterID = new ObjectId().toHexString();
-  protected readonly toChangeOnParents: { pointer: string[]; value: any }[] =
+  protected readonly toChangeOnParents: { key: string; value: any }[] =
     [];
   private readonly loadShit = async (): Promise<void> => {
     if (this.isLoaded) {
       try {
         await this.loadForceReferences();
         for (const thing of this.toChangeOnParents) {
-          await this.parentManager.managers[thing.pointer[0]]
-            .getObject(thing.value)
-            ?.setValue__(thing.pointer[1], (this as any)._id);
+          await this.setValue__(thing.key, thing.value);
         }
       } catch (error: any) {
         this.loggers.error("Error loading references");
@@ -94,9 +91,7 @@ export class AutoUpdatedClientObject<T> {
     try {
       await this.loadForceReferences();
       for (const thing of this.toChangeOnParents) {
-        await this.parentManager.managers[thing.pointer[0]]
-          .getObject(thing.value)
-          ?.setValue__(thing.pointer[1], (this as any)._id);
+          await this.setValue__(thing.key, thing.value);
       }
       this.isLoadingReferences = false;
     } catch (error: any) {
@@ -223,11 +218,6 @@ export class AutoUpdatedClientObject<T> {
           this.classProp.prototype,
           key
         );
-        const pointer = getMetadataRecursive(
-          "refsTo",
-          this.classProp.prototype,
-          key
-        );
         if (isRef) {
           if (Array.isArray(this.data[key])) {
             this.data[key] = this.data[key].map(
@@ -280,12 +270,18 @@ export class AutoUpdatedClientObject<T> {
         pointer = pointer.split(":");
         if (pointer.length != 2)
           throw new Error(
-            "population rf incorrectly defined. Sould be 'ParentClass:PropName.Path'"
+            "population ref incorrectly defined. Sould be 'ParentClass:PropName.Path'"
           );
         const temp = data[key];
         delete data[key];
-        this.toChangeOnParents.push({ pointer: pointer, value: temp });
+        this.toChangeOnParents.push({ key: key, value: temp });
       }
+    }
+    try {
+      data = _.cloneDeep(data);
+    } catch (error: any) {
+      this.loggers.error("Most likely cycled object: " + error.message);
+      this.loggers.error(error.stack);
     }
     this.socket.emit("new" + this.className, data, (res: ServerResponse<T>) => {
       if (!res.success) {
@@ -1004,16 +1000,11 @@ export function processIsRefProperties(
       : instance[prop];
     if (Reflect.getMetadata("isRef", target, prop)) {
       if (Array.isArray(instance[prop]))
-        newData[prop] = instance[prop].map((item: any) =>
-          typeof item === "string" || ObjectId.isValid(item)
-            ? item
-            : item?._id.toString()
-        );
+        newData[prop] = instance[prop].map(
+          (item: any) => item?._id?.toString() ?? item?.toString() ?? undefined
+        ).filter(Boolean);
       else
-        newData[prop] =
-          typeof instance[prop] === "string" || ObjectId.isValid(instance[prop])
-            ? instance[prop]
-            : instance[prop]?._id.toString();
+        newData[prop] = instance[prop]?._id?.toString() ?? instance[prop]?.toString() ?? undefined;
     }
 
     const type = Reflect.getMetadata("design:type", target, prop);
