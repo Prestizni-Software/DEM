@@ -143,7 +143,7 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
     key: any,
     value: any,
     _silent: boolean = false
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; msg: string }> {
     try {
       await this.parentManager.managers[this.className].model.updateOne(
         { _id: this.data._id },
@@ -156,14 +156,14 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
 
       return {
         success: true,
-        message: "Updated",
+        msg: "Updated",
       };
     } catch (error) {
       this.loggers.error("Error saving object: " + (error as Error).message);
       this.loggers.error((error as any).stack);
       return {
         success: false,
-        message: "Error saving object: " + (error as Error).message,
+        msg: "Error saving object: " + (error as Error).message,
       };
     }
   }

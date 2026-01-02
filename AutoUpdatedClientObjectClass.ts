@@ -514,15 +514,20 @@ export class AutoUpdatedClientObject<T> {
           const parentObj =
             this.parentManager.managers[isPopulated[0]].getObject(val);
           if (!parentObj) {
-            this.loggers.error(
-              "Failed to set value for " +
+            message += 
+              "\nFailed to set value for " +
                 this.className +
-                " ParentObject not found\n" +
+                " parent not found"
+            this.loggers.error(
                 message
             );
             return { success: false, msg: message };
           }
-          const res = await parentObj.setValue(isPopulated[1], this.data._id);
+          let res;
+          if(this.isServer)
+          res = await parentObj.setValue(isPopulated[1], this.data._id);
+        else 
+          ({ res, val } = await this.preInnerSetValue(noGet, key, val, lastPath, silent));
           success = res.success;
           message +=
             "\nReport from inner setValue function: " +
@@ -537,31 +542,8 @@ export class AutoUpdatedClientObject<T> {
             val = Array.isArray(val)
               ? val.map((v) => new ObjectId(v as string | ObjectId))
               : new ObjectId(val as string | ObjectId);
-          if (
-            !noGet &&
-            this.isServer &&
-            this.getValue(key) &&
-            Array.isArray(this.getValue(key)) &&
-            !Array.isArray(val)
-          ) {
-            val = this.getValue(key).concat(val);
-          }
-          const res = await this.setValueInternal(lastPath, val, silent);
-          if (
-            !noGet &&
-            !this.isServer &&
-            this.getValue(key) &&
-            Array.isArray(this.getValue(key)) &&
-            !Array.isArray(val)
-          ) {
-            val = [
-              ...new Set(
-                this.getValue(key)
-                  .concat(val)
-                  .map((v: any) => v.toString())
-              ),
-            ];
-          }
+          let res;
+          ({ res, val } = await this.preInnerSetValue(noGet, key, val, lastPath, silent));
           if (res.success) {
             const originalValue = obj[path.at(-1)];
             if (!Array.isArray(val) && Array.isArray(originalValue)) {
@@ -570,7 +552,7 @@ export class AutoUpdatedClientObject<T> {
             } else obj[path.at(-1)] = val;
           }
           success = res.success;
-          message += "\nReport from inner setValue function: \n " + res.message;
+          message += "\nReport from inner setValue function: \n " + res.msg;
         }
       } catch (error: any) {
         success = false;
@@ -632,6 +614,31 @@ export class AutoUpdatedClientObject<T> {
     }
   }
 
+  private async preInnerSetValue(noGet: boolean, key: any, val: any, lastPath: string, silent: boolean) {
+    if (!noGet &&
+      this.isServer &&
+      this.getValue(key) &&
+      Array.isArray(this.getValue(key)) &&
+      !Array.isArray(val)) {
+      val = this.getValue(key).concat(val);
+    }
+    const res = await this.setValueInternal(lastPath, val, silent);
+    if (!noGet &&
+      !this.isServer &&
+      this.getValue(key) &&
+      Array.isArray(this.getValue(key)) &&
+      !Array.isArray(val)) {
+      val = [
+        ...new Set(
+          this.getValue(key)
+            .concat(val)
+            .map((v: any) => v.toString())
+        ),
+      ];
+    }
+    return { res, val };
+  }
+
   private findAndLoadReferences(lastPath: string, value: any) {
     const isRef = getMetadataRecursive(
       "isRef",
@@ -688,13 +695,13 @@ export class AutoUpdatedClientObject<T> {
     key: string,
     value: any,
     silent: boolean = false
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; msg: string }> {
     const update: ServerUpdateRequest<T> = this.makeUpdate(key, value);
-    const promise = new Promise<{ success: boolean; message: string }>(
+    const promise = new Promise<{ success: boolean; msg: string }>(
       (resolve) => {
         if (silent) {
           this.checkAutoStatusChange();
-          return resolve({ success: true, message: "Success - silent" });
+          return resolve({ success: true, msg: "Success - silent" });
         }
         try {
           this.socket.emit(
@@ -703,20 +710,20 @@ export class AutoUpdatedClientObject<T> {
             async (res: ServerResponse<never>) => {
               if (!res.success) {
                 this.loggers.error("Error sending update: " + res.message);
-                resolve({ success: false, message: res.message });
+                resolve({ success: false, msg: res.message });
                 return;
               }
               await this.checkAutoStatusChange();
               resolve({
                 success: res.success,
-                message: res.message ?? "Success",
+                msg: res.message ?? "Success",
               });
             }
           );
         } catch (error: any) {
           this.loggers.error("Error sending update:" + error.message);
           this.loggers.error(error.stack);
-          resolve({ success: false, message: error.message });
+          resolve({ success: false, msg: error.message });
         }
       }
     );
