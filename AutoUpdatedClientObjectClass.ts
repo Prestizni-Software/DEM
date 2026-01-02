@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import _ from "lodash";
+import _, { cloneDeep } from "lodash";
 import {
   Constructor,
   EventEmitter3,
@@ -27,6 +27,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
 ): Promise<any> {
   if (typeof data !== "string" && data._id) {
     processIsRefProperties(data, classParam.prototype, undefined, [], loggers);
+    data = cloneDeep(data);
   }
   const props = Reflect.getMetadata("props", classParam.prototype);
   const instance = new AutoUpdatedClientObject<C>(
@@ -60,10 +61,17 @@ export class AutoUpdatedClientObject<T> {
   protected isLoadingReferences = true;
   public readonly classProp: Constructor<T>;
   private readonly EmitterID = new ObjectId().toHexString();
+  protected readonly toChangeOnParents: { pointer: string[]; value: any }[] =
+    [];
   private readonly loadShit = async (): Promise<void> => {
     if (this.isLoaded) {
       try {
         await this.loadForceReferences();
+        for (const thing of this.toChangeOnParents) {
+          await this.parentManager.managers[thing.pointer[0]]
+            .getObject(thing.value)
+            ?.setValue__(thing.pointer[1], (this as any)._id);
+        }
       } catch (error: any) {
         this.loggers.error("Error loading references");
         this.loggers.error(error.message);
@@ -85,7 +93,11 @@ export class AutoUpdatedClientObject<T> {
     });
     try {
       await this.loadForceReferences();
-
+      for (const thing of this.toChangeOnParents) {
+        await this.parentManager.managers[thing.pointer[0]]
+          .getObject(thing.value)
+          ?.setValue__(thing.pointer[1], (this as any)._id);
+      }
       this.isLoadingReferences = false;
     } catch (error: any) {
       this.isLoadingReferences = false;
@@ -211,6 +223,11 @@ export class AutoUpdatedClientObject<T> {
           this.classProp.prototype,
           key
         );
+        const pointer = getMetadataRecursive(
+          "refsTo",
+          this.classProp.prototype,
+          key
+        );
         if (isRef) {
           if (Array.isArray(this.data[key])) {
             this.data[key] = this.data[key].map(
@@ -252,6 +269,24 @@ export class AutoUpdatedClientObject<T> {
     this.loggers.debug(
       this.className + " - Requesting new object creation on server"
     );
+    for (const key of this.properties) {
+      if (typeof key !== "string") continue;
+      let pointer = getMetadataRecursive(
+        "refsTo",
+        this.classProp.prototype,
+        key
+      );
+      if (pointer) {
+        pointer = pointer.split(":");
+        if (pointer.length != 2)
+          throw new Error(
+            "population rf incorrectly defined. Sould be 'ParentClass:PropName.Path'"
+          );
+        const temp = data[key];
+        delete data[key];
+        this.toChangeOnParents.push({ pointer: pointer, value: temp });
+      }
+    }
     this.socket.emit("new" + this.className, data, (res: ServerResponse<T>) => {
       if (!res.success) {
         this.isLoading = false;
@@ -349,13 +384,19 @@ export class AutoUpdatedClientObject<T> {
               const filtered = this.data[k]
                 .map((id: string) => this.findReference(id))
                 .filter(Boolean);
-              if (filtered.length !== this.data[k].length)
-                this.setValue__(key, filtered);
+              if (
+                filtered.length !== this.data[k].length &&
+                this.parentManager.isLoaded
+              )
+                this.data[k] = filtered.map(
+                  (obj: any) => obj._id?.toString() ?? obj.toString()
+                ) as any;
 
               return filtered;
             } else {
               const result = this.findReference(this.data[k] as any);
-              if (!result && this.data[k]) this.setValue__(key, result);
+              if (!result && this.data[k] && this.parentManager.isLoaded)
+                this.data[k] = undefined!;
               return result;
             }
           } else return this.data[k];
@@ -377,6 +418,7 @@ export class AutoUpdatedClientObject<T> {
       const result = manager.getObject(id.toString());
       if (result) return result;
     }
+    return undefined;
   }
 
   public async setValue<K extends Paths<InstanceOf<T>>>(
@@ -389,9 +431,10 @@ export class AutoUpdatedClientObject<T> {
   protected async setValue__(
     key: any,
     val: any,
-    silent: boolean = false
+    silent: boolean = false,
+    noGet: boolean = false
   ): Promise<{ success: boolean; msg: string }> {
-    let message = "Setting value " + key + " of " + this.className;
+    let message = "Setting value " + key + " of " + this.className + " to ";
     const isRef = getMetadataRecursive("isRef", this.classProp.prototype, key);
     if (isRef)
       val = Array.isArray(val)
@@ -399,6 +442,7 @@ export class AutoUpdatedClientObject<T> {
             return v._id?.toString() ?? v;
           })
         : val?._id ?? val;
+    message += JSON.stringify(val);
     this.loggers.debug(message);
     try {
       if (val instanceof AutoUpdatedClientObject) val = val.extractedData._id;
@@ -488,7 +532,17 @@ export class AutoUpdatedClientObject<T> {
             "\nReport from inner setValue function: " +
             res.msg.split("\n").join("\n  ");
         } else {
+          const isRef = getMetadataRecursive(
+            "isRef",
+            this.classProp.prototype,
+            key
+          );
+          if (isRef && this.isServer)
+            val = Array.isArray(val)
+              ? val.map((v) => new ObjectId(v as string | ObjectId))
+              : new ObjectId(val as string | ObjectId);
           if (
+            !noGet &&
             this.isServer &&
             this.getValue(key) &&
             Array.isArray(this.getValue(key)) &&
@@ -498,6 +552,7 @@ export class AutoUpdatedClientObject<T> {
           }
           const res = await this.setValueInternal(lastPath, val, silent);
           if (
+            !noGet &&
             !this.isServer &&
             this.getValue(key) &&
             Array.isArray(this.getValue(key)) &&
@@ -550,7 +605,7 @@ export class AutoUpdatedClientObject<T> {
         this.classProp.prototype,
         path.at(-1)
       );
-      if (isRef) {
+      if (isRef && this.parentManager.isLoaded) {
         this.contactChildren();
       }
       return {
@@ -591,7 +646,7 @@ export class AutoUpdatedClientObject<T> {
       for (const id of Array.isArray(value) ? value : [value]) {
         let result;
         for (const manager of Object.values(this.parentManager.managers)) {
-          result = manager.getObject(id.toString());
+          result = manager.getObject(id?.toString());
           if (result) break;
         }
         if (!result) {
@@ -876,7 +931,9 @@ export class AutoUpdatedClientObject<T> {
         if (
           !eData[pathPart] ||
           (Array.isArray(eData[pathPart]) &&
-            !eData[pathPart].includes((this as any)._id.toString())) ||
+            !eData[pathPart]
+              .map((id) => id.toString())
+              .includes((this as any)._id.toString())) ||
           (!Array.isArray(eData[pathPart]) &&
             eData[pathPart].toString() !== this.data._id.toString())
         ) {
@@ -948,11 +1005,13 @@ export function processIsRefProperties(
     if (Reflect.getMetadata("isRef", target, prop)) {
       if (Array.isArray(instance[prop]))
         newData[prop] = instance[prop].map((item: any) =>
-          typeof item === "string" ? item : item?._id?.toString()
+          typeof item === "string" || ObjectId.isValid(item)
+            ? item
+            : item?._id.toString()
         );
       else
         newData[prop] =
-          typeof instance[prop] === "string"
+          typeof instance[prop] === "string" || ObjectId.isValid(instance[prop])
             ? instance[prop]
             : instance[prop]?._id.toString();
     }

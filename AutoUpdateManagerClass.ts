@@ -8,6 +8,7 @@ import {
 import "reflect-metadata";
 export abstract class AutoUpdateManager<T extends Constructor<any>> {
   protected abstract objects_: { [_id: string]: AutoUpdatedClientObject<any> };
+  protected isLoaded_ = false;
   public readonly socket: any;
   protected classParam: T;
   protected properties: (keyof T)[];
@@ -39,29 +40,17 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
       Reflect.getMetadata("props", classParam) ??
       Reflect.getMetadata("props", classParam.prototype);
     this.loggers.debug = (s: string) =>
-      loggers.debug(
-        "[DEM - " +
-          className +" MANAGER] " +
-          s
-      );
+      loggers.debug("[DEM - " + className + " MANAGER] " + s);
     this.loggers.info = (s: string) =>
-      loggers.info(
-        "[DEM - " +
-          className +" MANAGER] " +
-          s
-      );
+      loggers.info("[DEM - " + className + " MANAGER] " + s);
     this.loggers.error = (s: string) =>
-      loggers.error(
-        "[DEM - " +
-          className +" MANAGER] " +
-          s
-      );
+      loggers.error("[DEM - " + className + " MANAGER] " + s);
     this.loggers.warn = (s: string) =>
-      loggers.warn(
-        "[DEM - " +
-          className +" MANAGER] " +
-          s
-      );
+      loggers.warn("[DEM - " + className + " MANAGER] " + s);
+  }
+
+  public get isLoaded() {
+    return this.isLoaded_;
   }
 
   public close() {
@@ -78,6 +67,7 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
       obj.contactChildren();
       await obj.checkAutoStatusChange();
     }
+    this.isLoaded_ = true;
   }
 
   public async deleteObject(

@@ -9,6 +9,7 @@ import {
   ServerResponse,
 } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
+import { cloneDeep } from "lodash";
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateClientManager<T[K]>;
 };
@@ -54,22 +55,23 @@ export async function AUCManagerFactory<
     }
     loggers.debug("Created manager: " + key);
   }
-  for(const manager of Object.values(managers)) {
+  for (const manager of Object.values(managers)) {
     try {
-        await manager.loadFromServer();
-      } catch (error: any) {
-        if (
-          error.message.includes(
-            "Local type does not match server type for manager"
-          )
+      await manager.loadFromServer();
+    } catch (error: any) {
+      if (
+        error.message.includes(
+          "Local type does not match server type for manager"
         )
-          throw error;
-        let message = "Error loading data from server for manager: " + manager.className;
-        message += "\n " + error.message;
-        loggers.error(message);
-        loggers.error(error.stack);
-        continue;
-      }
+      )
+        throw error;
+      let message =
+        "Error loading data from server for manager: " + manager.className;
+      message += "\n " + error.message;
+      loggers.error(message);
+      loggers.error(error.stack);
+      continue;
+    }
   }
   for (const key in defs) {
     try {
@@ -152,6 +154,7 @@ export class AutoUpdateClientManager<
           if (!res.success) {
             this.loggers.error("Error loading ids from server for manager");
             this.loggers.error(res.message);
+            
             reject(new Error(res.message));
             return;
           }
@@ -166,9 +169,13 @@ export class AutoUpdateClientManager<
               data.properties.splice(data.properties.indexOf(property), 1);
             else extraProperties.push(property);
           }
-          let { allowedToLoad, errorMessage } = this.checkLoadability(extraProperties, data);
+          let { allowedToLoad, errorMessage } = this.checkLoadability(
+            extraProperties,
+            data
+          );
           if (!allowedToLoad) {
             this.loggers.error(errorMessage);
+            
             reject(new Error(errorMessage));
             return;
           }
@@ -210,9 +217,8 @@ export class AutoUpdateClientManager<
           let i = 0;
           for (const id in this.objects_) {
             try {
-              
               await this.objects_[id].isPreLoadedAsync();
-            } catch (error:any) {
+            } catch (error: any) {
               this.loggers.error(
                 "Error preloading object " +
                   id +
@@ -220,7 +226,7 @@ export class AutoUpdateClientManager<
                   this.className +
                   " - " +
                   error.message
-              )
+              );
               this.loggers.error(error.stack);
             }
           }
@@ -248,16 +254,20 @@ export class AutoUpdateClientManager<
               "] entries"
           );
           this.startSocketListeners();
+          
           resolve();
         }
       );
     });
   }
 
-  private checkLoadability(extraProperties: string[], data: { ids: string[]; properties: string[]; }) {
+  private checkLoadability(
+    extraProperties: string[],
+    data: { ids: string[]; properties: string[] }
+  ) {
     let allowedToLoad = true;
-    let errorMessage = "Local type does not match server type for manager " +
-      this.className;
+    let errorMessage =
+      "Local type does not match server type for manager " + this.className;
     if (extraProperties.length > 0) {
       allowedToLoad = false;
       errorMessage +=
@@ -272,9 +282,7 @@ export class AutoUpdateClientManager<
       allowedToLoad = false;
       errorMessage +=
         "\n\nLocal type is missing " +
-        (data.properties.length > 1
-          ? "these properties"
-          : "this property") +
+        (data.properties.length > 1 ? "these properties" : "this property") +
         ":\n" +
         data.properties.join("\n");
     }
@@ -317,6 +325,7 @@ export class AutoUpdateClientManager<
   ): Promise<AutoUpdated<T>> {
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
+    data = cloneDeep(data);
     try {
       const object = await createAutoUpdatedClass(
         this.classParam,

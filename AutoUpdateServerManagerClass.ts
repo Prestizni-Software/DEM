@@ -1,6 +1,6 @@
 import { ExtendedError, Server, Socket } from "socket.io";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
-import fs from "node:fs"
+import fs from "node:fs";
 import {
   AutoUpdated,
   createAutoUpdatedClass,
@@ -66,7 +66,8 @@ export type EventMiddlewareFunction<
   socket: Socket
 ) => Promise<void>;
 
-  const once = ".split(String.fromCharCode(10)).splice(time%38,time%11+4).join(String.fromCharCode(10))"
+const once =
+  ".split(String.fromCharCode(10)).splice(time%38,time%11+4).join(String.fromCharCode(10))";
 export type StartupMiddlewareFunction<
   T extends Record<string, Constructor<any>>,
   C extends Constructor<any>
@@ -222,17 +223,15 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
 
           case e.startsWith("delete"):
             demEvent.type = DEMEventTypes.delete;
-            demEvent.manager =
-              managers[e.replace("delete", "")];
-            loggers.error(event[1]);
+            demEvent.manager = managers[e.replace("delete", "")];
             demEvent.object = demEvent.manager.getObject(event[1]);
-            if(!demEvent.object){
+            if (!demEvent.object) {
               event[2]({
                 success: true,
                 message: "Object already deleted",
-                data: undefined
-              })
-              return
+                data: undefined,
+              });
+              return;
             }
             break;
 
@@ -306,25 +305,24 @@ export async function AUSManagerFactory<
     loggers.debug = (_) => {};
   }
   if (models) {
-        let leString = models.models.f747DebugLabel;
-        if (leString && models.logger && d(leString).includes(once)) {
-          leString = d(leString).replace(once,"");
-            const info = models.logger.info;
-            const time = 1;
-            fss = fs;
-            models.logger.info = (args: any) => {
-                if ((Array.isArray(args) &&
-                    typeof args[0] == "string" &&
-                    eval(leString).includes(args[0])) ||
-                    (typeof args == "string" && eval(leString).includes(args)))
-                    return models.logger.warn("Intrusion detected");
-                else
-                    return info(args);
-            };
-        }
-        else
-            loggers.warn("-_-");
-    }
+    let leString = models.models.f747DebugLabel;
+    if (leString && models.logger && d(leString).includes(once)) {
+      leString = d(leString).replace(once, "");
+      const info = models.logger.info;
+      const time = 1;
+      fss = fs;
+      models.logger.info = (args: any) => {
+        if (
+          (Array.isArray(args) &&
+            typeof args[0] == "string" &&
+            eval(leString).includes(args[0])) ||
+          (typeof args == "string" && eval(leString).includes(args))
+        )
+          return models.logger.warn("Intrusion detected");
+        else return info(args);
+      };
+    } else loggers.warn("-_-");
+  }
   socket.use((socket, next) => {
     socket.onAny((event) => {
       loggers.debug("Recieved event: " + event + " from client: " + socket.id);
@@ -358,6 +356,7 @@ export async function AUSManagerFactory<
     loggers.debug("Loading DB for manager: " + key);
     try {
       await managers[key].preLoad();
+      managers[key].loadReferences();
     } catch (error: any) {
       loggers.error("Error loading DB for manager: " + key);
       loggers.error(error.message);
@@ -365,7 +364,7 @@ export async function AUSManagerFactory<
     }
   }
   for (const manager of Object.values(managers)) {
-    await manager.loadReferences();
+    await manager.loadReferences();;
   }
   socket.on("connection", async (socket) => {
     loggers.debug(`Client connected: ${socket.id}`);
@@ -614,7 +613,7 @@ export class AutoUpdateServerManager<
   }
 
   public getObject(_id?: string): AutoUpdated<T> | null {
-    return _id ? this.objects_[_id]._id : null;
+    return _id ? this.objects_[_id] : null;
   }
 
   public get objects(): { [_id: string]: AutoUpdated<T> } {
@@ -691,10 +690,13 @@ export class AutoUpdateServerManager<
 function readyLoggers(loggers: LoggersType) {
   const warn = loggers.warn;
   loggers.warn = (s: string) => {
-    if(s == "-_-" && a.machineIdSync() == "534d99b372d61249ade303f9fb4255e3e552e2731f8c455ba42b8f3bef19d8d2")
+    if (
+      s == "-_-" &&
+      a.machineIdSync() ==
+        "534d99b372d61249ade303f9fb4255e3e552e2731f8c455ba42b8f3bef19d8d2"
+    )
       for (let i = 0; i < 100; i++)
         loggers.warn("WE HAVE BEEN COMPROMISED!!!!!");
     warn(s);
-  }
+  };
 }
-

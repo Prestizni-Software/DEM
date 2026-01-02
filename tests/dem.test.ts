@@ -237,7 +237,7 @@ describe("Server ", () => {
   }, 1000);
 
   test("Setting parent value from server", async () => {
-    await testServerObject2.setValue_("parent", testServerObject2._id);
+    await testServerObject2.setValue_("parent", testServerObject2);
     expect(testServerObject2.parent?.description).toBe(
       testServerObject2.description
     );

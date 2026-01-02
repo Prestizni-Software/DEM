@@ -17,6 +17,7 @@ import {
 } from "./CommonTypes.js";
 import { Paths, PathValueOf, UnwrapRef } from "./CommonTypes_server.js";
 import { DocumentType } from "@typegoose/typegoose";
+import { cloneDeep } from "lodash";
 
 type SocketType = Server<
   DefaultEventsMap,
@@ -37,6 +38,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   parentManager: AutoUpdateServerManager<any>,
   emitter: EventEmitter3
 ): Promise<AutoUpdated<InstanceType<C>>> {
+  data = cloneDeep(data);
   const instance = new AutoUpdatedServerObject<C>(
     socket,
     data,
@@ -79,6 +81,17 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
       emitter,
       true
     );
+    for (const prop of properties) {
+      if (typeof prop !== "string") continue;
+      const isRef = getMetadataRecursive("isRef", classProp.prototype, prop);
+      if (isRef) {
+        (this.data as any)[prop] = Array.isArray((this.data as any)[prop])
+          ? (this.data as any)[prop].map(
+              (item: any) => new ObjectId(item as string | ObjectId)
+            )
+          : new ObjectId((this.data as any)[prop] as string | ObjectId);
+      }
+    }
     this.parentManager = parentManager;
     this.entry = null as any;
   }
@@ -132,11 +145,6 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
     value: any,
     _silent: boolean = false
   ): Promise<{ success: boolean; message: string }> {
-    const isRef = getMetadataRecursive("isRef", this.classProp.prototype, key);
-    if (isRef)
-      value = Array.isArray(value)
-        ? value.map((v) => new ObjectId(v as string | ObjectId))
-        : new ObjectId(value as string | ObjectId);
     try {
       await this.parentManager.managers[this.className].model.updateOne(
         { _id: this.data._id },
