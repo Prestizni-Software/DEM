@@ -316,50 +316,27 @@ export async function AUSManagerFactory<
       continue;
     }
     loggers.debug("Loading DB for manager: " + key);
-    managers[key]
-      .preLoad()
-      .then(() => {
-        i++;
-      })
-      .catch((error: any) => {
-        i++;
-        loggers.error("Error loading DB for manager: " + key);
-        loggers.error(error.message);
-        loggers.error(error.stack);
-      });
+    try {
+      await managers[key].preLoad();
+    } catch (error: any) {
+      loggers.error("Error loading DB for manager: " + key);
+      loggers.error(error.message);
+      loggers.error(error.stack);
+    }
   }
-  await new Promise((resolve, reject) => {
-    const interval = setInterval(() => {
-      if (i === Object.keys(defs).length) {
-        clearInterval(interval);
-        resolve(null);
-      }
-    }, 100);
-  });
-  i = 0;
   for (const manager of Object.values(managers)) {
-    manager
-      .loadReferences()
-      .then(() => i++)
-      .catch((error: any) => {
-        i++;
-        loggers.error(
-          "Error loading DB for manager: " +
-            manager.className +
-            " (loadReferences)",
-        );
-        loggers.error(error.message);
-        loggers.error(error.stack);
-      });
+    try {
+      manager.loadReferences();
+    } catch (error: any) {
+      loggers.error(
+        "Error loading DB for manager: " +
+          manager.className +
+          " (loadReferences)",
+      );
+      loggers.error(error.message);
+      loggers.error(error.stack);
+    }
   }
-  await new Promise((resolve, reject) => {
-    const interval = setInterval(() => {
-      if (i === Object.keys(defs).length) {
-        clearInterval(interval);
-        resolve(null);
-      }
-    }, 100);
-  });
   socket.on("connection", async (socket) => {
     loggers.debug(`Client connected: ${socket.id}`);
     for (const manager of Object.values(managers)) {
