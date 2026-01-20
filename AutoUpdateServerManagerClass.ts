@@ -8,6 +8,7 @@ import {
 import {
   Constructor,
   EventEmitter3,
+  InstanceOf,
   IsData,
   LoggersType,
   ServerResponse,
@@ -16,40 +17,13 @@ import {
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
-import { Paths } from "./CommonTypes_server.js";
+import { Paths, PathValueOf } from "./CommonTypes_server.js";
 import { EventEmitter } from "eventemitter3";
 import a from "node-machine-id";
 
 export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: AutoUpdateServerManager<T[K]>;
 };
-
-export type AutoStatusDefinitions<
-  C extends Constructor<any>,
-  E extends Record<string, string | number>,
-  K extends keyof E,
-> = {
-  statusProperty: Paths<C>;
-  statusEnum: E;
-  definition: (data: InstanceType<C>) => Promise<E[K] | void>;
-};
-let fss: any;
-export function createAutoStatusDefinitions<
-  C extends Constructor<any>,
-  E extends { [k: string]: string | number },
-  K extends keyof E,
->(
-  _class: C,
-  statusProperty: Paths<C>,
-  statusEnum: E,
-  definition: (data: InstanceType<C>) => Promise<E[K] | void>,
-): AutoStatusDefinitions<C, E, keyof E> {
-  return {
-    statusProperty,
-    statusEnum,
-    definition,
-  };
-}
 
 export type AUSDefinitions<T extends Record<string, Constructor<any>>> = {
   [K in keyof T]: ServerManagerDefinition<T[K], T>;
@@ -92,11 +66,19 @@ export type AUSOption<
   T extends Record<string, Constructor<any>>,
 > = {
   accessDefinitions?: AccessMiddleware<T, C>;
-  autoStatusDefinitions?: AutoStatusDefinitions<
-    C,
-    { [k: string]: string | number },
-    keyof { [k: string]: string | number }
-  >;
+  onUpdate?: (
+    obj: {
+      [K in keyof C]: C[K];
+    } extends { prototype: infer U }
+      ? U
+      : {
+          [K in keyof C]: C[K];
+        },
+    set: <K extends Paths<InstanceOf<C>>>(
+      key: K,
+      val: PathValueOf<C, K>,
+    ) => Promise<{ success: boolean; msg: string }>,
+  ) => Promise<void>;
 };
 
 export type ServerManagerDefinition<
@@ -676,7 +658,7 @@ export class AutoUpdateServerManager<
       this.emitter,
     );
     object.loadMissingReferences();
-    await object.checkAutoStatusChange();
+    await object.onUpdate();
     this.objects_[object._id] = object;
     object.contactChildren();
     for (const socket of this.clientSockets) {

@@ -35,9 +35,8 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   data: IsData<InstanceOf<C>>,
   loggers: LoggersType,
   parentManager: AutoUpdateServerManager<any>,
-  emitter: EventEmitter3
+  emitter: EventEmitter3,
 ): Promise<AutoUpdated<InstanceType<C>>> {
-  
   const instance = new AutoUpdatedServerObject<C>(
     socket,
     data,
@@ -46,7 +45,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
     className,
     classParam,
     parentManager,
-    emitter
+    emitter,
   );
   await instance.loadFromDB();
   await instance.isPreLoadedAsync();
@@ -57,7 +56,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
 class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
   protected override readonly isServer: boolean = true;
   private entry: DocumentType<InstanceOf<T>>;
-  public declare parentManager: AutoUpdateServerManager<any>;
+  declare public parentManager: AutoUpdateServerManager<any>;
 
   constructor(
     socket: SocketType,
@@ -67,7 +66,7 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
     className: string,
     classProp: Constructor<T>,
     parentManager: AutoUpdateServerManager<any>,
-    emitter: EventEmitter3
+    emitter: EventEmitter3,
   ) {
     super(
       socket as any,
@@ -78,7 +77,7 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
       classProp,
       parentManager as any,
       emitter,
-      true
+      true,
     );
     for (const prop of properties) {
       if (typeof prop !== "string") continue;
@@ -86,7 +85,7 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
       if (isRef) {
         (this.data as any)[prop] = Array.isArray((this.data as any)[prop])
           ? (this.data as any)[prop].map(
-              (item: any) => new ObjectId(item as string | ObjectId)
+              (item: any) => new ObjectId(item as string | ObjectId),
             )
           : new ObjectId((this.data as any)[prop] as string | ObjectId);
       }
@@ -110,20 +109,20 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
           const pointer = getMetadataRecursive(
             "refsTo",
             this.classProp.prototype,
-            prop.toString()
+            prop.toString(),
           );
           if (!pointer || !this.data[prop]) continue;
           this.data["_id"] = this.entry._id;
           await this.createdWithParent(
             pointer.split(":"),
-            (this.data[prop] as any).toString()
+            (this.data[prop] as any).toString(),
           );
         }
       }
       this.data = this.entry.toObject() as any;
     } catch (error: any) {
       this.loggers.error(
-        "Error loading object from database: " + error.message
+        "Error loading object from database: " + error.message,
       );
       this.loggers.error(error.stack);
       throw error;
@@ -132,7 +131,7 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
 
   public async setValue_<K extends Paths<InstanceOf<T>>>(
     key: K,
-    val: PathValueOf<T, K>
+    val: PathValueOf<T, K>,
   ): Promise<{ success: boolean; msg: string }> {
     return await this.setValue__(key, val);
   }
@@ -142,12 +141,12 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
   protected async setValueInternal(
     key: any,
     value: any,
-    _silent: boolean = false
+    _silent: boolean = false,
   ): Promise<{ success: boolean; msg: string }> {
     try {
       await this.parentManager.managers[this.className].model.updateOne(
         { _id: this.data._id },
-        { $set: { [key]: value } }
+        { $set: { [key]: value } },
       );
 
       const update = this.makeUpdate(key, value);
@@ -169,7 +168,7 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
   }
 
   public async destroy(
-    once: boolean = false
+    once: boolean = false,
   ): Promise<{ success: boolean; message: string }> {
     if (!once) {
       return await this.parentManager.deleteObject(this.data._id);
@@ -183,7 +182,7 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
         "Error deleting object from database - " +
           this.className +
           " - " +
-          this.data._id
+          this.data._id,
       );
       this.loggers.error(error.message);
       this.loggers.error(error.stack);
@@ -202,26 +201,8 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
     };
   }
 
-  public override async checkAutoStatusChange() {
-    const neededStatus =
-      (await this.parentManager.options?.autoStatusDefinitions?.definition(
-        this
-      )) as any;
-    const statusPath = this.parentManager.options?.autoStatusDefinitions
-      ?.statusProperty as any;
-    if (!neededStatus || !statusPath) return;
-    const currentStatus = this.getValue(
-      this.parentManager.options?.autoStatusDefinitions?.statusProperty as any
-    );
-    if (neededStatus === currentStatus) return;
-    this.loggers.debug(
-      "Status changed - " +
-        this.className +
-        " - from " +
-        currentStatus +
-        " to " +
-        neededStatus
-    );
-    await this.setValue(statusPath, neededStatus);
+  public override async onUpdate(noUpdate: boolean = false) {
+    if(noUpdate)return;
+    await this.parentManager.options?.onUpdate?.(this.extractedData as any, (a,b) => {return this.setValue__(a,b,false,true,true)});
   }
 }

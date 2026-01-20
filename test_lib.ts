@@ -1,6 +1,5 @@
 import {
   AUSManagerFactory,
-  createAutoStatusDefinitions,
   DEMEventTypes,
 } from "./AutoUpdateServerManagerClass.js";
 import { Server as SocketServer } from "socket.io";
@@ -19,8 +18,7 @@ export const initServerManagers = async () => {
   const io = new SocketServer(server, { cors: { origin: "*" } });
 
   io.use(async (socket, next) => {
-    if(!socket.handshake.auth.token)
-      next(new Error("Invalid token"));
+    if (!socket.handshake.auth.token) next(new Error("Invalid token"));
     next();
   });
 
@@ -35,15 +33,13 @@ export const initServerManagers = async () => {
       Test: {
         class: ServerTest,
         options: {
-          autoStatusDefinitions: createAutoStatusDefinitions(
-            ServerTest,
-            "status",
-            Status,
-            async (obj) => {
-              if (obj.active) return Status.ACTIVE;
-              return Status.INACTIVE;
+          onUpdate: async (obj, set) => {
+            if (obj.status === Status.ACTIVE && !obj.active) {
+              await set("status", Status.INACTIVE);
+            } else if (obj.status === Status.INACTIVE && obj.active) {
+              await set("status", Status.ACTIVE);
             }
-          ),
+          },
           accessDefinitions: {
             startupMiddleware: async (objects, managers, socket) => {
               const returns =
@@ -53,18 +49,21 @@ export const initServerManagers = async () => {
                       (obj) =>
                         obj.description &&
                         obj.description !== "TestObj3" &&
-                        obj.description !== "TestObj4"
+                        obj.description !== "TestObj4",
                     );
               logger.error(
-                objects.map((obj) => obj.description ?? "" + obj._id)
+                objects.map((obj) => obj.description ?? "" + obj._id),
               );
               logger.error(
-                returns.map((obj) => obj.description ?? "" + obj._id)
+                returns.map((obj) => obj.description ?? "" + obj._id),
               );
               return returns;
             },
             eventMiddleware: async (event, managers, socket) => {
-              if (socket.handshake.auth.token == "Client2" && event.type === DEMEventTypes.delete)
+              if (
+                socket.handshake.auth.token == "Client2" &&
+                event.type === DEMEventTypes.delete
+              )
                 throw new Error("Fail");
             },
           },
@@ -72,12 +71,12 @@ export const initServerManagers = async () => {
       },
     },
     {
-      info: (s: string) => console.log(s),
-      warn: (s: string) => console.warn(s),
-      error: (s: string) => console.error(s),
-      debug: (s: string) => console.debug(s),
+      info: (s: string) => console.log("SERVER " + s),
+      warn: (s: string) => console.warn("SERVER " + s),
+      error: (s: string) => console.error("SERVER " + s),
+      debug: (s: string) => console.debug("SERVER " + s),
     },
-    io
+    io,
   );
   return managers;
 };
@@ -95,12 +94,12 @@ export const initClientManagers = async (id: string) => {
       Test2: ClientTest2,
     },
     {
-      debug: (msg: string) => console.log(msg),
-      error: (msg: string) => console.error(msg),
-      info: (msg: string) => console.log(msg),
-      warn: (msg: string) => console.warn(msg),
+      debug: (msg: string) => console.log("CLIENT " + msg),
+      error: (msg: string) => console.error("CLIENT " + msg),
+      info: (msg: string) => console.log("CLIENT " + msg),
+      warn: (msg: string) => console.warn("CLIENT " + msg),
     },
-    socket
+    socket,
   );
   return managers;
 };

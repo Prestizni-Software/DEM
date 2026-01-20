@@ -13,7 +13,7 @@ const obj1 = await managers.Test.createObject({
   ref: null,
   refarr: [],
   obj: null,
-  parent: null,
+  parent: null, 
 });
 
 const obj2 = await managers.Test.createObject({

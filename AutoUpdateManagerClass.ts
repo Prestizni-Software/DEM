@@ -65,7 +65,7 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     for (const obj of this.objectsAsArray) {
       obj.loadMissingReferences();
       obj.contactChildren();
-      await obj.checkAutoStatusChange();
+      await obj.onUpdate(false);
     }
     this.isLoaded_ = true;
   }
