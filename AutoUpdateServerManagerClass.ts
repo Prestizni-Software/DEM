@@ -326,7 +326,7 @@ export async function AUSManagerFactory<
   }
   for (const manager of Object.values(managers)) {
     try {
-      manager.loadReferences();
+      await manager.loadReferences();
     } catch (error: any) {
       loggers.error(
         "Error loading DB for manager: " +

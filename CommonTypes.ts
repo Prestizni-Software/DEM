@@ -50,7 +50,7 @@ export function classProp(target: any, propertyKey: string) {
   Reflect.defineMetadata("props", props, target);
 }
 
-export function populatedRef(where: string) {
+export function populatedRef(...where: string[]) {
   return function (target: any, propertyKey: string) {
     classRef()(target, propertyKey);
     Reflect.defineMetadata("refsTo", where, target, propertyKey);

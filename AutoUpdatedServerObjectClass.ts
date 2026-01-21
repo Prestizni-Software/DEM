@@ -1,6 +1,7 @@
 import {
   AutoUpdatedClientObject,
   getMetadataRecursive,
+  getRightParent,
 } from "./AutoUpdatedClientObjectClass.js";
 import { AutoUpdateServerManager } from "./AutoUpdateServerManagerClass.js";
 import "reflect-metadata";
@@ -106,15 +107,19 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
           this.className
         ].model.create(this.data);
         for (const prop of this.properties) {
-          const pointer = getMetadataRecursive(
-            "refsTo",
-            this.classProp.prototype,
-            prop.toString(),
+          const pointer = getRightParent(
+            getMetadataRecursive(
+              "refsTo",
+              this.classProp.prototype,
+              prop.toString(),
+            ),
+            this as any,
+            true,
           );
           if (!pointer || !this.data[prop]) continue;
           this.data["_id"] = this.entry._id;
           await this.createdWithParent(
-            pointer.split(":"),
+            pointer,
             (this.data[prop] as any).toString(),
           );
         }
@@ -202,7 +207,12 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
   }
 
   public override async onUpdate(noUpdate: boolean = false) {
-    if(noUpdate)return;
-    await this.parentManager.options?.onUpdate?.(this.extractedData as any, (a,b) => {return this.setValue__(a,b,false,true,true)});
+    if (noUpdate) return;
+    await this.parentManager.options?.onUpdate?.(
+      this.extractedData as any,
+      (a, b) => {
+        return this.setValue__(a, b, false, true, true);
+      },
+    );
   }
 }

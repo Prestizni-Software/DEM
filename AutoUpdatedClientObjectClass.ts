@@ -259,18 +259,23 @@ export class AutoUpdatedClientObject<T> {
       this.className + " - Requesting new object creation on server",
     );
     for (const key of this.properties) {
-      if (typeof key !== "string") continue;
-      let pointer = getMetadataRecursive(
+      if (typeof key !== "string")
+        throw new Error(
+          "Only string keys allowed. Not this shit: " + String(key),
+        );
+      let pointers = getMetadataRecursive(
         "refsTo",
         this.classProp.prototype,
         key,
       );
-      if (pointer) {
-        pointer = pointer.split(":");
-        if (pointer.length != 2)
-          throw new Error(
-            "population ref incorrectly defined. Sould be 'ParentClass:PropName.Path'",
-          );
+      if (pointers?.length > 0) {
+        for (const pointer_ of pointers) {
+          const pointer = pointer_.split(":");
+          if (pointer.length != 2)
+            throw new Error(
+              "population ref incorrectly defined. Sould be 'ParentClass:PropName.Path'",
+            );
+        }
         const temp = data[key];
         delete data[key];
         this.toChangeOnParents.push({ key: key, value: temp });
@@ -482,7 +487,7 @@ export class AutoUpdatedClientObject<T> {
           lastClass = temp;
           lastPath = path.slice(i + 1).join(".");
           const res = await lastClass.setValue(lastPath, val);
-          if(!noUpdate)await this.onUpdate(noUpdate);
+          if (!noUpdate) await this.onUpdate(noUpdate);
           return res;
         } else obj = obj[path[i]];
       }
@@ -504,16 +509,17 @@ export class AutoUpdatedClientObject<T> {
 
       let success;
       try {
-        let isPopulated = getMetadataRecursive(
+        const pointer__ = getMetadataRecursive(
           "refsTo",
           this.classProp.prototype,
           lastPath,
         );
-        if (isPopulated) {
-          isPopulated = isPopulated.split(":");
-          const parentObj =
-            this.parentManager.managers[isPopulated[0]].getObject(val);
-          if (!parentObj) {
+        if (pointer__?.length > 0) {
+          const { obj, pointer } = getRightParent(pointer__, this) ?? {
+            parentObj: undefined,
+            pointer: undefined,
+          };
+          if (!obj || !pointer) {
             message +=
               "\nFailed to set value for " +
               this.className +
@@ -521,18 +527,25 @@ export class AutoUpdatedClientObject<T> {
             this.loggers.error(message);
             return { success: false, msg: message };
           }
+
           let res;
           if (this.isServer) {
-            const value = parentObj.getValue(isPopulated[1]);
+            const value = obj.getValue(pointer[1]);
             if (Array.isArray(value)) {
-              res = await parentObj.setValue__(
-                isPopulated[1],
-                value.concat(this.data._id.toString()),false,false,true
+              res = await obj.setValue__(
+                pointer[1],
+                value.concat(this.data._id.toString()),
+                false,
+                false,
+                true,
               );
             } else
-              res = await parentObj.setValue__(
-                isPopulated[1],
-                this.data._id.toString(),false,false,true
+              res = await obj.setValue__(
+                pointer[1],
+                this.data._id.toString(),
+                false,
+                false,
+                true,
               );
           } else
             ({ res, val } = await this.preInnerSetValue(
@@ -541,7 +554,7 @@ export class AutoUpdatedClientObject<T> {
               val,
               lastPath,
               silent,
-              noUpdate
+              noUpdate,
             ));
           success = res.success;
           message +=
@@ -564,7 +577,7 @@ export class AutoUpdatedClientObject<T> {
             val,
             lastPath,
             silent,
-            noUpdate
+            noUpdate,
           ));
           if (res.success) {
             const originalValue = obj[path.at(-1)];
@@ -598,7 +611,7 @@ export class AutoUpdatedClientObject<T> {
         }
         ref[last.at(-1)!] = val;
       }
-      if(!noUpdate)await this.onUpdate(noUpdate);
+      if (!noUpdate) await this.onUpdate(noUpdate);
       this.findAndLoadReferences(lastPath, val);
       const isRef = getMetadataRecursive(
         "isRef",
@@ -642,7 +655,7 @@ export class AutoUpdatedClientObject<T> {
     val: any,
     lastPath: string,
     silent: boolean,
-    noUpdate: boolean
+    noUpdate: boolean,
   ) {
     if (
       !noGet &&
@@ -734,7 +747,7 @@ export class AutoUpdatedClientObject<T> {
     const promise = new Promise<{ success: boolean; msg: string }>(
       (resolve) => {
         if (silent) {
-          if (noUpdate) return
+          if (noUpdate) return;
           return this.onUpdate(true).then(() => {
             return resolve({ success: true, msg: "Success - silent" });
           });
@@ -749,7 +762,7 @@ export class AutoUpdatedClientObject<T> {
                 resolve({ success: false, msg: res.message });
                 return;
               }
-              if(!noUpdate)await this.onUpdate(noUpdate);
+              if (!noUpdate) await this.onUpdate(noUpdate);
               resolve({
                 success: res.success,
                 msg: res.message ?? "Success",
@@ -779,7 +792,7 @@ export class AutoUpdatedClientObject<T> {
     }
   }
 
-  public async onUpdate(noUpdate:boolean) {
+  public async onUpdate(noUpdate: boolean) {
     return;
   }
 
@@ -804,9 +817,13 @@ export class AutoUpdatedClientObject<T> {
     for (const key of props) {
       if (typeof key !== "string") return;
       const isRef = Reflect.getMetadata("isRef", proto, key);
-      const pointer = Reflect.getMetadata("refsTo", proto, key);
+      const pointer = getRightParent(
+        Reflect.getMetadata("refsTo", proto, key),
+        this,
+        true,
+      );
       if (pointer && obj === this.data && obj[key])
-        await this.createdWithParent(pointer.split(":"), obj[key]);
+        await this.createdWithParent(pointer, obj[key]);
       if (isRef) {
         await this.handleLoad(obj, key, alreadySeen);
       }
@@ -943,13 +960,16 @@ export class AutoUpdatedClientObject<T> {
 
   private checkForMissingRefs() {
     for (const prop of this.properties) {
-      let pointer = getMetadataRecursive(
-        "refsTo",
-        this.classProp.prototype,
-        prop.toString(),
+      let pointer = getRightParent(
+        getMetadataRecursive(
+          "refsTo",
+          this.classProp.prototype,
+          prop.toString(),
+        ),
+        this,
+        true,
       );
       if (pointer) {
-        pointer = pointer.split(":");
         if (pointer.length != 2)
           throw new Error(
             "population rf incorrectly defined. Sould be 'ParentClass:PropName'",
@@ -999,10 +1019,14 @@ export class AutoUpdatedClientObject<T> {
 
   public contactChildren() {
     for (const prop of this.properties) {
-      const pointer = getMetadataRecursive(
-        "refsTo",
-        this.classProp.prototype,
-        prop.toString(),
+      const pointer = getRightParent(
+        getMetadataRecursive(
+          "refsTo",
+          this.classProp.prototype,
+          prop.toString(),
+        ),
+        this,
+        true,
       );
       const isRef = getMetadataRecursive(
         "isRef",
@@ -1083,6 +1107,59 @@ export function getMetadataRecursive(
     const meta = Reflect.getMetadata(metaKey, proto, prop);
     if (meta) return meta;
     proto = Object.getPrototypeOf(proto);
+  }
+  return undefined;
+}
+
+export function getRightParent(
+  pointers: string[],
+  object: AutoUpdatedClientObject<any>,
+  getOnlyPointer: true,
+): string[] | undefined;
+export function getRightParent(
+  pointers: string[],
+  object: AutoUpdatedClientObject<any>,
+  getOnlyPointer?: false,
+): { obj: AutoUpdatedClientObject<any>; pointer: string[] } | undefined;
+export function getRightParent(
+  pointers: string[],
+  object: AutoUpdatedClientObject<any>,
+  getOnlyPointer: boolean = false,
+):
+  | { obj: AutoUpdatedClientObject<any>; pointer: string[] }
+  | string[]
+  | undefined {
+  const findParentObj = (pointer: string[]) => {
+    const path = pointer[1].split(".");
+    return object.parentManager.managers[pointer[0]].objectsAsArray.find(
+      (obj) =>
+        Array.isArray(obj.getValue(path[0]))
+          ? obj.getValue(path[0]).find((o:any) => (o._id?.toString() ?? o?.toString()) === (object as any)._id.toString())
+          : obj.getValue(path[0]).toString() === (object as any)._id.toString(),
+    );
+  };
+
+  if (!pointers || pointers.length === 0) return undefined;
+  if (pointers.length === 1) {
+    const pointer = pointers[0].split(":");
+    if (pointer.length !== 2)
+      throw new Error(
+        "population ref incorrectly defined. Sould be 'ParentClass:PropName.Path'",
+      );
+    if (getOnlyPointer) return pointer;
+    const found = findParentObj(pointer);
+    return found ? { obj: found, pointer: pointer } : undefined;
+  }
+
+  for (const pointer_ of pointers) {
+    const pointer = pointer_.split(":");
+    if (pointer.length !== 2)
+      throw new Error(
+        "population ref incorrectly defined. Sould be 'ParentClass:PropName.Path'",
+      );
+    const found = findParentObj(pointer);
+    if (found)
+      return getOnlyPointer ? pointer : { obj: found, pointer: pointer };
   }
   return undefined;
 }
