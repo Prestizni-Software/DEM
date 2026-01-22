@@ -129,7 +129,7 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
     }
   }
 
-  public async setValue_<K extends Paths<InstanceOf<T>>>(
+  public async setValue_<K extends Paths<T>>(
     key: K,
     val: PathValueOf<T, K>,
   ): Promise<{ success: boolean; msg: string }> {
