@@ -20,7 +20,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   classParam: C,
   className: string,
   socket: SocketType,
-  data: IsData<InstanceType<C>> | string,
+  data: IsData<C> | string,
   loggers: LoggersType,
   parentManager: AutoUpdateManager<any>,
   emitter: EventEmitter3,

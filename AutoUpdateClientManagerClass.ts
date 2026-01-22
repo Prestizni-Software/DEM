@@ -359,7 +359,7 @@ export class AutoUpdateClientManager<
   }
 
   public async createObject(
-    data: Omit<IsData<InstanceType<T>>, "_id">,
+    data: Omit<IsData<T>, "_id">,
   ): Promise<AutoUpdated<T>> {
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);

@@ -86,7 +86,7 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     _id: string
   ): Promise<AutoUpdatedClientObject<any> | null>;
   public abstract createObject(
-    data: IsData<InstanceType<T>>
+    data: IsData<T>
   ): Promise<AutoUpdatedClientObject<any>>;
   public abstract getObject(_id: string): AutoUpdatedClientObject<any> | null;
   public abstract get objects(): {

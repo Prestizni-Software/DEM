@@ -25,7 +25,7 @@ type SocketType = Server<
   any
 >;
 
-export type AutoUpdated<T, D extends number = 10> = AutoUpdatedServerObject<T> &
+export type AutoUpdated<T, D extends number = 10> = AutoUpdatedServerObject<UnboxConstructor<T>> &
   UnwrapRef<UnboxConstructor<T>, Prev[D]>;
 
 export async function createAutoUpdatedClass<C extends Constructor<any>>(
@@ -36,7 +36,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   loggers: LoggersType,
   parentManager: AutoUpdateServerManager<any>,
   emitter: EventEmitter3,
-): Promise<AutoUpdated<InstanceType<C>>> {
+): Promise<AutoUpdated<C>> {
   const instance = new AutoUpdatedServerObject<C>(
     socket,
     data,
@@ -49,7 +49,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   );
   await instance.loadFromDB();
   await instance.isPreLoadedAsync();
-  return instance as AutoUpdated<InstanceType<C>>;
+  return instance as AutoUpdated<C>;
 }
 
 // ---------------------- Class ----------------------
