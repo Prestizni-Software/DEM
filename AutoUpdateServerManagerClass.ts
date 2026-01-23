@@ -137,7 +137,7 @@ export type DEMEvent<C extends Constructor<any>> =
       type: DEMEventTypes.new;
       manager: AutoUpdateServerManager<C>;
       object: never;
-      data: IsData<C>;
+      data: IsData<InstanceOf<C>>;
     };
 
 function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
@@ -492,7 +492,7 @@ export class AutoUpdateServerManager<
     socket.on(
       "new" + this.className,
       async (
-        data: IsData<T>,
+        data: IsData<InstanceOf<T>>,
         ack: (res: ServerResponse<T>) => void,
       ) => {
         this.loggers.debug(
@@ -621,7 +621,7 @@ export class AutoUpdateServerManager<
     return object;
   }
 
-  public async createObject(data: Omit<T, "_id">) {
+  public async createObject(data: Omit<InstanceOf<T>, "_id">) {
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
     (data as any)._id = undefined;

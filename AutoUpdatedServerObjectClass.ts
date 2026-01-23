@@ -25,7 +25,9 @@ type SocketType = Server<
   any
 >;
 
-export type AutoUpdated<T, D extends number = 10> = AutoUpdatedServerObject<UnboxConstructor<T>> &
+export type AutoUpdated<T, D extends number = 10> = AutoUpdatedServerObject<
+  UnboxConstructor<T>
+> &
   UnwrapRef<UnboxConstructor<T>, Prev[D]>;
 
 export async function createAutoUpdatedClass<C extends Constructor<any>>(
@@ -75,19 +77,21 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
       properties,
       className,
       classProp,
-      parentManager as any,
+      parentManager,
       emitter,
       true,
     );
     for (const prop of properties) {
       if (typeof prop !== "string") continue;
       const isRef = getMetadataRecursive("isRef", classProp.prototype, prop);
-      if (isRef) {
-        (this.data as any)[prop] = Array.isArray((this.data as any)[prop])
-          ? (this.data as any)[prop].map(
-              (item: any) => new ObjectId(item as string | ObjectId),
-            )
-          : new ObjectId((this.data as any)[prop] as string | ObjectId);
+      if (isRef && this.data[prop]) {
+        this.data[prop] = Array.isArray(this.data[prop])
+          ? this.data[prop]
+              .map((item: any) =>
+                item ? new ObjectId(item as string | ObjectId) : null,
+              )
+              .filter(Boolean)
+          : (new ObjectId(this.data[prop] as string | ObjectId) as any);
       }
     }
     this.parentManager = parentManager;
@@ -202,7 +206,12 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
   }
 
   public override async onUpdate(noUpdate: boolean = false) {
-    if(noUpdate)return;
-    await this.parentManager.options?.onUpdate?.(this.extractedData as any, (a,b) => {return this.setValue__(a,b,false,true,true)});
+    if (noUpdate) return;
+    await this.parentManager.options?.onUpdate?.(
+      this.extractedData as any,
+      (a, b) => {
+        return this.setValue__(a, b, false, true, true);
+      },
+    );
   }
 }

@@ -1,5 +1,6 @@
 import { Ref } from "@typegoose/typegoose";
 import {
+  Constructor,
   InstanceOf,
   Join,
   OnlyClassKeys,
@@ -53,7 +54,7 @@ type PathsHelper<
 export type ResolveRef<T> = T extends (infer A)[]
   ? ResolveRef<A>[]
   : T extends Ref<infer U>
-  ? AutoUpdated<U> | Types.ObjectId | string
+  ? AutoUpdated<Constructor<U>> | Types.ObjectId | string
   : T;
 
 export type PathValue<
