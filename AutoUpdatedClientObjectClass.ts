@@ -15,6 +15,8 @@ import {
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
+import { stringSimilarity } from "string-similarity-js";
+
 type SocketType = Socket<any, any>;
 export async function createAutoUpdatedClass<C extends Constructor<any>>(
   classParam: C,
@@ -205,12 +207,6 @@ export class AutoUpdatedClientObject<T> {
           throw new Error(
             "Only string keys allowed. Not this shit: " + String(key),
           );
-        if (!dataKeys.includes(key) && key !== "_id")
-          this.loggers.warn(
-            "Property " +
-              key +
-              " not found in data. If should be null/undefined, please say so implicitly.",
-          );
         dataKeys.splice(dataKeys.indexOf(key), 1);
         const isRef = getMetadataRecursive(
           "isRef",
@@ -273,7 +269,7 @@ export class AutoUpdatedClientObject<T> {
           );
         const temp = data[key];
         delete data[key];
-        this.toChangeOnParents.push({ key: key, value: temp });
+        if (temp) this.toChangeOnParents.push({ key: key, value: temp });
       }
     }
     try {
@@ -445,7 +441,7 @@ export class AutoUpdatedClientObject<T> {
       const path = key.split(".");
       let obj = this.data as any;
       let lastClass = this as any;
-      let lastPath = key as string;
+      let lastPath = path[0] as string;
       for (let i = 0; i < path.length - 1; i++) {
         if (
           typeof obj[path[i]] === "string" ||
@@ -482,12 +478,12 @@ export class AutoUpdatedClientObject<T> {
           lastClass = temp;
           lastPath = path.slice(i + 1).join(".");
           const res = await lastClass.setValue(lastPath, val);
-          if(!noUpdate)await this.onUpdate(noUpdate);
+          if (!noUpdate) await this.onUpdate(noUpdate);
           return res;
         } else obj = obj[path[i]];
       }
 
-      if (lastClass !== this || lastPath !== key) {
+      if (lastClass !== this) {
         message +=
           "\n What the actual fuckity fuck error on path: " +
           path +
@@ -501,6 +497,18 @@ export class AutoUpdatedClientObject<T> {
           msg: message,
         };
       }
+
+      if (!this.properties.includes(lastPath as any) && !lastPath.includes(".")) {
+        let nearest = "";
+        for (const prop of this.properties) {
+          if (typeof prop !== "string") continue;
+          if(stringSimilarity(lastPath, prop) > 0 && stringSimilarity(lastPath, prop) > stringSimilarity(nearest, prop)){
+            nearest = prop;
+          }
+        }
+        throw new Error(
+          `Property ${lastPath} not found in class ${this.className}, did you mean ${nearest ?? "--No similar prop found--"}?`,
+        );}
 
       let success;
       try {
@@ -527,12 +535,18 @@ export class AutoUpdatedClientObject<T> {
             if (Array.isArray(value)) {
               res = await parentObj.setValue__(
                 isPopulated[1],
-                value.concat(this.data._id.toString()),false,false,true
+                value.concat(this.data._id.toString()),
+                false,
+                false,
+                true,
               );
             } else
               res = await parentObj.setValue__(
                 isPopulated[1],
-                this.data._id.toString(),false,false,true
+                this.data._id.toString(),
+                false,
+                false,
+                true,
               );
           } else
             ({ res, val } = await this.preInnerSetValue(
@@ -541,7 +555,7 @@ export class AutoUpdatedClientObject<T> {
               val,
               lastPath,
               silent,
-              noUpdate
+              noUpdate,
             ));
           success = res.success;
           message +=
@@ -564,7 +578,7 @@ export class AutoUpdatedClientObject<T> {
             val,
             lastPath,
             silent,
-            noUpdate
+            noUpdate,
           ));
           if (res.success) {
             const originalValue = obj[path.at(-1)];
@@ -598,7 +612,7 @@ export class AutoUpdatedClientObject<T> {
         }
         ref[last.at(-1)!] = val;
       }
-      if(!noUpdate)await this.onUpdate(noUpdate);
+      if (!noUpdate) await this.onUpdate(noUpdate);
       this.findAndLoadReferences(lastPath, val);
       const isRef = getMetadataRecursive(
         "isRef",
@@ -642,7 +656,7 @@ export class AutoUpdatedClientObject<T> {
     val: any,
     lastPath: string,
     silent: boolean,
-    noUpdate: boolean
+    noUpdate: boolean,
   ) {
     if (
       !noGet &&
@@ -734,7 +748,7 @@ export class AutoUpdatedClientObject<T> {
     const promise = new Promise<{ success: boolean; msg: string }>(
       (resolve) => {
         if (silent) {
-          if (noUpdate) return
+          if (noUpdate) return;
           return this.onUpdate(true).then(() => {
             return resolve({ success: true, msg: "Success - silent" });
           });
@@ -749,7 +763,7 @@ export class AutoUpdatedClientObject<T> {
                 resolve({ success: false, msg: res.message });
                 return;
               }
-              if(!noUpdate)await this.onUpdate(noUpdate);
+              if (!noUpdate) await this.onUpdate(noUpdate);
               resolve({
                 success: res.success,
                 msg: res.message ?? "Success",
@@ -779,7 +793,7 @@ export class AutoUpdatedClientObject<T> {
     }
   }
 
-  public async onUpdate(noUpdate:boolean) {
+  public async onUpdate(noUpdate: boolean) {
     return;
   }
 

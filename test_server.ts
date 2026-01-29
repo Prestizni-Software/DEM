@@ -12,8 +12,11 @@ const obj1 = await managers.Test.createObject({
   description: "Obj1",
   ref: null,
   refarr: [],
-  obj: null,
-  parent: null, 
+  parent: null,
+  obj: {
+    _id: "default",
+    obj: { _id: "default" },
+  }
 });
 
 const obj2 = await managers.Test.createObject({
@@ -41,8 +44,9 @@ await obj2.setValue_("parent", obj2);
 
 await obj2.setValue_("refarr", [obj1._id]);
 
-await obj1.setValue_("active", true);
+await obj1.setValue_("rfrr" as any, true);
 await obj1.setValue_("active", false);
+await obj1.setValue_("obj._id", "1");
 await obj1.setValue_("obj", { _id: "1", obj: { _id: "2" } });
 await obj1.setValue_("obj._id", "gay");
 await obj1.setValue_("ref", obj2._id);

@@ -208,7 +208,7 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
   public override async onUpdate(noUpdate: boolean = false) {
     if (noUpdate) return;
     await this.parentManager.options?.onUpdate?.(
-      this.extractedData as any,
+      this,
       (a, b) => {
         return this.setValue__(a, b, false, true, true);
       },

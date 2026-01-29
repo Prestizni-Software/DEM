@@ -67,13 +67,7 @@ export type AUSOption<
 > = {
   accessDefinitions?: AccessMiddleware<T, C>;
   onUpdate?: (
-    obj: {
-      [K in keyof C]: C[K];
-    } extends { prototype: infer U }
-      ? U
-      : {
-          [K in keyof C]: C[K];
-        },
+    obj: AutoUpdated<C>,
     set: <K extends Paths<InstanceOf<C>>>(
       key: K,
       val: PathValueOf<C, K>,
@@ -237,34 +231,43 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
                 "]",
             );
         }
-        await demEvent.manager.options?.accessDefinitions?.eventMiddleware?.(
-          demEvent,
-          managers,
-          socket,
-        );
-        next();
+        try {
+          await demEvent.manager.options?.accessDefinitions?.eventMiddleware?.(
+            demEvent,
+            managers,
+            socket,
+          );
+          next();
+        } catch (error) {
+          loggers.warn(
+            "Someone got access denied:\nUser (" +
+              JSON.stringify(socket.handshake.auth) +
+              ")\nWith ID: '" +
+              socket.id +
+              "'\nFrom: '" +
+              socket.handshake.address +
+              "'\nTo the event: '" +
+              event[0] +
+              "'\nFor: '" +
+              (error as any).message +
+              "'",
+          );
+          event[2]({
+            success: false,
+            message:
+              "You were denied access to this event '" +
+              event[0] +
+              "' by the server.\n" +
+              (error as any).message,
+          });
+        }
       } catch (error) {
-        loggers.warn(
-          "Someone got access denied:\nUser (" +
-            JSON.stringify(socket.handshake.auth) +
-            ")\nWith ID: '" +
-            socket.id +
-            "'\nFrom: '" +
-            socket.handshake.address +
-            "'\nTo the event: '" +
+        loggers.error(
+          "Error with event: " +
             event[0] +
-            "'\nFor: '" +
-            (error as any).message +
-            "'",
+            "\nError: " +
+            (error as Error).message,
         );
-        event[2]({
-          success: false,
-          message:
-            "You were denied access to this event '" +
-            event[0] +
-            "' by the server.\n" +
-            (error as any).message,
-        });
         return;
       }
     }) as any);
@@ -586,8 +589,9 @@ export class AutoUpdateServerManager<
       this.clientSockets.delete(socket);
     });
   }
-
-  public getObject(_id?: string): AutoUpdated<T> | null {
+  public getObject(_id: string): AutoUpdated<T>;
+  public getObject(_id?: undefined | null): null;
+  public getObject(_id?: string | null): AutoUpdated<T> | null {
     return _id ? this.objects_[_id] : null;
   }
 
