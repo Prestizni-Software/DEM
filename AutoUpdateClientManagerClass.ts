@@ -26,6 +26,11 @@ export async function AUCManagerFactory<
     [K in keyof T]: Partial<DEMClientCallbacks<T[K]>>;
   }> = {},
 ): Promise<WrappedInstances<T>> {
+  const defaultCallbacks: DEMClientCallbacks<any> = {
+    new: (x: any) => {},
+    update: (x: any, y: any) => {},
+    delete: (x: any) => {},
+  };
   if (disableDEMDebugMessages) {
     loggers.debug = (_) => {};
   }
@@ -41,7 +46,10 @@ export async function AUCManagerFactory<
         socket,
         managers,
         emitter,
-        callbacks[key],
+        {
+          ...defaultCallbacks,
+          ...callbacks[key],
+        },
       );
       managers[key] = c;
     } catch (error: any) {
@@ -110,9 +118,9 @@ export async function AUCManagerFactory<
 }
 
 export type DEMClientCallbacks<T extends Constructor<any>> = {
-  new: (obj: AutoUpdated<T>) => Promise<void>;
-  update: (obj: AutoUpdated<T>, key: string) => Promise<void>;
-  delete: (obj: AutoUpdated<T>) => Promise<void>;
+  new: (obj: AutoUpdated<T>) => Promise<void> | void;
+  update: (obj: AutoUpdated<T>, key: string) => Promise<void> | void;
+  delete: (obj: AutoUpdated<T>) => Promise<void> | void;
 };
 
 export class AutoUpdateClientManager<
@@ -120,7 +128,7 @@ export class AutoUpdateClientManager<
 > extends AutoUpdateManager<T> {
   protected objects_: { [_id: string]: AutoUpdated<T> } = {};
   public readonly managers: Record<string, AutoUpdateClientManager<any>>;
-  public callbacks?: Partial<DEMClientCallbacks<T>>;
+  public callbacks: DEMClientCallbacks<T>;
   constructor(
     classParam: T,
     className: string,
@@ -128,7 +136,7 @@ export class AutoUpdateClientManager<
     socket: Socket,
     managers: Record<string, AutoUpdateClientManager<any>>,
     emitter: EventEmitter,
-    callbacks?: Partial<DEMClientCallbacks<T>>,
+    callbacks: DEMClientCallbacks<T>,
   ) {
     super(classParam, className, socket, loggers, managers, emitter);
     this.managers = managers;

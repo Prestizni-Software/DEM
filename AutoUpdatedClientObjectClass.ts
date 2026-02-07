@@ -26,7 +26,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   loggers: LoggersType,
   parentManager: AutoUpdateManager<any>,
   emitter: EventEmitter3,
-  callback?: (instance: AutoUpdated<C>, key: string) => Promise<void>,
+  callback?: (instance: AutoUpdated<C>, key: string) => Promise<void> | void,
 ): Promise<any> {
   if (typeof data !== "string" && data._id) {
     processIsRefProperties(data, classParam.prototype, undefined, [], loggers);
@@ -66,7 +66,7 @@ export class AutoUpdatedClientObject<T> {
   public readonly classProp: Constructor<T>;
   private readonly EmitterID = new ObjectId().toHexString();
   protected readonly toChangeOnParents: { key: string; value: any }[] = [];
-  protected callback: (instance: AutoUpdated<T>, key: string) => Promise<void>;
+  protected callback: (instance: AutoUpdated<T>, key: string) => Promise<void> | void;
   private readonly loadShit = async (): Promise<void> => {
     if (this.isLoaded) {
       try {
@@ -117,7 +117,7 @@ export class AutoUpdatedClientObject<T> {
     parentManager: AutoUpdateManager<any>,
     emitter: EventEmitter3,
     isServer = false,
-    callback: (instance: AutoUpdated<T>, key: string) => Promise<void> = async (
+    callback: (instance: AutoUpdated<T>, key: string) => Promise<void> | void = (
       x: any,
     ) => {},
   ) {
@@ -436,7 +436,7 @@ export class AutoUpdatedClientObject<T> {
     val: PathValueOf<T, K>,
   ): Promise<{ success: boolean; msg: string }> {
     const result = await this.setValue__(key, val);
-    this.callback(this as any, key);
+    if (this.isLoaded) this.callback(this as any, key);
     return result;
   }
 
