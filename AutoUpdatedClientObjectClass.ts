@@ -26,6 +26,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   loggers: LoggersType,
   parentManager: AutoUpdateManager<any>,
   emitter: EventEmitter3,
+  callback?: (instance: AutoUpdated<C>, key: string) => Promise<void>,
 ): Promise<any> {
   if (typeof data !== "string" && data._id) {
     processIsRefProperties(data, classParam.prototype, undefined, [], loggers);
@@ -40,6 +41,8 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
     classParam,
     parentManager,
     emitter,
+    false,
+    callback,
   );
   return instance as any;
 }
@@ -63,6 +66,7 @@ export class AutoUpdatedClientObject<T> {
   public readonly classProp: Constructor<T>;
   private readonly EmitterID = new ObjectId().toHexString();
   protected readonly toChangeOnParents: { key: string; value: any }[] = [];
+  protected callback: (instance: AutoUpdated<T>, key: string) => Promise<void>;
   private readonly loadShit = async (): Promise<void> => {
     if (this.isLoaded) {
       try {
@@ -113,6 +117,9 @@ export class AutoUpdatedClientObject<T> {
     parentManager: AutoUpdateManager<any>,
     emitter: EventEmitter3,
     isServer = false,
+    callback: (instance: AutoUpdated<T>, key: string) => Promise<void> = async (
+      x: any,
+    ) => {},
   ) {
     this.isServer = isServer;
     this.emitter = emitter;
@@ -122,6 +129,7 @@ export class AutoUpdatedClientObject<T> {
     this.parentManager = parentManager;
     this.className = className;
     this.properties = properties;
+    this.callback = callback;
     this.loggers.debug = (s: string) =>
       loggers.debug(
         "[DEM - " +
@@ -427,7 +435,9 @@ export class AutoUpdatedClientObject<T> {
     key: K,
     val: PathValueOf<T, K>,
   ): Promise<{ success: boolean; msg: string }> {
-    return await this.setValue__(key, val);
+    const result = await this.setValue__(key, val);
+    this.callback(this as any, key);
+    return result;
   }
 
   protected async setValue__(

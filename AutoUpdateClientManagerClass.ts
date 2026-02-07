@@ -22,7 +22,9 @@ export async function AUCManagerFactory<
   socket: Socket,
   disableDEMDebugMessages: boolean = false,
   emitter: EventEmitter = new EventEmitter(),
-  callbacks: Partial<{ [K in keyof T]: Partial<DEMClientCallbacks<T[K]>> }> = {},
+  callbacks: Partial<{
+    [K in keyof T]: Partial<DEMClientCallbacks<T[K]>>;
+  }> = {},
 ): Promise<WrappedInstances<T>> {
   if (disableDEMDebugMessages) {
     loggers.debug = (_) => {};
@@ -227,6 +229,7 @@ export class AutoUpdateClientManager<
               this.loggers,
               this,
               this.emitter,
+              this.callbacks?.update,
             )
               .then((object) => {
                 i++;
@@ -362,6 +365,7 @@ export class AutoUpdateClientManager<
       this.loggers,
       this,
       this.emitter,
+      this.callbacks?.update,
     );
     await object.isPreLoadedAsync();
     object.loadMissingReferences();
@@ -383,6 +387,7 @@ export class AutoUpdateClientManager<
         this.loggers,
         this,
         this.emitter,
+        this.callbacks?.update,
       );
       await object.isPreLoadedAsync();
       object.loadMissingReferences();
