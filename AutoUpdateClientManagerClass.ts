@@ -22,6 +22,7 @@ export async function AUCManagerFactory<
   socket: Socket,
   disableDEMDebugMessages: boolean = false,
   emitter: EventEmitter = new EventEmitter(),
+  callbacks: Partial<{ [K in keyof T]: Partial<DEMClientCallbacks<T[K]>> }> = {},
 ): Promise<WrappedInstances<T>> {
   if (disableDEMDebugMessages) {
     loggers.debug = (_) => {};
@@ -38,6 +39,7 @@ export async function AUCManagerFactory<
         socket,
         managers,
         emitter,
+        callbacks[key],
       );
       managers[key] = c;
     } catch (error: any) {
@@ -105,11 +107,18 @@ export async function AUCManagerFactory<
   return managers;
 }
 
+export type DEMClientCallbacks<T extends Constructor<any>> = {
+  new: (obj: AutoUpdated<T>) => Promise<void>;
+  update: (obj: AutoUpdated<T>, key: string) => Promise<void>;
+  delete: (obj: AutoUpdated<T>) => Promise<void>;
+};
+
 export class AutoUpdateClientManager<
   T extends Constructor<any>,
 > extends AutoUpdateManager<T> {
   protected objects_: { [_id: string]: AutoUpdated<T> } = {};
   public readonly managers: Record<string, AutoUpdateClientManager<any>>;
+  public callbacks?: Partial<DEMClientCallbacks<T>>;
   constructor(
     classParam: T,
     className: string,
@@ -117,9 +126,11 @@ export class AutoUpdateClientManager<
     socket: Socket,
     managers: Record<string, AutoUpdateClientManager<any>>,
     emitter: EventEmitter,
+    callbacks?: Partial<DEMClientCallbacks<T>>,
   ) {
     super(classParam, className, socket, loggers, managers, emitter);
     this.managers = managers;
+    this.callbacks = callbacks;
   }
 
   private startSocketListeners() {
@@ -129,6 +140,7 @@ export class AutoUpdateClientManager<
       );
       try {
         this.objects_[id] = await this.handleGetMissingObject(id);
+        this.callbacks?.new?.(this.objects_[id]);
       } catch (error: any) {
         this.loggers.error(
           "Error loading object " +
@@ -146,6 +158,7 @@ export class AutoUpdateClientManager<
         "Applying object deletion from manager " + this.className + " - " + id,
       );
       try {
+        this.callbacks?.delete?.(this.objects_[id]);
         await this.deleteObject(id);
       } catch (error: any) {
         this.loggers.error(
@@ -247,7 +260,23 @@ export class AutoUpdateClientManager<
           for (const id in this.objects_) {
             this.objects_[id]
               .isPreLoadedAsync()
-              .then(() => i++)
+              .then(() => {
+                try {
+                  this.objects_[id].loadMissingReferences();
+                  i++;
+                } catch (error: any) {
+                  this.loggers.error(
+                    "Error loading missing references for object " +
+                      id +
+                      " from manager " +
+                      this.className +
+                      " - " +
+                      error.message,
+                  );
+                  this.loggers.error(error.stack);
+                }
+                i++;
+              })
               .catch((error: any) => {
                 i++;
                 this.loggers.error(
@@ -269,28 +298,8 @@ export class AutoUpdateClientManager<
               }
             }, 100);
           });
-          for (const id in this.objects_) {
-            try {
-              this.objects_[id].loadMissingReferences();
-              i++;
-            } catch (error: any) {
-              this.loggers.error(
-                "Error loading missing references for object " +
-                  id +
-                  " from manager " +
-                  this.className +
-                  " - " +
-                  error.message,
-              );
-              this.loggers.error(error.stack);
-            }
-          }
-          this.loggers.debug(
-            "Loaded missing references for " +
-              this.className +
-              " - [" +
-              i +
-              "] entries",
+          this.loggers.info(
+            "Loaded " + this.className + " - [" + i + "] entries",
           );
           this.startSocketListeners();
 

@@ -158,6 +158,17 @@ export class AutoUpdatedClientObject<T> {
           "] " +
           s,
       );
+
+    for (const prop of properties) {
+      if (typeof prop !== "string")
+        throw new Error("Property '" + prop.toString() + "' is not a string");
+      if (prop.includes("."))
+        throw new Error(
+          "Property '" +
+            prop.toString() +
+            "' constain the illegal character '.'",
+        );
+    }
     this.socket = socket;
     if (typeof data === "string") {
       if (this.isServer) {
@@ -498,17 +509,24 @@ export class AutoUpdatedClientObject<T> {
         };
       }
 
-      if (!this.properties.includes(lastPath as any) && !lastPath.includes(".")) {
+      if (
+        !this.properties.includes(lastPath as any) &&
+        !lastPath.includes(".")
+      ) {
         let nearest = "";
         for (const prop of this.properties) {
           if (typeof prop !== "string") continue;
-          if(stringSimilarity(lastPath, prop) > 0 && stringSimilarity(lastPath, prop) > stringSimilarity(nearest, prop)){
+          if (
+            stringSimilarity(lastPath, prop) > 0 &&
+            stringSimilarity(lastPath, prop) > stringSimilarity(nearest, prop)
+          ) {
             nearest = prop;
           }
         }
         throw new Error(
           `Property ${lastPath} not found in class ${this.className}, did you mean ${nearest ?? "--No similar prop found--"}?`,
-        );}
+        );
+      }
 
       let success;
       try {
@@ -527,6 +545,17 @@ export class AutoUpdatedClientObject<T> {
               this.className +
               " parent not found";
             this.loggers.error(message);
+            return { success: false, msg: message };
+          }
+          if (
+            parentObj.getValue(isPopulated[1]) &&
+            !Array.isArray(parentObj.getValue(isPopulated[1]))
+          ) {
+            message +=
+              "\nThis is a 1:1 relationship and the parent already has a parent with the ID: " +
+              (parentObj.getValue(isPopulated[1])._id?.toString() ??
+                parentObj.getValue(isPopulated[1]).toString()) +
+              this.loggers.error(message);
             return { success: false, msg: message };
           }
           let res;
