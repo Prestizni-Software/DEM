@@ -78,6 +78,11 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
       className,
       classProp,
       parentManager,
+      {
+        update: (x:any) => {},
+        delete: (x:any) => {},
+        new: (x:any) => {},
+      },
       emitter,
       true,
     );

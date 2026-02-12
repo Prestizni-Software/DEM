@@ -1,6 +1,9 @@
 import { Socket } from "socket.io-client";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
-import { createAutoUpdatedClass } from "./AutoUpdatedClientObjectClass.js";
+import {
+  createAutoUpdatedClass,
+  DEMClientCallbacks,
+} from "./AutoUpdatedClientObjectClass.js";
 import {
   AutoUpdated,
   Constructor,
@@ -35,8 +38,12 @@ export async function AUCManagerFactory<
     loggers.debug = (_) => {};
   }
   const managers = {} as WrappedInstances<T>;
+  const startStartTime = Date.now();
+  let startTime = Date.now();
+  let temp = 0;
   for (const key in defs) {
     let message = `Creating manager for: ${key}`;
+    temp = Date.now();
     try {
       const Model = defs[key];
       const c = new AutoUpdateClientManager(
@@ -65,14 +72,26 @@ export async function AUCManagerFactory<
       loggers.error(error.stack);
       continue;
     }
-    loggers.debug("Created manager: " + key);
+    loggers.debug(
+      "Created manager: " + key + " in " + (Date.now() - temp) + "ms",
+    );
   }
+  loggers.debug("Created all managers in " + (Date.now() - startTime) + "ms");
+  startTime = Date.now();
   let i = 0;
-  for (const manager of Object.values(managers)) {
-    manager
-      .loadFromServer()
+  for (const key in defs) {
+    let temp2 = {s:Date.now(),f:0};
+    managers[key]
+      .loadFromServer(temp2)
       .then(() => {
         i++;
+        loggers.debug(
+          "Loaded data from server for manager: " +
+            key +
+            " in " +
+            (temp2.f - temp2.s) +
+            "ms",
+        );
       })
       .catch((error: any) => {
         i++;
@@ -82,9 +101,9 @@ export async function AUCManagerFactory<
           )
         )
           throw error;
-        let message =
-          "Error loading data from server for manager: " + manager.className;
+        let message = "Error loading data from server for manager: " + key;
         message += "\n " + error.message;
+        message += "\n Failed in " + (temp2.f - temp2.s) + "ms";
         loggers.error(message);
         loggers.error(error.stack);
       });
@@ -97,31 +116,16 @@ export async function AUCManagerFactory<
       }
     }, 100);
   });
-  i = 0;
-  for (const key in defs) {
-    managers[key]
-      .loadReferences()
-      .then(() => {
-        i++;
-      })
-      .catch((error: any) => {
-        i++;
-        let message = "Error loading manager: " + key;
-        message += "\n Error resolving references in manager";
-        message += "\n " + error.message;
-        loggers.error(message);
-        loggers.error(error.stack);
-      });
-    loggers.debug("Loaded manager references: " + key);
-  }
+  loggers.debug(
+    "Loaded data from server for all managers in " +
+      (Date.now() - startTime) +
+      "ms",
+  );
+  loggers.info(
+    "Loaded all managers in " + (Date.now() - startStartTime) + "ms",
+  );
   return managers;
 }
-
-export type DEMClientCallbacks<T extends Constructor<any>> = {
-  new: (obj: AutoUpdated<T>) => Promise<void> | void;
-  update: (obj: AutoUpdated<T>, key: string) => Promise<void> | void;
-  delete: (obj: AutoUpdated<T>) => Promise<void> | void;
-};
 
 export class AutoUpdateClientManager<
   T extends Constructor<any>,
@@ -150,7 +154,6 @@ export class AutoUpdateClientManager<
       );
       try {
         this.objects_[id] = await this.handleGetMissingObject(id);
-        this.callbacks?.new?.(this.objects_[id]);
       } catch (error: any) {
         this.loggers.error(
           "Error loading object " +
@@ -168,7 +171,6 @@ export class AutoUpdateClientManager<
         "Applying object deletion from manager " + this.className + " - " + id,
       );
       try {
-        this.callbacks?.delete?.(this.objects_[id]);
         await this.deleteObject(id);
       } catch (error: any) {
         this.loggers.error(
@@ -183,8 +185,8 @@ export class AutoUpdateClientManager<
     });
   }
 
-  public async loadFromServer() {
-    return new Promise<void>((resolve, reject) => {
+  public async loadFromServer(t?:{s:number,f:number}): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
       this.socket.emit(
         "startup" + this.className,
         null,
@@ -237,7 +239,7 @@ export class AutoUpdateClientManager<
               this.loggers,
               this,
               this.emitter,
-              this.callbacks?.update,
+              this.callbacks,
             )
               .then((object) => {
                 i++;
@@ -274,7 +276,6 @@ export class AutoUpdateClientManager<
               .then(() => {
                 try {
                   this.objects_[id].loadMissingReferences();
-                  i++;
                 } catch (error: any) {
                   this.loggers.error(
                     "Error loading missing references for object " +
@@ -318,6 +319,7 @@ export class AutoUpdateClientManager<
         },
       );
     });
+    t ? t.f = Date.now() : void 0;
   }
 
   private checkLoadability(
@@ -373,7 +375,7 @@ export class AutoUpdateClientManager<
       this.loggers,
       this,
       this.emitter,
-      this.callbacks?.update,
+      this.callbacks,
     );
     await object.isPreLoadedAsync();
     object.loadMissingReferences();
@@ -395,7 +397,7 @@ export class AutoUpdateClientManager<
         this.loggers,
         this,
         this.emitter,
-        this.callbacks?.update,
+        this.callbacks,
       );
       await object.isPreLoadedAsync();
       object.loadMissingReferences();

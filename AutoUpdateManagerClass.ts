@@ -30,7 +30,7 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     socket: any,
     loggers: LoggersType,
     managers: Record<string, AutoUpdateManager<any>>,
-    emitter: EventEmitter3
+    emitter: EventEmitter3,
   ) {
     this.className = className;
     this.managers = managers;
@@ -65,18 +65,16 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
   public async loadReferences(): Promise<void> {
     for (const obj of this.objectsAsArray) {
       obj.loadMissingReferences();
-      obj.contactChildren();
-      await obj.onUpdate(false);
     }
     this.isLoaded_ = true;
   }
 
   public async deleteObject(
-    _id: string
+    _id: string,
   ): Promise<{ success: boolean; message: string }> {
-    const res = await this.objects_[_id].destroy(true);
-    if (res.success) delete this.objects_[_id];
-    return res;
+    const res = await this.objects_[_id]?.destroy(true);
+    if (res?.success) delete this.objects_[_id];
+    return res ?? { success: true, message: "Already gone" };
   }
 
   public get objectIDs(): string[] {
@@ -84,10 +82,10 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
   }
 
   protected abstract handleGetMissingObject(
-    _id: string
+    _id: string,
   ): Promise<AutoUpdatedClientObject<any> | null>;
   public abstract createObject(
-    data: IsData<InstanceOf<T>>
+    data: IsData<InstanceOf<T>>,
   ): Promise<AutoUpdatedClientObject<any>>;
   public abstract getObject(_id: string): AutoUpdatedClientObject<any> | null;
   public abstract get objects(): {

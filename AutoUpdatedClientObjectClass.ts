@@ -17,6 +17,12 @@ import { Socket } from "socket.io-client";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 import { stringSimilarity } from "string-similarity-js";
 
+export type DEMClientCallbacks<T> = {
+  new: (obj: AutoUpdated<T>) => Promise<void> | void;
+  update: (obj: AutoUpdated<T>, key: string) => Promise<void> | void;
+  delete: (obj: AutoUpdated<T>) => Promise<void> | void;
+};
+
 type SocketType = Socket<any, any>;
 export async function createAutoUpdatedClass<C extends Constructor<any>>(
   classParam: C,
@@ -26,7 +32,7 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
   loggers: LoggersType,
   parentManager: AutoUpdateManager<any>,
   emitter: EventEmitter3,
-  callback?: (instance: AutoUpdated<C>, key: string) => Promise<void> | void,
+  callback: DEMClientCallbacks<C>,
 ): Promise<any> {
   if (typeof data !== "string" && data._id) {
     processIsRefProperties(data, classParam.prototype, undefined, [], loggers);
@@ -40,9 +46,9 @@ export async function createAutoUpdatedClass<C extends Constructor<any>>(
     className,
     classParam,
     parentManager,
+    callback,
     emitter,
     false,
-    callback,
   );
   return instance as any;
 }
@@ -66,7 +72,8 @@ export class AutoUpdatedClientObject<T> {
   public readonly classProp: Constructor<T>;
   private readonly EmitterID = new ObjectId().toHexString();
   protected readonly toChangeOnParents: { key: string; value: any }[] = [];
-  protected callback: (instance: AutoUpdated<T>, key: string) => Promise<void> | void;
+  protected callbacks: DEMClientCallbacks<T>;
+  private referencesLoaded = false;
   private readonly loadShit = async (): Promise<void> => {
     if (this.isLoaded) {
       try {
@@ -105,6 +112,7 @@ export class AutoUpdatedClientObject<T> {
       this.loggers.error(error.message);
       this.loggers.error(error.stack);
     }
+    this.callbacks.new(this as any);
   };
 
   constructor(
@@ -115,11 +123,9 @@ export class AutoUpdatedClientObject<T> {
     className: string,
     classProperty: Constructor<T>,
     parentManager: AutoUpdateManager<any>,
+    callback: DEMClientCallbacks<T>,
     emitter: EventEmitter3,
     isServer = false,
-    callback: (instance: AutoUpdated<T>, key: string) => Promise<void> | void = (
-      x: any,
-    ) => {},
   ) {
     this.isServer = isServer;
     this.emitter = emitter;
@@ -129,7 +135,7 @@ export class AutoUpdatedClientObject<T> {
     this.parentManager = parentManager;
     this.className = className;
     this.properties = properties;
-    this.callback = callback;
+    this.callbacks = callback;
     this.loggers.debug = (s: string) =>
       loggers.debug(
         "[DEM - " +
@@ -342,6 +348,8 @@ export class AutoUpdatedClientObject<T> {
   }
 
   public loadMissingReferences(): void {
+    if (this.referencesLoaded) return;
+    this.referencesLoaded = true;
     this.checkForMissingRefs();
     this.generateSettersAndGetters();
   }
@@ -436,7 +444,7 @@ export class AutoUpdatedClientObject<T> {
     val: PathValueOf<T, K>,
   ): Promise<{ success: boolean; msg: string }> {
     const result = await this.setValue__(key, val);
-    if (this.isLoaded) this.callback(this as any, key);
+    if (this.isLoaded) this.callbacks.update(this as any, key);
     return result;
   }
 
@@ -749,6 +757,7 @@ export class AutoUpdatedClientObject<T> {
           );
           continue;
         }
+        this.referencesLoaded = false;
         result.loadMissingReferences();
       }
     }
@@ -958,6 +967,7 @@ export class AutoUpdatedClientObject<T> {
     if (!once) {
       return await this.parentManager.deleteObject(this.data._id);
     }
+    this.callbacks.delete(this as any);
     const res = await new Promise<{ success: boolean; message: string }>(
       (resolve) => {
         this.socket.emit(
