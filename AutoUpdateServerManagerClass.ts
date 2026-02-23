@@ -285,6 +285,7 @@ export async function AUSManagerFactory<
   emitter: EventEmitter3 = new EventEmitter(),
   models?: any,
 ): Promise<{ [K in keyof T]: AutoUpdateServerManager<T[K]> }> {
+
   readyLoggers(loggers);
   if (disableDEMDebugMessages) {
     loggers.debug = (_) => {};

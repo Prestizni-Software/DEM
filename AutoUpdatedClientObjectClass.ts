@@ -967,7 +967,7 @@ export class AutoUpdatedClientObject<T> {
     if (!once) {
       return await this.parentManager.deleteObject(this.data._id);
     }
-    this.callbacks.delete(this as any);
+    await this.callbacks.delete(this as any);
     const res = await new Promise<{ success: boolean; message: string }>(
       (resolve) => {
         this.socket.emit(
