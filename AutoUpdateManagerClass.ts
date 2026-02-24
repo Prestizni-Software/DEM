@@ -2,16 +2,14 @@ import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
 import {
   Constructor,
   EventEmitter3,
-  InstanceOf,
-  IsData,
   LoggersType,
 } from "./CommonTypes.js";
 import "reflect-metadata";
-export abstract class AutoUpdateManager<T extends Constructor<any>> {
-  protected abstract objects_: { [_id: string]: AutoUpdatedClientObject<any> };
+export abstract class AutoUpdateManager<T extends AutoUpdatedClientObject<T>> {
+  protected abstract objects_: { [_id: string]: AutoUpdatedClientObject<T> };
   protected isLoaded_ = false;
   public readonly socket: any;
-  protected classParam: T;
+  protected classParam: Constructor<AutoUpdatedClientObject<T>>;
   protected properties: (keyof T)[];
   public readonly className: string;
   public readonly managers: Record<string, AutoUpdateManager<any>>;
@@ -25,7 +23,7 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
   };
   protected emitter: EventEmitter3;
   constructor(
-    classParam: T,
+    classParam: Constructor<T>,
     className: string,
     socket: any,
     loggers: LoggersType,
@@ -38,7 +36,6 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
     this.socket = socket;
     this.classParam = classParam;
     this.properties =
-      Reflect.getMetadata("props", classParam) ??
       Reflect.getMetadata("props", classParam.prototype);
     this.loggers.debug = (s: string) =>
       loggers.debug("[DEM - " + className + " MANAGER] " + s);
@@ -83,14 +80,14 @@ export abstract class AutoUpdateManager<T extends Constructor<any>> {
 
   protected abstract handleGetMissingObject(
     _id: string,
-  ): Promise<AutoUpdatedClientObject<any> | null>;
+  ): Promise<AutoUpdatedClientObject<T>>;
   public abstract createObject(
-    data: IsData<InstanceOf<T>>,
-  ): Promise<AutoUpdatedClientObject<any>>;
-  public abstract getObject(_id: string): AutoUpdatedClientObject<any> | null;
+    data: Omit<any, "_id">,
+  ): Promise<AutoUpdatedClientObject<T>>;
+  public abstract getObject(_id: string): AutoUpdatedClientObject<T> | null;
   public abstract get objects(): {
-    [_id: string]: AutoUpdatedClientObject<any>;
+    [_id: string]: AutoUpdatedClientObject<T>;
   };
 
-  public abstract get objectsAsArray(): AutoUpdatedClientObject<any>[];
+  public abstract get objectsAsArray(): AutoUpdatedClientObject<T>[];
 }

@@ -1,8 +1,7 @@
 import { ExtendedError, Server, Socket } from "socket.io";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
-import fs from "node:fs";
 import {
-  AutoUpdated,
+  AutoUpdatedServerObject,
   createAutoUpdatedClass,
 } from "./AutoUpdatedServerObjectClass.js";
 import {
@@ -17,21 +16,26 @@ import {
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
-import { Paths, PathValueOf } from "./CommonTypes_server.js";
+import { DeAutoUpdateServer, Paths, PathValueOf } from "./CommonTypes_server.js";
 import { EventEmitter } from "eventemitter3";
 import a from "node-machine-id";
+import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
 
-export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
+export type WrappedInstances<
+  T extends Record<string, AutoUpdatedServerObject<any>>,
+> = {
   [K in keyof T]: AutoUpdateServerManager<T[K]>;
 };
 
-export type AUSDefinitions<T extends Record<string, Constructor<any>>> = {
+export type AUSDefinitions<
+  T extends Record<string, AutoUpdatedServerObject<any>>,
+> = {
   [K in keyof T]: ServerManagerDefinition<T[K], T>;
 };
 
 export type EventMiddlewareFunction<
-  T extends Record<string, Constructor<any>>,
-  C extends Constructor<any>,
+  T extends Record<string, AutoUpdatedServerObject<any>>,
+  C extends AutoUpdatedServerObject<any>,
 > = (
   event: DEMEvent<C>,
   managers: {
@@ -40,35 +44,33 @@ export type EventMiddlewareFunction<
   socket: Socket,
 ) => Promise<void>;
 
-const once =
-  ".split(String.fromCharCode(10)).splice(time%38,time%11+4).join(String.fromCharCode(10))";
 export type StartupMiddlewareFunction<
-  T extends Record<string, Constructor<any>>,
-  C extends Constructor<any>,
+  T extends Record<string, AutoUpdatedServerObject<any>>,
+  C extends AutoUpdatedServerObject<any>,
 > = (
-  ids: AutoUpdated<C, 10>[],
+  ids: C[],
   managers: {
     [K in keyof T]: AutoUpdateServerManager<T[K]>;
   },
   socket: Socket,
-) => Promise<AutoUpdated<C, 10>[]>;
+) => Promise<C[]>;
 
 export type AccessMiddleware<
-  T extends Record<string, Constructor<any>>,
-  C extends Constructor<any>,
+  T extends Record<string, AutoUpdatedServerObject<any>>,
+  C extends AutoUpdatedServerObject<any>,
 > = {
   eventMiddleware?: EventMiddlewareFunction<T, C>;
   startupMiddleware?: StartupMiddlewareFunction<T, C>;
 };
 
 export type AUSOption<
-  C extends Constructor<any>,
-  T extends Record<string, Constructor<any>>,
+  C extends AutoUpdatedServerObject<any>,
+  T extends Record<string, AutoUpdatedServerObject<any>>,
 > = {
   accessDefinitions?: AccessMiddleware<T, C>;
   onUpdate?: (
-    obj: AutoUpdated<C>,
-    set: <K extends Paths<InstanceOf<C>>>(
+    obj: C,
+    set: <K extends Paths<C>>(
       key: K,
       val: PathValueOf<C, K>,
     ) => Promise<{ success: boolean; msg: string }>,
@@ -76,10 +78,10 @@ export type AUSOption<
 };
 
 export type ServerManagerDefinition<
-  C extends Constructor<any>,
-  T extends Record<string, Constructor<any>>,
+  C extends AutoUpdatedServerObject<any>,
+  T extends Record<string, AutoUpdatedServerObject<any>>,
 > = {
-  class: C;
+  class: Constructor<C>;
   options?: AUSOption<C, T>;
 };
 
@@ -90,31 +92,18 @@ export enum DEMEventTypes {
   "get" = "get",
   "startup" = "startup",
 }
-let d = (str: string) =>
-  str
-    .match(/.{1,7}/g)!
-    .map((s) =>
-      String.fromCharCode(
-        parseInt(
-          s
-            .replaceAll(String.fromCharCode(32), String.fromCharCode(48))
-            .replaceAll(String.fromCharCode(9), String.fromCharCode(49)),
-          2,
-        ),
-      ),
-    )
-    .join("");
-export type DEMEvent<C extends Constructor<any>> =
+
+export type DEMEvent<C extends AutoUpdatedServerObject<any>> =
   | {
       type: DEMEventTypes.delete | DEMEventTypes.get;
       manager: AutoUpdateServerManager<C>;
-      object: AutoUpdated<C>;
+      object: C;
       data: never;
     }
   | {
       type: DEMEventTypes.update;
       manager: AutoUpdateServerManager<C>;
-      object: AutoUpdated<C>;
+      object: C;
       data: {
         _id: string;
         key: Paths<C>;
@@ -131,10 +120,12 @@ export type DEMEvent<C extends Constructor<any>> =
       type: DEMEventTypes.new;
       manager: AutoUpdateServerManager<C>;
       object: never;
-      data: IsData<InstanceOf<C>>;
+      data: IsData<C>;
     };
 
-function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
+function setupSocketMiddleware<
+  T extends Record<string, AutoUpdatedServerObject<any>>,
+>(
   socket_server: Server,
   loggers: LoggersType,
   managers: WrappedInstances<T>,
@@ -276,7 +267,7 @@ function setupSocketMiddleware<T extends Record<string, Constructor<any>>>(
 }
 
 export async function AUSManagerFactory<
-  T extends Record<string, Constructor<any>>,
+  T extends Record<string, AutoUpdatedServerObject<any>>,
 >(
   defs: AUSDefinitions<T>,
   loggers: LoggersType,
@@ -285,7 +276,6 @@ export async function AUSManagerFactory<
   emitter: EventEmitter3 = new EventEmitter(),
   models?: any,
 ): Promise<{ [K in keyof T]: AutoUpdateServerManager<T[K]> }> {
-
   readyLoggers(loggers);
   if (disableDEMDebugMessages) {
     loggers.debug = (_) => {};
@@ -362,19 +352,19 @@ export async function AUSManagerFactory<
 }
 
 export class AutoUpdateServerManager<
-  T extends Constructor<any>,
+  T extends AutoUpdatedServerObject<T>,
 > extends AutoUpdateManager<T> {
-  public readonly model: ReturnModelType<T, BeAnObject>;
+  public readonly model: ReturnModelType<Constructor<T>, BeAnObject>;
   private readonly clientSockets: Set<Socket> = new Set<Socket>();
   public readonly options?: AUSOption<T, any>;
-  protected override objects_: { [_id: string]: AutoUpdated<T> } = {};
+  protected override objects_: { [_id: string]: T } = {};
   public readonly managers: Record<string, AutoUpdateServerManager<any>>;
   constructor(
-    classParam: T,
+    classParam: Constructor<T>,
     className: string,
     loggers: LoggersType,
     socket: Server,
-    model: ReturnModelType<T, BeAnObject>,
+    model: ReturnModelType<Constructor<T>, BeAnObject>,
     managers: Record<string, AutoUpdateServerManager<any>>,
     emitter: EventEmitter3,
     options?: AUSOption<T, any>,
@@ -400,7 +390,7 @@ export class AutoUpdateServerManager<
       this.objects_[doc] =
         this.objects_[doc] ??
         (await createAutoUpdatedClass<T>(
-          this.classParam,
+          this.classParam as any,
           this.className,
           this.socket,
           doc as any,
@@ -443,9 +433,9 @@ export class AutoUpdateServerManager<
           this.loggers.debug(
             "Sending startup data for manager " + this.className,
           );
-          if (ids.some((id) => this.objects_[id] === "undefined"))
+          if (ids.some((id) => (this.objects_[id] as any) === "undefined"))
             this.loggers.error(
-              ids.find((id) => this.objects_[id] === "undefined"),
+              ids.find((id) => (this.objects_[id] as any) === "undefined"),
             );
           ack({
             data: { ids, properties: this.properties as string[] },
@@ -495,17 +485,14 @@ export class AutoUpdateServerManager<
     );
     socket.on(
       "new" + this.className,
-      async (
-        data: IsData<InstanceOf<T>>,
-        ack: (res: ServerResponse<T>) => void,
-      ) => {
+      async (data: Omit<DeAutoUpdateServer<T>,"_id">, ack: (res: ServerResponse<T>) => void) => {
         this.loggers.debug(
           "Recieved new object creation in manager " + this.className,
         );
         try {
           const newDoc = await this.createObject(data);
           ack({
-            data: newDoc.extractedData,
+            data: newDoc.extractedData as any,
             success: true,
             message: "Created successfully",
           });
@@ -569,7 +556,7 @@ export class AutoUpdateServerManager<
             const id = event.replace("get" + this.className, "");
             let obj = this.objects_[id];
             ack({
-              data: obj.extractedData,
+              data: obj.extractedData as any,
               success: true,
               message: "Updated successfully",
             });
@@ -590,17 +577,17 @@ export class AutoUpdateServerManager<
       this.clientSockets.delete(socket);
     });
   }
-  public getObject(_id: string): AutoUpdated<T>;
+  public getObject(_id: string): T;
   public getObject(_id?: undefined | null): null;
-  public getObject(_id?: string | null): AutoUpdated<T> | null {
+  public getObject(_id?: string | null): T | null {
     return _id ? this.objects_[_id] : null;
   }
 
-  public get objects(): { [_id: string]: AutoUpdated<T> } {
+  public get objects(): { [_id: string]: T } {
     return this.objects_ as any;
   }
 
-  public get objectsAsArray(): AutoUpdated<T>[] {
+  public get objectsAsArray(): T[] {
     return Object.values(this.objects_) as any;
   }
 
@@ -612,7 +599,7 @@ export class AutoUpdateServerManager<
       "Getting missing object " + _id + " from manager " + this.className,
     );
     const object = await createAutoUpdatedClass<T>(
-      this.classParam,
+      this.classParam as any,
       this.className,
       this.socket,
       document as any,
@@ -626,12 +613,12 @@ export class AutoUpdateServerManager<
     return object;
   }
 
-  public async createObject(data: Omit<InstanceOf<T>, "_id">) {
+  public async createObject(data: Omit<DeAutoUpdateServer<T>, "_id">) {
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
     (data as any)._id = undefined;
     const object = await createAutoUpdatedClass<T>(
-      this.classParam,
+      this.classParam as any,
       this.className,
       this.socket,
       data as any,

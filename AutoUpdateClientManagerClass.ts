@@ -1,32 +1,34 @@
 import { Socket } from "socket.io-client";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 import {
-  createAutoUpdatedClass,
+  AutoUpdatedClientObject,
   DEMClientCallbacks,
 } from "./AutoUpdatedClientObjectClass.js";
 import {
-  AutoUpdated,
   Constructor,
+  DeAutoUpdateClient,
   InstanceOf,
   IsData,
   LoggersType,
   ServerResponse,
 } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
-export type WrappedInstances<T extends Record<string, Constructor<any>>> = {
-  [K in keyof T]: AutoUpdateClientManager<T[K]>;
+export type WrappedInstances<
+  T extends Record<string, Constructor<AutoUpdatedClientObject<any>
+>>> = {
+  [K in keyof T]: AutoUpdateClientManager<InstanceOf<T[K]>>;
 };
 // ---------------------- Factory ----------------------
 export async function AUCManagerFactory<
-  T extends Record<string, Constructor<any>>,
->(
+  T extends Record<string, Constructor<AutoUpdatedClientObject<any>
+>>>(
   defs: T,
   loggers: LoggersType,
   socket: Socket,
   disableDEMDebugMessages: boolean = false,
   emitter: EventEmitter = new EventEmitter(),
   callbacks: Partial<{
-    [K in keyof T]: Partial<DEMClientCallbacks<T[K]>>;
+    [K in keyof T]: Partial<DEMClientCallbacks<InstanceOf<T[K]>>>;
   }> = {},
 ): Promise<WrappedInstances<T>> {
   const defaultCallbacks: DEMClientCallbacks<any> = {
@@ -47,7 +49,7 @@ export async function AUCManagerFactory<
     try {
       const Model = defs[key];
       const c = new AutoUpdateClientManager(
-        Model,
+        Model as any,
         key,
         loggers,
         socket,
@@ -80,7 +82,7 @@ export async function AUCManagerFactory<
   startTime = Date.now();
   let i = 0;
   for (const key in defs) {
-    let temp2 = {s:Date.now(),f:0};
+    let temp2 = { s: Date.now(), f: 0 };
     managers[key]
       .loadFromServer(temp2)
       .then(() => {
@@ -128,13 +130,13 @@ export async function AUCManagerFactory<
 }
 
 export class AutoUpdateClientManager<
-  T extends Constructor<any>,
+  T extends AutoUpdatedClientObject<T>,
 > extends AutoUpdateManager<T> {
-  protected objects_: { [_id: string]: AutoUpdated<T> } = {};
+  protected objects_: { [_id: string]: T } = {};
   public readonly managers: Record<string, AutoUpdateClientManager<any>>;
   public callbacks: DEMClientCallbacks<T>;
   constructor(
-    classParam: T,
+    classParam: Constructor<T>,
     className: string,
     loggers: LoggersType,
     socket: Socket,
@@ -185,7 +187,7 @@ export class AutoUpdateClientManager<
     });
   }
 
-  public async loadFromServer(t?:{s:number,f:number}): Promise<void> {
+  public async loadFromServer(t?: { s: number; f: number }): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       this.socket.emit(
         "startup" + this.className,
@@ -231,45 +233,32 @@ export class AutoUpdateClientManager<
           this.loggers.debug(data.ids.join(", "));
           let i = 0;
           for (const id of data.ids) {
-            createAutoUpdatedClass(
-              this.classParam,
-              this.className,
-              this.socket,
-              id,
-              this.loggers,
-              this,
-              this.emitter,
-              this.callbacks,
-            )
-              .then((object) => {
-                i++;
-                this.objects_[id] = object;
-                this.loggers.debug(
-                  "Loaded object " + id + " from manager " + this.className,
-                );
-              })
-              .catch((error: any) => {
-                i++;
-                this.loggers.error(
-                  "Error loading object " +
-                    id +
-                    " from manager " +
-                    this.className +
-                    " - " +
-                    error.message,
-                );
-                this.loggers.error(error.stack);
-              });
+            try {
+              this.objects_[id] = new this.classParam(
+                this.classParam,
+                this.socket,
+                id,
+                this.loggers,
+                this.className,
+                this,
+                this.callbacks,
+                this.emitter,
+              ) as any;
+              this.loggers.debug(
+                "Loading object " + id + " from manager " + this.className,
+              )
+            } catch (error: any) {
+              this.loggers.error(
+                "Error loading object " +
+                  id +
+                  " from manager " +
+                  this.className +
+                  " - " +
+                  error.message,
+              );
+              this.loggers.error(error.stack);
+            }
           }
-          await new Promise((resolve, reject) => {
-            const interval = setInterval(() => {
-              if (i === Object.keys(data.ids).length) {
-                clearInterval(interval);
-                resolve(null);
-              }
-            }, 100);
-          });
-          i = 0;
           for (const id in this.objects_) {
             this.objects_[id]
               .isPreLoadedAsync()
@@ -319,7 +308,7 @@ export class AutoUpdateClientManager<
         },
       );
     });
-    t ? t.f = Date.now() : void 0;
+    t ? (t.f = Date.now()) : void 0;
   }
 
   private checkLoadability(
@@ -350,58 +339,58 @@ export class AutoUpdateClientManager<
     return { allowedToLoad, errorMessage };
   }
 
-  public getObject(_id?: string): AutoUpdated<T> | null {
+  public getObject(_id?: string): T | null {
     return _id ? this.objects_[_id] : null;
   }
 
-  public get objects(): { [_id: string]: AutoUpdated<T> } {
+  public get objects(): { [_id: string]: T } {
     return this.objects_;
   }
 
-  public get objectsAsArray(): AutoUpdated<T>[] {
+  public get objectsAsArray(): T[] {
     return Object.values(this.objects_);
   }
 
-  protected async handleGetMissingObject(_id: string): Promise<AutoUpdated<T>> {
+  protected async handleGetMissingObject(_id: string): Promise<T> {
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug(
       "Getting missing object " + _id + " from manager " + this.className,
     );
-    const object = await createAutoUpdatedClass(
+    const object = new this.classParam(
       this.classParam,
-      this.className,
       this.socket,
       _id,
       this.loggers,
+      this.className,
       this,
-      this.emitter,
       this.callbacks,
+      this.emitter,
     );
     await object.isPreLoadedAsync();
     object.loadMissingReferences();
-    return object;
+    return object as any;
   }
 
   public async createObject(
-    data: Omit<IsData<InstanceOf<T>>, "_id">,
-  ): Promise<AutoUpdated<T>> {
+    data: Omit<IsData<DeAutoUpdateClient<T>>, "_id">,
+  ) {
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
 
     try {
-      const object = await createAutoUpdatedClass(
+      const object = new this.classParam(
         this.classParam,
-        this.className,
         this.socket,
         data as any,
         this.loggers,
+        this.className,
         this,
-        this.emitter,
         this.callbacks,
+        this.emitter,
       );
       await object.isPreLoadedAsync();
       object.loadMissingReferences();
-      this.objects_[object._id] = object;
+      this.objects_[object._id] = object as any;
       return object;
     } catch (error: any) {
       this.loggers.error(

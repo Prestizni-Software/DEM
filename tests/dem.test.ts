@@ -6,7 +6,8 @@ import { Test, Test2 } from "../ServerTypes.js";
 import { AUCManagerFactory } from "../AutoUpdateClientManagerClass.js";
 import { classProp, classRef } from "../CommonTypes.js";
 import { io } from "socket.io-client";
-
+import '@jest/globals'
+import { AutoUpdatedClientObject } from "../AutoUpdatedClientObjectClass.js";
 await mongoose.connect("mongodb://localhost:27017/GeoDB", {
   timeoutMS: 5000,
 });
@@ -349,7 +350,7 @@ describe("Server ", () => {
   }, 1000);
 
   test("Creating manager with an invalid type", async () => {
-    class Test3 {
+    class Test3 extends AutoUpdatedClientObject<any> {
       @classProp
       public _id!: string;
 

@@ -23,7 +23,7 @@ export type LoggersType = {
   warn: (s: string) => void;
 };
 
-export type IsData<T> = T extends { _id: any } ? T : never;
+export type IsData<T> = T & { _id: any };
 
 export type SocketEvent = [string, any, (res: ServerResponse<any>) => void];
 
@@ -85,15 +85,10 @@ export type Split<S extends string> = S extends `${infer L}.${infer R}`
   : [S];
 export type NonOptional<T> = Exclude<T, null | undefined>;
 
-export type DeAutoUpdate<T> = T extends AutoUpdated<infer I>
-  ? I | string | T
-  : T;
-
 export type PathValueOf<
   T,
   P extends string,
-  Depth extends number = 6
-> = PathValue<DeAutoUpdate<InstanceOf<T>>, Split<P>, Depth>;
+> = PathValue<T, Split<P>>;
 
 // ---------------------- PathValueOf ----------------------
 
@@ -110,13 +105,13 @@ export type PathValue<
         ? Rest extends string[]
           ? Rest["length"] extends 0
             ? T[K] extends (infer A)[]
-              ? DeAutoUpdate<A>[] | DeAutoUpdate<A>
-              : DeAutoUpdate<T[K]>
+              ? A[] | A
+              : T[K]
             : PathValue<T[K], Rest, Prev[Depth]>
           : never
         : never
       : never
-    : DeAutoUpdate<T>
+    : T
   : never; // ---------------------- Paths ----------------------
 export type Paths<
   T,
@@ -139,4 +134,12 @@ type PathsHelper<
 > = Recurseable<V> extends never
   ? `${K}`
   : `${K}` | Join<K, Paths<NonOptional<V>, Prev[Depth], OriginalDepth>>;
-export type AutoUpdated<T> = AutoUpdatedClientObject<T> & UnboxConstructor<T>;
+  
+export type DeAutoUpdateClient<T> = T extends AutoUpdatedClientObject<infer U>
+  ? U
+  : T;
+
+    export type OnlyAddedKeys<Sub, Parent> = Pick<
+  Sub, Exclude<keyof Sub, keyof Omit<Parent, "_id">>
+>;
+

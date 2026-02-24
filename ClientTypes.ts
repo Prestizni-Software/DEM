@@ -1,9 +1,9 @@
-import { AutoUpdated } from "./CommonTypes.js";
+import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
 import { classProp, classRef, populatedRef } from "./CommonTypes.js";
 import { Status, Objekt } from "./TestTypes.js";
 
 
-export class Test {
+export class Test extends AutoUpdatedClientObject<any> {
   @classProp
   public _id!: string;
 
@@ -18,21 +18,21 @@ export class Test {
 
   @classProp
   @classRef()
-  public ref!: AutoUpdated<Test> | null;
+  public ref!: Test | null;
 
   @classProp
   @classRef()
-  public refarr!: AutoUpdated<Test>[];
+  public refarr!: Test[];
 
   @classProp
   public obj!: Objekt | null;
 
   @classProp
   @populatedRef("Test:refarr")
-  public parent!: AutoUpdated<Test> | null;
+  public parent!: Test | null;
 }
 
-export class Test2 {
+export class Test2 extends AutoUpdatedClientObject<any> {
   @classProp
   public _id!: string;
 }

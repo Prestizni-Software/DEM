@@ -8,14 +8,16 @@ import { ObjectId } from "mongodb";
 import { DefaultEventsMap, Server } from "socket.io";
 import {
   Constructor,
-  UnboxConstructor,
   LoggersType,
   EventEmitter3,
   IsData,
   InstanceOf,
-  Prev,
 } from "./CommonTypes.js";
-import { Paths, PathValueOf, UnwrapRef } from "./CommonTypes_server.js";
+import {
+  DeAutoUpdateServer,
+  Paths,
+  PathValueOf,
+} from "./CommonTypes_server.js";
 import { DocumentType } from "@typegoose/typegoose";
 
 type SocketType = Server<
@@ -25,78 +27,74 @@ type SocketType = Server<
   any
 >;
 
-export type AutoUpdated<T, D extends number = 10> = AutoUpdatedServerObject<
-  UnboxConstructor<T>
-> &
-  UnwrapRef<UnboxConstructor<T>, Prev[D]>;
-
-export async function createAutoUpdatedClass<C extends Constructor<any>>(
-  classParam: C,
+export async function createAutoUpdatedClass<
+  C extends AutoUpdatedServerObject<any>,
+>(
+  classParam: Constructor<C>,
   className: string,
   socket: SocketType,
   data: IsData<InstanceOf<C>>,
   loggers: LoggersType,
   parentManager: AutoUpdateServerManager<any>,
   emitter: EventEmitter3,
-): Promise<AutoUpdated<C>> {
-  const instance = new AutoUpdatedServerObject<C>(
+): Promise<C> {
+  const instance = new classParam(
+    classParam,
     socket,
     data,
     loggers,
-    Reflect.getMetadata("props", classParam.prototype) as (keyof C)[],
     className,
-    classParam,
     parentManager,
     emitter,
   );
   await instance.loadFromDB();
   await instance.isPreLoadedAsync();
-  return instance as AutoUpdated<C>;
+  return instance;
 }
 
 // ---------------------- Class ----------------------
-class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
+export abstract class AutoUpdatedServerObject<
+  T extends AutoUpdatedServerObject<T>,
+> extends AutoUpdatedClientObject<T> {
   protected override readonly isServer: boolean = true;
   private entry: DocumentType<InstanceOf<T>>;
   declare public parentManager: AutoUpdateServerManager<any>;
 
   constructor(
+    classParam: Constructor<T>,
     socket: SocketType,
-    data: IsData<T>,
+    data: IsData<DeAutoUpdateServer<T>>,
     loggers: LoggersType,
-    properties: (keyof T)[],
     className: string,
-    classProp: Constructor<T>,
     parentManager: AutoUpdateServerManager<any>,
     emitter: EventEmitter3,
   ) {
     super(
+      classParam,
       socket as any,
-      data,
+      data as any,
       loggers,
-      properties,
       className,
-      classProp,
       parentManager,
       {
-        update: (x:any) => {},
-        delete: (x:any) => {},
-        new: (x:any) => {},
+        update: (x: any) => {},
+        delete: (x: any) => {},
+        new: (x: any) => {},
       },
       emitter,
       true,
     );
-    for (const prop of properties) {
+    for (const prop of this.properties) {
       if (typeof prop !== "string") continue;
-      const isRef = getMetadataRecursive("isRef", classProp.prototype, prop);
-      if (isRef && this.data[prop]) {
-        this.data[prop] = Array.isArray(this.data[prop])
-          ? this.data[prop]
+      const isRef = getMetadataRecursive("isRef", this, prop);
+      if (isRef && (this.data as any)[prop]) {
+        (this.data as any)[prop] = Array.isArray((this.data as any)[prop])
+          ? (this.data as any)[prop]
               .map((item: any) =>
                 item ? new ObjectId(item as string | ObjectId) : null,
               )
               .filter(Boolean)
-          : (new ObjectId(this.data[prop] as string | ObjectId) as any);
+          : (new ObjectId((this.data as any)[prop] as string | ObjectId) as any);
       }
     }
     this.parentManager = parentManager;
@@ -105,26 +103,22 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
 
   public async loadFromDB() {
     try {
-      this.entry = await this.parentManager.managers[
+      this.entry = (await this.parentManager.managers[
         this.className
       ].model.findOne({
         _id: this.data._id,
-      });
+      }))!;
       if (!this.entry) {
         this.entry = await this.parentManager.managers[
           this.className
         ].model.create(this.data);
         for (const prop of this.properties) {
-          const pointer = getMetadataRecursive(
-            "refsTo",
-            this.classProp.prototype,
-            prop.toString(),
-          );
-          if (!pointer || !this.data[prop]) continue;
+          const pointer = getMetadataRecursive("refsTo", this, prop.toString());
+          if (!pointer || !(this.data as any)[prop]) continue;
           this.data["_id"] = this.entry._id;
           await this.createdWithParent(
             pointer.split(":"),
-            (this.data[prop] as any).toString(),
+            (this.data as any)[prop].toString(),
           );
         }
       }
@@ -144,7 +138,7 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
   ): Promise<{ success: boolean; msg: string }> {
     return await this.setValue__(key, val);
   }
-  protected handleNewObject(_data: IsData<T>) {
+  protected handleNewObject(_data: any) {
     throw new Error("Cannot create new objects like this.");
   }
   protected async setValueInternal(
@@ -212,11 +206,8 @@ class AutoUpdatedServerObject<T> extends AutoUpdatedClientObject<T> {
 
   public override async onUpdate(noUpdate: boolean = false) {
     if (noUpdate) return;
-    await this.parentManager.options?.onUpdate?.(
-      this,
-      (a, b) => {
-        return this.setValue__(a, b, false, true, true);
-      },
-    );
+    await this.parentManager.options?.onUpdate?.(this, (a: any, b: any) => {
+      return this.setValue__(a, b, false, true, true);
+    });
   }
 }

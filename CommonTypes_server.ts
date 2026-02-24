@@ -10,7 +10,7 @@ import {
   StripPrototypePrefix,
 } from "./CommonTypes.js";
 import { Types } from "mongoose";
-import { AutoUpdated } from "./AutoUpdatedServerObjectClass.js";
+import { AutoUpdatedServerObject } from "./AutoUpdatedServerObjectClass.js";
 
 // ---------------------- DeRef ----------------------
 export type NonOptional<T> = Exclude<T, null | undefined>;
@@ -19,8 +19,8 @@ export type DeRef<T> = {
   [K in keyof T]: T[K] extends Ref<infer U>
     ? U
     : T[K] extends Ref<infer U> | null | undefined
-    ? U
-    : T[K];
+      ? U
+      : T[K];
 };
 
 export type RefToId<T> = {
@@ -30,7 +30,7 @@ export type RefToId<T> = {
 export type Paths<
   T,
   Depth extends number = 5,
-  OriginalDepth extends number = Depth
+  OriginalDepth extends number = Depth,
 > = Depth extends never
   ? never
   : {
@@ -45,57 +45,61 @@ type PathsHelper<
   K extends string,
   V,
   Depth extends number,
-  OriginalDepth extends number
-> = Recurseable<V> extends never
-  ? `${K}`
-  : `${K}` | Join<K, Paths<DeRef<NonOptional<V>>, Prev[Depth], OriginalDepth>>;
+  OriginalDepth extends number,
+> =
+  Recurseable<V> extends never
+    ? `${K}`
+    :
+        | `${K}`
+        | Join<K, Paths<DeRef<NonOptional<V>>, Prev[Depth], OriginalDepth>>;
 
 // ---------------------- PathValueOf ----------------------
 export type ResolveRef<T> = T extends (infer A)[]
   ? ResolveRef<A>[]
   : T extends Ref<infer U>
-  ? AutoUpdated<Constructor<U>> | Types.ObjectId | string
-  : T;
+    ? U | Types.ObjectId | string
+    : T;
 
 export type PathValue<
   T,
   Parts extends string[],
-  Depth extends number = 5
+  Depth extends number = 5,
 > = Depth extends 0
   ? never
   : // Distribute over unions in T
-  T extends unknown
-  ? Parts extends [infer K, ...infer Rest]
-    ? K extends string
-      ? K extends keyof T
-        ? Rest extends string[]
-          ? ResolveRef<
-              Rest["length"] extends 0
-                ? T[K] extends (infer A)[]
-                  ? A[] | A
-                  : T[K]
-                : PathValue<T[K], Rest, Prev[Depth]>
-            >
+    T extends unknown
+    ? Parts extends [infer K, ...infer Rest]
+      ? K extends string
+        ? K extends keyof T
+          ? Rest extends string[]
+            ? ResolveRef<
+                Rest["length"] extends 0
+                  ? T[K] extends (infer A)[]
+                    ? A[] | A
+                    : T[K]
+                  : PathValue<T[K], Rest, Prev[Depth]>
+              >
+            : never
           : never
         : never
-      : never
-    : ResolveRef<T>
-  : never;
+      : ResolveRef<T>
+    : never;
 
 export type PathValueOf<
   T,
   P extends string,
-  Depth extends number = 6
+  Depth extends number = 6,
 > = PathValue<InstanceOf<T>, Split<P>, Depth>;
 
-export type UnwrapRef<T, D extends number = 10> = D extends 0
-  ? T
-  : T extends (infer A)[]
-  ? UnwrapRef<A, Prev[D]>[]
+export type UnwrapRef<T> = T extends (infer A)[]
+  ? UnwrapRef<A>[]
   : T extends Ref<infer U>
-  ? Exclude<U, Types.ObjectId> extends never
-    ? never
-    : AutoUpdated<Exclude<U, Types.ObjectId>, D>
-  : T extends object
-  ? { [K in keyof T]: K extends "_id" ? T[K] : UnwrapRef<T[K], Prev[D]> }
-  : T;
+    ? Exclude<U, Types.ObjectId> extends never
+      ? never
+      : Exclude<U, Types.ObjectId>
+    : T extends object
+      ? { [K in keyof T]: K extends "_id" ? T[K] : UnwrapRef<T[K]> }
+      : T;
+
+export type DeAutoUpdateServer<T> =
+  T extends AutoUpdatedServerObject<infer U> ? U : T;
