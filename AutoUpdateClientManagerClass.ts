@@ -6,32 +6,33 @@ import {
 } from "./AutoUpdatedClientObjectClass.js";
 import {
   Constructor,
-  DeAutoUpdateClient,
-  InstanceOf,
+  DeAutoUpdate,
   IsData,
   LoggersType,
+  Pure,
   ServerResponse,
 } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
 export type WrappedInstances<
-  T extends Record<string, Constructor<AutoUpdatedClientObject<any>
->>> = {
-  [K in keyof T]: AutoUpdateClientManager<InstanceOf<T[K]>>;
+  T extends Record<string, Constructor<AutoUpdatedClientObject<any>>>,
+> = {
+  [K in keyof T]: AutoUpdateClientManager<InstanceType<T[K]>>;
 };
+
 // ---------------------- Factory ----------------------
 export async function AUCManagerFactory<
-  T extends Record<string, Constructor<AutoUpdatedClientObject<any>
->>>(
+  T extends Record<string, Constructor<AutoUpdatedClientObject<any>>>,
+>(
   defs: T,
   loggers: LoggersType,
   socket: Socket,
   disableDEMDebugMessages: boolean = false,
   emitter: EventEmitter = new EventEmitter(),
   callbacks: Partial<{
-    [K in keyof T]: Partial<DEMClientCallbacks<InstanceOf<T[K]>>>;
+    [K in keyof T]: Partial<DEMClientCallbacks<InstanceType<T[K]>>>;
   }> = {},
 ): Promise<WrappedInstances<T>> {
-  const defaultCallbacks: DEMClientCallbacks<any> = {
+  const defaultCallbacks: DEMClientCallbacks<AutoUpdatedClientObject<any>> = {
     new: (x: any) => {},
     update: (x: any, y: any) => {},
     delete: (x: any) => {},
@@ -130,11 +131,13 @@ export async function AUCManagerFactory<
 }
 
 export class AutoUpdateClientManager<
-  T extends AutoUpdatedClientObject<T>,
+  T extends AutoUpdatedClientObject<any>,
 > extends AutoUpdateManager<T> {
   protected objects_: { [_id: string]: T } = {};
   public readonly managers: Record<string, AutoUpdateClientManager<any>>;
   public callbacks: DEMClientCallbacks<T>;
+  private readonly missingObjects_: string[] = [];
+  declare public socket: Socket;
   constructor(
     classParam: Constructor<T>,
     className: string,
@@ -243,10 +246,10 @@ export class AutoUpdateClientManager<
                 this,
                 this.callbacks,
                 this.emitter,
-              ) as any;
+              );
               this.loggers.debug(
                 "Loading object " + id + " from manager " + this.className,
-              )
+              );
             } catch (error: any) {
               this.loggers.error(
                 "Error loading object " +
@@ -340,7 +343,15 @@ export class AutoUpdateClientManager<
   }
 
   public getObject(_id?: string): T | null {
-    return _id ? this.objects_[_id] : null;
+    if (!_id) return null;
+    if (this.missingObjects_.includes(_id)) return null;
+    if (this.objects_[_id]) return this.objects_[_id];
+    this.handleGetMissingObject(_id)
+      .then((obj) =>
+        obj ? (this.objects_[_id] = obj) : this.missingObjects_.push(_id),
+      )
+      .catch((_) => this.missingObjects_.push(_id));
+    return null;
   }
 
   public get objects(): { [_id: string]: T } {
@@ -351,11 +362,27 @@ export class AutoUpdateClientManager<
     return Object.values(this.objects_);
   }
 
-  protected async handleGetMissingObject(_id: string): Promise<T> {
+  public async handleGetMissingObject(_id: string): Promise<T> {
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug(
       "Getting missing object " + _id + " from manager " + this.className,
     );
+    if (this.objects_[_id]) return this.objects_[_id];
+    if (
+      await new Promise((resolve, _) =>
+        this.socket.emit(
+          "startup" + this.className,
+          null,
+          async (
+            res: ServerResponse<{ ids: string[]; properties: string[] }>,
+          ) => {
+            if (res.success && res.data.ids.includes(_id)) resolve(true);
+            resolve(false);
+          },
+        ),
+      )
+    )
+      throw new Error("Non existent or not accesable.");
     const object = new this.classParam(
       this.classParam,
       this.socket,
@@ -368,11 +395,11 @@ export class AutoUpdateClientManager<
     );
     await object.isPreLoadedAsync();
     object.loadMissingReferences();
-    return object as any;
+    return object;
   }
 
   public async createObject(
-    data: Omit<IsData<DeAutoUpdateClient<T>>, "_id">,
+    data: Omit<IsData<Pure<T>>, keyof AutoUpdatedClientObject<any> | "_id">,
   ) {
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
@@ -381,7 +408,7 @@ export class AutoUpdateClientManager<
       const object = new this.classParam(
         this.classParam,
         this.socket,
-        data as any,
+        data,
         this.loggers,
         this.className,
         this,
@@ -389,8 +416,9 @@ export class AutoUpdateClientManager<
         this.emitter,
       );
       await object.isPreLoadedAsync();
+      object.contactChildren();
       object.loadMissingReferences();
-      this.objects_[object._id] = object as any;
+      this.objects_[object._id] = object;
       return object;
     } catch (error: any) {
       this.loggers.error(

@@ -1,3 +1,8 @@
+
+import { Pure } from "./CommonTypes.js";
+import { AutoUpdatedServerObject } from "./AutoUpdatedServerObjectClass.js";
+import { Paths } from "./CommonTypes_server.js";
+import { Test } from "./ServerTypes.js";
 import { Status } from "./TestTypes.js";
 import { initServerManagers } from "./test_lib.js";
 
@@ -26,30 +31,29 @@ const obj2 = await managers.Test.createObject({
   ref: null,
   refarr: [],
   obj: null,
-  parent: obj1._id,
+  parent: obj1,
 });
-
+const x = [obj1, obj2._id, obj2._id.toString()];
 const obj3 = await managers.Test.createObject({
   active: true,
   status: Status.INACTIVE,
   description: "Obj3",
-  ref: null,
-  refarr: [],
+  ref: obj1._id,
+  refarr: [obj1._id, obj2],
   obj: null,
   parent: null,
 });
 
 if (!obj1 || !obj2) throw new Error("No obj");
-await obj2.setValue_("parent", obj2);
 
-await obj2.setValue_("refarr", [obj1._id]);
+await obj2.setValue_("refarr", [obj1._id.toString()]);
 
 await obj1.setValue_("rfrr" as any, true);
 await obj1.setValue_("active", false);
 await obj1.setValue_("obj._id", "1");
 await obj1.setValue_("obj", { _id: "1", obj: { _id: "2" } });
 await obj1.setValue_("obj._id", "gay");
-await obj1.setValue_("ref", obj2._id);
+await obj1.setValue_("ref", obj2._id.toString());
 await obj1.setValue_("ref.description", obj2._id.toString());
 
 const refarr = obj1.refarr;
@@ -60,3 +64,4 @@ await obj1.setValue_(
   refarr
 );
 await obj1.setValue_("active", false);
+obj1.extractedData

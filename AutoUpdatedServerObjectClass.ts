@@ -13,12 +13,9 @@ import {
   IsData,
   InstanceOf,
 } from "./CommonTypes.js";
-import {
-  DeAutoUpdateServer,
-  Paths,
-  PathValueOf,
-} from "./CommonTypes_server.js";
+import { Paths, PathValueOf } from "./CommonTypes_server.js";
 import { DocumentType } from "@typegoose/typegoose";
+import { Types } from "mongoose";
 
 type SocketType = Server<
   DefaultEventsMap,
@@ -28,12 +25,12 @@ type SocketType = Server<
 >;
 
 export async function createAutoUpdatedClass<
-  C extends AutoUpdatedServerObject<any>,
+  C extends AutoUpdatedServerObject<C>,
 >(
   classParam: Constructor<C>,
   className: string,
   socket: SocketType,
-  data: IsData<InstanceOf<C>>,
+  data: IsData<C>,
   loggers: LoggersType,
   parentManager: AutoUpdateServerManager<any>,
   emitter: EventEmitter3,
@@ -54,21 +51,56 @@ export async function createAutoUpdatedClass<
 
 // ---------------------- Class ----------------------
 export abstract class AutoUpdatedServerObject<
-  T extends AutoUpdatedServerObject<T>,
+  T,
 > extends AutoUpdatedClientObject<T> {
   protected override readonly isServer: boolean = true;
-  private entry: DocumentType<InstanceOf<T>>;
-  declare public parentManager: AutoUpdateServerManager<any>;
+  protected entry: DocumentType<InstanceOf<T>>;
+  declare public parentManager: AutoUpdateServerManager<
+    AutoUpdatedServerObject<T>
+  >;
 
+  constructor();
   constructor(
     classParam: Constructor<T>,
     socket: SocketType,
-    data: IsData<DeAutoUpdateServer<T>>,
+    data: IsData<T>,
     loggers: LoggersType,
     className: string,
     parentManager: AutoUpdateServerManager<any>,
     emitter: EventEmitter3,
+  );
+  constructor(
+    classParam?: Constructor<T>,
+    socket?: SocketType,
+    data?: IsData<T>,
+    loggers?: LoggersType,
+    className?: string,
+    parentManager?: AutoUpdateServerManager<any>,
+    emitter?: EventEmitter3,
   ) {
+    if (
+      !classParam ||
+      !socket ||
+      !data ||
+      !loggers ||
+      !className ||
+      !parentManager ||
+      !emitter
+    ) {
+      if (
+        !classParam &&
+        !socket &&
+        !data &&
+        !loggers &&
+        !className &&
+        !parentManager &&
+        !emitter
+      ) {
+        super();
+        this.entry = undefined as any;
+        return;
+      } else throw new Error("Missing arguments???");
+    }
     super(
       classParam,
       socket as any,
@@ -94,7 +126,9 @@ export abstract class AutoUpdatedServerObject<
                 item ? new ObjectId(item as string | ObjectId) : null,
               )
               .filter(Boolean)
-          : (new ObjectId((this.data as any)[prop] as string | ObjectId) as any);
+          : (new ObjectId(
+              (this.data as any)[prop] as string | ObjectId,
+            ) as any);
       }
     }
     this.parentManager = parentManager;
@@ -132,12 +166,13 @@ export abstract class AutoUpdatedServerObject<
     }
   }
 
-  public async setValue_<K extends Paths<T>>(
+  public async setValue_<K extends Paths<T, AutoUpdatedServerObject<T>>>(
     key: K,
-    val: PathValueOf<T, K>,
+    val: PathValueOf<IsData<T>, K>,
   ): Promise<{ success: boolean; msg: string }> {
     return await this.setValue__(key, val);
   }
+
   protected handleNewObject(_data: any) {
     throw new Error("Cannot create new objects like this.");
   }

@@ -10,8 +10,9 @@ import {
   ServerResponse,
   ServerUpdateRequest,
   Paths,
-  DeAutoUpdateClient,
+  DeAutoUpdate,
   OnlyAddedKeys,
+  ExtractedData,
 } from "./CommonTypes.js";
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
@@ -25,11 +26,19 @@ export type DEMClientCallbacks<T> = {
 
 type SocketType = Socket<any, any>;
 
-export abstract class AutoUpdatedClientObject<
-  T extends AutoUpdatedClientObject<T>,
-> {
+export abstract class AutoUpdatedClientObject<T> {
+  //From server type for overlapping keys
+
+  protected entry: any;
+  public preLoad: any;
+  public registerSocket: any;
+  public readyLoggers: any;
+  public loadFromDB(a: any): any {}
+  public setValue_(a: any, b: any): any {}
+  //-*--
+
   protected readonly socket: SocketType;
-  protected data: IsData<DeAutoUpdateClient<T>>;
+  protected data: IsData<T>;
   protected readonly isServer: boolean = false;
   public abstract readonly _id: any;
   protected readonly loggers: LoggersType = {
@@ -46,11 +55,11 @@ export abstract class AutoUpdatedClientObject<
   >)[];
   public readonly classParam: Constructor<T>;
   public readonly className: string;
-  public parentManager: AutoUpdateManager<any>;
+  public parentManager: AutoUpdateManager<AutoUpdatedClientObject<T>>;
   protected isLoadingReferences = true;
   private readonly EmitterID = new ObjectId().toHexString();
   protected readonly toChangeOnParents: { key: string; value: any }[] = [];
-  protected callbacks: DEMClientCallbacks<DeAutoUpdateClient<T>>;
+  protected callbacks: DEMClientCallbacks<T>;
   private referencesLoaded = false;
   private readonly loadShit = async (): Promise<void> => {
     if (this.isLoaded) {
@@ -93,17 +102,61 @@ export abstract class AutoUpdatedClientObject<
     this.callbacks.new(this as any);
   };
 
+  constructor();
   constructor(
     classParam: Constructor<T>,
     socket: SocketType,
-    data: string | IsData<DeAutoUpdateClient<T>>,
+    data: string | IsData<T>,
     loggers: LoggersType,
     className: string,
     parentManager: AutoUpdateManager<any>,
-    callback: DEMClientCallbacks<DeAutoUpdateClient<T>>,
+    callback: DEMClientCallbacks<T>,
     emitter: EventEmitter3,
-    isServer = false,
+    isServer?: boolean,
+  );
+  constructor(
+    classParam?: Constructor<T>,
+    socket?: SocketType,
+    data?: string | IsData<T>,
+    loggers?: LoggersType,
+    className?: string,
+    parentManager?: AutoUpdateManager<any>,
+    callback?: DEMClientCallbacks<T>,
+    emitter?: EventEmitter3,
+    isServer: boolean = false,
   ) {
+    if (
+      !classParam ||
+      !socket ||
+      !data ||
+      !loggers ||
+      !className ||
+      !parentManager ||
+      !callback ||
+      !emitter
+    ) {
+      this.classParam = classParam as any;
+      this.socket = socket as any;
+      this.data = data as any;
+      this.loggers = loggers as any;
+      this.className = className as any;
+      this.parentManager = parentManager as any;
+      this.callbacks = callback as any;
+      this.emitter = emitter as any;
+      this.properties = undefined as any;
+      if (
+        !classParam &&
+        !socket &&
+        !data &&
+        !loggers &&
+        !className &&
+        !parentManager &&
+        !callback &&
+        !emitter
+      )
+        return;
+      else throw new Error("Missing arguments???");
+    }
     this.classParam = classParam;
     if (typeof data !== "string" && data._id) {
       processIsRefProperties(data, this, undefined, [], loggers);
@@ -167,7 +220,7 @@ export abstract class AutoUpdatedClientObject<
     if (typeof data === "string") {
       if (this.isServer) {
         this.isLoading = false;
-        this.data = { _id: data } as IsData<DeAutoUpdateClient<T>>;
+        this.data = { _id: data } as IsData<T>;
         return;
       }
       if (!data || data === "" || data === "undefined") {
@@ -187,7 +240,7 @@ export abstract class AutoUpdatedClientObject<
       this.socket.emit(
         "get" + this.className + data,
         null,
-        (res: ServerResponse<DeAutoUpdateClient<T>>) => {
+        (res: ServerResponse<T>) => {
           if (!res.success) {
             this.isLoading = false;
             this.loggers.error(
@@ -196,16 +249,16 @@ export abstract class AutoUpdatedClientObject<
             this.emitter.emit("pre-loaded" + this.EmitterID);
             return;
           }
-          this.data = res.data as IsData<DeAutoUpdateClient<T>>;
+          this.data = res.data as IsData<T>;
           this.isLoading = false;
           this.emitter.emit("pre-loaded" + this.EmitterID);
           this.openSockets();
         },
       );
-      this.data = { _id: data } as IsData<DeAutoUpdateClient<T>>;
+      this.data = { _id: data } as IsData<T>;
     } else {
       this.isLoading = true;
-      this.data = data as any;
+      this.data = data;
       const dataKeys = Object.keys(data);
       for (const key of this.properties) {
         if (typeof key !== "string")
@@ -217,12 +270,12 @@ export abstract class AutoUpdatedClientObject<
         if (isRef) {
           if (Array.isArray(this.data[key])) {
             this.data[key] = this.data[key].map(
-              (obj: any) => obj._id?.toString() ?? obj?.toString(),
+              (obj) => obj._id?.toString() ?? obj?.toString(),
             ) as any;
           } else {
             this.data[key] =
               (this.data[key] as any)?._id?.toString() ??
-              (this.data[key] as any)?.toString();
+              (this.data[key])?.toString();
           }
         }
       }
@@ -237,7 +290,7 @@ export abstract class AutoUpdatedClientObject<
         );
 
       if ((!this.data._id || this.data._id === "") && !this.isServer)
-        this.handleNewObject(data as any);
+        this.handleNewObject(data);
       else {
         this.isLoading = false;
         if (!this.isServer) this.openSockets();
@@ -246,7 +299,7 @@ export abstract class AutoUpdatedClientObject<
     this.generateSettersAndGetters();
   }
 
-  protected handleNewObject(data: IsData<DeAutoUpdateClient<T>>) {
+  protected handleNewObject(data: IsData<T>) {
     this.isLoading = true;
     if (!this.className)
       throw new Error(
@@ -278,14 +331,14 @@ export abstract class AutoUpdatedClientObject<
     this.socket.emit(
       "new" + this.className,
       data,
-      (res: ServerResponse<DeAutoUpdateClient<T>>) => {
+      (res: ServerResponse<T>) => {
         if (!res.success) {
           this.isLoading = false;
           this.loggers.error("Could not create data on server: " + res.message);
           this.emitter.emit("pre-loaded" + this.EmitterID, true, res.message);
           return;
         }
-        this.data = res.data as IsData<DeAutoUpdateClient<T>>;
+        this.data = res.data as IsData<T>;
         this.isLoading = false;
         this.loggers.debug("Created new object: " + this.data._id);
         this.emitter.emit("pre-loaded" + this.EmitterID);
@@ -294,13 +347,7 @@ export abstract class AutoUpdatedClientObject<
     );
   }
 
-  public get extractedData(): {
-    [K in keyof DeAutoUpdateClient<T>]: DeAutoUpdateClient<T>[K];
-  } extends { prototype: infer U }
-    ? U
-    : {
-        [K in keyof DeAutoUpdateClient<T>]: DeAutoUpdateClient<T>[K];
-      } {
+  public get extractedData(): ExtractedData<T, AutoUpdatedClientObject<T>> {
     const extracted = processIsRefProperties(
       this.data,
       this,
@@ -332,20 +379,17 @@ export abstract class AutoUpdatedClientObject<
 
   private openSockets() {
     const event = "update" + this.className + this.data._id.toString();
-    this.socket.on(
-      event,
-      async (update: ServerUpdateRequest<DeAutoUpdateClient<T>>) => {
-        await this.handleUpdateRequest(update);
-      },
-    );
+    this.socket.on(event, async (update: ServerUpdateRequest<T>) => {
+      await this.handleUpdateRequest(update);
+    });
   }
 
   private async handleUpdateRequest(
-    update: ServerUpdateRequest<DeAutoUpdateClient<T>>,
+    update: ServerUpdateRequest<T>,
   ): Promise<ServerResponse<undefined>> {
     try {
       await this.setValue__(update.key, update.value, true);
-      this.loggers.debug(`Applied patch ${update.key} set to ${update.value}`);
+      this.loggers.debug(`Applied patch ${update.key} set to ${JSON.stringify(update.value)}`);
 
       // Return success with the applied patch
       return { success: true, data: undefined, message: "" };
@@ -367,7 +411,7 @@ export abstract class AutoUpdatedClientObject<
     for (const key of this.properties) {
       if (typeof key !== "string") return;
 
-      const k = key as keyof IsData<DeAutoUpdateClient<T>>;
+      const k = key as keyof IsData<T>;
       const isRef = getMetadataRecursive("isRef", this, key);
 
       Object.defineProperty(this, key, {
@@ -375,7 +419,7 @@ export abstract class AutoUpdatedClientObject<
           if (isRef) {
             if (Array.isArray(this.data[k])) {
               const filtered = this.data[k]
-                .map((id: string) => this.findReference(id))
+                .map(async (id: string) => this.findReference(id))
                 .filter(Boolean);
               if (
                 filtered.length !== this.data[k].length &&
@@ -383,24 +427,19 @@ export abstract class AutoUpdatedClientObject<
               )
                 this.data[k] = filtered.map(
                   (obj: any) => obj._id?.toString() ?? obj.toString(),
-                ) as any;
+                );
 
               return filtered;
             } else {
-              const result = this.findReference(this.data[k] as any);
+              const result = this.findReference(this.data[k]);
               if (!result && this.data[k] && this.parentManager.isLoaded)
                 this.data[k] = undefined!;
               return result;
             }
           } else return this.data[k];
         },
-        set: () => {
-          throw new Error(
-            `Cannot set ${key} this way, use "setValue" function.`,
-          );
-        },
         enumerable: true,
-        configurable: true,
+        configurable: false,
       });
     }
   }
@@ -414,15 +453,14 @@ export abstract class AutoUpdatedClientObject<
     return undefined;
   }
 
-  public async setValue<K extends Paths<InstanceOf<DeAutoUpdateClient<T>>>>(
+  public async setValue<K extends Paths<T, AutoUpdatedClientObject<T>>>(
     key: K,
-    val: PathValueOf<DeAutoUpdateClient<T>, K>,
+    val: PathValueOf<IsData<T>, K>,
   ): Promise<{ success: boolean; msg: string }> {
     const result = await this.setValue__(key, val);
     if (this.isLoaded) this.callbacks.update(this as any, key);
     return result;
   }
-
   protected async setValue__(
     key: any,
     val: any,
@@ -445,7 +483,7 @@ export abstract class AutoUpdatedClientObject<
       const path = key.split(".");
       let obj = this.data as any;
       let lastClass = this as any;
-      let lastPath = path[0] as string;
+      let lastPath = path[0];
       for (let i = 0; i < path.length - 1; i++) {
         if (
           typeof obj[path[i]] === "string" ||
@@ -453,7 +491,9 @@ export abstract class AutoUpdatedClientObject<
         ) {
           let temp;
           try {
-            temp = this.resolveReference(obj[path[i]]?.toString()) as any;
+            temp = (await this.resolveReference(
+              obj[path[i]]?.toString(),
+            )) as any;
           } catch (error: any) {
             message +=
               "\n Error: likely undefined property on path: " +
@@ -627,7 +667,7 @@ export abstract class AutoUpdatedClientObject<
         ref[last.at(-1)!] = val;
       }
       if (!noUpdate) await this.onUpdate(noUpdate);
-      this.findAndLoadReferences(lastPath, val);
+      await this.findAndLoadReferences(lastPath, val);
       const isRef = getMetadataRecursive("isRef", this, path.at(-1));
       if (isRef && this.parentManager.isLoaded) {
         this.contactChildren();
@@ -696,7 +736,7 @@ export abstract class AutoUpdatedClientObject<
     return { res, val };
   }
 
-  private findAndLoadReferences(lastPath: string, value: any) {
+  private async findAndLoadReferences(lastPath: string, value: any) {
     const isRef = getMetadataRecursive("isRef", this, lastPath);
     if (isRef) {
       for (const id of Array.isArray(value) ? value : [value]) {
@@ -706,15 +746,23 @@ export abstract class AutoUpdatedClientObject<
           if (result) break;
         }
         if (!result) {
-          this.loggers.warn(
-            "Failed to update childerns parent for " +
-              this.className +
-              " updating " +
-              id +
-              "'s parent to " +
-              this.data._id,
-          );
-          continue;
+          for (const manager of Object.values(this.parentManager.managers)) {
+            try {
+              result = await manager.handleGetMissingObject(id?.toString());
+              if (result) break;
+            } catch (error) {
+              const _ = error;
+            }
+          }
+          if (!result)
+            this.loggers.warn(
+              "Failed to update childerns parent for " +
+                this.className +
+                " updating " +
+                id +
+                "'s parent to " +
+                this.data._id,
+            );
         }
         this.referencesLoaded = false;
         result.loadMissingReferences();
@@ -722,8 +770,9 @@ export abstract class AutoUpdatedClientObject<
     }
   }
 
-  public getValue(key: Paths<DeAutoUpdateClient<T>>) {
+  public getValue(key_: Paths<T, AutoUpdatedClientObject<T>>) {
     let value: any;
+    const key = key_ as string;
 
     for (const part of key.split(".")) {
       try {
@@ -751,10 +800,7 @@ export abstract class AutoUpdatedClientObject<
     silent: boolean = false,
     noUpdate: boolean = false,
   ): Promise<{ success: boolean; msg: string }> {
-    const update: ServerUpdateRequest<DeAutoUpdateClient<T>> = this.makeUpdate(
-      key,
-      value,
-    );
+    const update: ServerUpdateRequest<T> = this.makeUpdate(key, value);
     const promise = new Promise<{ success: boolean; msg: string }>(
       (resolve) => {
         if (silent) {
@@ -790,10 +836,7 @@ export abstract class AutoUpdatedClientObject<
     return promise;
   }
 
-  protected makeUpdate(
-    key: string,
-    value: any,
-  ): ServerUpdateRequest<DeAutoUpdateClient<T>> {
+  protected makeUpdate(key: string, value: any): ServerUpdateRequest<T> {
     try {
       const id = this.data._id.toString();
       return { _id: id, key, value } as any;
@@ -812,7 +855,9 @@ export abstract class AutoUpdatedClientObject<
 
   // return a properly typed AutoUpdatedClientClass (or null)
   // inside AutoUpdatedClientClass
-  protected resolveReference(id: string): AutoUpdatedClientObject<T> | null {
+  protected async resolveReference(
+    id: string,
+  ): Promise<AutoUpdatedClientObject<T> | null> {
     if (!this.parentManager) throw new Error("No Manager");
     for (const manager of Object.values(this.parentManager.managers)) {
       const data = manager.getObject(id);
@@ -872,10 +917,7 @@ export abstract class AutoUpdatedClientObject<
     }
   }
 
-  protected async createdWithParent(
-    pointer: string[],
-    parent: AutoUpdatedClientObject<T> | string,
-  ) {
+  protected async createdWithParent(pointer: string[], parent: T | string) {
     if (pointer.length !== 2) {
       throw new Error(
         "Invalid pointer: " +
@@ -1034,6 +1076,15 @@ export abstract class AutoUpdatedClientObject<
         } else this.getValue(prop as any)?.loadMissingReferences();
       }
     }
+  }
+
+  private getValueInternal(key: string | number | symbol) {
+    const keys = key.toString().split(".");
+    let value = this.data as any;
+    for (const k of keys) {
+      value = value[k];
+    }
+    return value;
   }
 }
 

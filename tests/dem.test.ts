@@ -36,7 +36,7 @@ const testServerObject2 = await serverManagers.Test.createObject({
   status: Status.ACTIVE,
   description: "TestObj2",
   ref: null,
-  refarr: [testServerObject1._id],
+  refarr: [testServerObject1],
   obj: {
     _id: "default",
     obj: { _id: "default" },
@@ -54,7 +54,7 @@ const testServerObject3 = await serverManagers.Test.createObject({
     _id: "default",
     obj: { _id: "default" },
   },
-  parent: testServerObject1._id,
+  parent: testServerObject1,
 });
 
 const clientManagers1 = await initClientManagers("Client1");
@@ -254,7 +254,7 @@ describe("Server ", () => {
 
   test("Setting parent value from client", async () => {
     console.error(testClient1Object2.parent?.description);
-    await testClient1Object2.setValue("parent", testClient1Object3._id);
+    await testClient1Object2.setValue("parent", testClient1Object3);
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(testServerObject2.parent?._id).toBe(
       testServerObject3._id

@@ -2,14 +2,15 @@ import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
 import {
   Constructor,
   EventEmitter3,
+  IsData,
   LoggersType,
 } from "./CommonTypes.js";
 import "reflect-metadata";
-export abstract class AutoUpdateManager<T extends AutoUpdatedClientObject<T>> {
-  protected abstract objects_: { [_id: string]: AutoUpdatedClientObject<T> };
+export abstract class AutoUpdateManager<T extends AutoUpdatedClientObject<any>> {
+  protected abstract objects_: { [_id: string]: T };
   protected isLoaded_ = false;
   public readonly socket: any;
-  protected classParam: Constructor<AutoUpdatedClientObject<T>>;
+  protected classParam: Constructor<T>;
   protected properties: (keyof T)[];
   public readonly className: string;
   public readonly managers: Record<string, AutoUpdateManager<any>>;
@@ -78,16 +79,16 @@ export abstract class AutoUpdateManager<T extends AutoUpdatedClientObject<T>> {
     return Object.keys(this.objects_);
   }
 
-  protected abstract handleGetMissingObject(
+  public abstract handleGetMissingObject(
     _id: string,
-  ): Promise<AutoUpdatedClientObject<T>>;
-  public abstract createObject(
-    data: Omit<any, "_id">,
-  ): Promise<AutoUpdatedClientObject<T>>;
-  public abstract getObject(_id: string): AutoUpdatedClientObject<T> | null;
+  ): Promise<T>;
+public abstract createObject(
+    data: Omit<any , "_id">,
+  ): Promise<T>;
+  public abstract getObject(_id: string): T | null;
   public abstract get objects(): {
-    [_id: string]: AutoUpdatedClientObject<T>;
+    [_id: string]: T;
   };
 
-  public abstract get objectsAsArray(): AutoUpdatedClientObject<T>[];
+  public abstract get objectsAsArray(): T[];
 }

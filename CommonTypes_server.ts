@@ -1,105 +1,35 @@
-import { Ref } from "@typegoose/typegoose";
 import {
-  Constructor,
-  InstanceOf,
   Join,
-  OnlyClassKeys,
+  OnlyAddedKeys,
   Prev,
-  Recurseable,
-  Split,
-  StripPrototypePrefix,
 } from "./CommonTypes.js";
-import { Types } from "mongoose";
-import { AutoUpdatedServerObject } from "./AutoUpdatedServerObjectClass.js";
+import { ObjectId, Types } from "mongoose";
 
-// ---------------------- DeRef ----------------------
 export type NonOptional<T> = Exclude<T, null | undefined>;
 
-export type DeRef<T> = {
-  [K in keyof T]: T[K] extends Ref<infer U>
-    ? U
-    : T[K] extends Ref<infer U> | null | undefined
-      ? U
-      : T[K];
-};
-
-export type RefToId<T> = {
-  [K in keyof T]: T[K] extends Ref<infer U> ? U | string : T[K];
-};
-// ---------------------- Paths ----------------------
-export type Paths<
-  T,
-  Depth extends number = 5,
-  OriginalDepth extends number = Depth,
-> = Depth extends never
+export type Paths<T, Base, D extends number = 3> = [D] extends [never]
   ? never
-  : {
-      [K in OnlyClassKeys<DeRef<NonOptional<T>>>]: K extends "_id"
-        ? StripPrototypePrefix<`${K}`>
-        : StripPrototypePrefix<
-            PathsHelper<K, DeRef<NonOptional<T>>[K], Depth, OriginalDepth>
-          >;
-    }[OnlyClassKeys<DeRef<NonOptional<T>>>];
+  : NonNullable<T> extends object
+  ? {
+      // We only iterate over the keys that survive your OnlyAddedKeys filter
+      [K in keyof OnlyAddedKeys<NonNullable<T>, Base> & string]-?: 
+        NonNullable<NonNullable<T>[K]> extends Function
+        ? never
+        : NonNullable<NonNullable<T>[K]> extends Array<any> | Date | ObjectId | Types.ObjectId
+        ? K // Stop dotting into Arrays, Dates, or ObjectIds
+        : NonNullable<NonNullable<T>[K]> extends object
+        ? K | Join<K, Paths<NonNullable<NonNullable<T>[K]>, Base, Prev[D]>> // Recurse, passing Base down
+        : K; // Resolves primitives
+    }[keyof OnlyAddedKeys<NonNullable<T>, Base> & string] // Output the union of keys
+  : never;
 
-type PathsHelper<
-  K extends string,
-  V,
-  Depth extends number,
-  OriginalDepth extends number,
-> =
-  Recurseable<V> extends never
-    ? `${K}`
-    :
-        | `${K}`
-        | Join<K, Paths<DeRef<NonOptional<V>>, Prev[Depth], OriginalDepth>>;
+type SafeGet<T, K extends string> = T extends any 
+  ? K extends keyof NonNullable<T> 
+    ? NonNullable<T>[K] 
+    : never 
+  : never;
 
-// ---------------------- PathValueOf ----------------------
-export type ResolveRef<T> = T extends (infer A)[]
-  ? ResolveRef<A>[]
-  : T extends Ref<infer U>
-    ? U | Types.ObjectId | string
-    : T;
-
-export type PathValue<
-  T,
-  Parts extends string[],
-  Depth extends number = 5,
-> = Depth extends 0
-  ? never
-  : // Distribute over unions in T
-    T extends unknown
-    ? Parts extends [infer K, ...infer Rest]
-      ? K extends string
-        ? K extends keyof T
-          ? Rest extends string[]
-            ? ResolveRef<
-                Rest["length"] extends 0
-                  ? T[K] extends (infer A)[]
-                    ? A[] | A
-                    : T[K]
-                  : PathValue<T[K], Rest, Prev[Depth]>
-              >
-            : never
-          : never
-        : never
-      : ResolveRef<T>
-    : never;
-
-export type PathValueOf<
-  T,
-  P extends string,
-  Depth extends number = 6,
-> = PathValue<InstanceOf<T>, Split<P>, Depth>;
-
-export type UnwrapRef<T> = T extends (infer A)[]
-  ? UnwrapRef<A>[]
-  : T extends Ref<infer U>
-    ? Exclude<U, Types.ObjectId> extends never
-      ? never
-      : Exclude<U, Types.ObjectId>
-    : T extends object
-      ? { [K in keyof T]: K extends "_id" ? T[K] : UnwrapRef<T[K]> }
-      : T;
-
-export type DeAutoUpdateServer<T> =
-  T extends AutoUpdatedServerObject<infer U> ? U : T;
+// Upgraded PathValueOf
+export type PathValueOf<T, P extends string> = P extends `${infer K}.${infer Rest}`
+  ? PathValueOf<SafeGet<T, K>, Rest> 
+  : SafeGet<T, P>; 

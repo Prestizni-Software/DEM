@@ -3,7 +3,7 @@ import { classProp, classRef, populatedRef } from "./CommonTypes.js";
 import { Status, Objekt } from "./TestTypes.js";
 
 
-export class Test extends AutoUpdatedClientObject<any> {
+export class Test extends AutoUpdatedClientObject<Test> {
   @classProp
   public _id!: string;
 

@@ -1,5 +1,5 @@
 import { EventEmitter } from "eventemitter3";
-import { ObjectId } from "bson";
+import { ObjectId, ObjectIdLike } from "bson";
 import "reflect-metadata";
 import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass";
 
@@ -22,9 +22,34 @@ export type LoggersType = {
   error: (s: string) => void;
   warn: (s: string) => void;
 };
+type IsAUCO<T> = T extends { className: string } ? true : false;
+type AllowStringForRefs<V> =
+  NonNullable<V> extends Array<infer U>
+    ? IsAUCO<NonNullable<U>> extends true
+      ? (U | string | ObjectIdLike)[]
+      : V
+    : IsAUCO<NonNullable<V>> extends true
+      ? V | string | ObjectIdLike
+      : V;
 
-export type IsData<T> = T & { _id: any };
+type OnlyStringForRefs<V> =
+  NonNullable<V> extends Array<infer U>
+    ? IsAUCO<NonNullable<U>> extends true
+      ? (string)[]
+      : V
+    : IsAUCO<NonNullable<V>> extends true
+      ? string
+      : V;
 
+// The upgraded IsData type
+export type IsData<T> = {
+  [K in keyof T]: AllowStringForRefs<T[K]>;
+} & { _id: any };
+
+export type ExtractedData<T, Base> = {
+    [K in keyof FixPure<T, Base>]: OnlyStringForRefs<T[K]>;
+};
+export type FixPure<T, Base> = Omit<T, keyof Omit<Base, "_id">>;
 export type SocketEvent = [string, any, (res: ServerResponse<any>) => void];
 
 export type ServerResponse<T> =
@@ -64,18 +89,18 @@ export function classRef() {
 }
 
 export type Pretty<T> = { [K in keyof T]: T[K] }; // ---------------------- Paths ----------------------
-export type Prev = [never, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
 export type StripPrototypePrefix<P extends string> = P extends "prototype"
   ? never
   : P extends `prototype.${infer Rest}`
-  ? Rest
-  : P;
+    ? Rest
+    : P;
 export type Recurseable<T> = T extends object
   ? T extends Array<any> | Function
     ? never
     : T
   : never;
-export type Join<K extends string, P extends string> = `${K}.${P}`;
+
 export type OnlyClassKeys<T> = {
   [K in keyof T]: K;
 }[keyof T] &
@@ -85,61 +110,61 @@ export type Split<S extends string> = S extends `${infer L}.${infer R}`
   : [S];
 export type NonOptional<T> = Exclude<T, null | undefined>;
 
+export type DeAutoUpdate<T> =
+  T extends AutoUpdatedClientObject<infer U> ? U : T;
+
+export type RecursiveDeAutoUpdate<T extends AutoUpdatedClientObject<any>> =
+  T extends AutoUpdatedClientObject<infer U>
+    ? U extends object
+      ? DeAutoUpdate<U>
+      : U
+    : T;
+
+export type OnlyAddedKeys<Sub, Parent> = Pick<
+  Sub,
+  Exclude<keyof Sub, keyof Omit<Parent, "_id">>
+>;
+export type Prev = [never, 0, 1, 2, 3];
+
+// 3. String Joiner
+export type Join<K, P> = K extends string | number
+  ? P extends string | number
+    ? `${K}${"" extends P ? "" : "."}${P}`
+    : never
+  : never;
+
+// 4. The Paths Type leveraging OnlyAddedKeys
+export type Paths<T, Base, D extends number = 3> = [D] extends [never]
+  ? never
+  : NonNullable<T> extends object
+    ? {
+        // We only iterate over the keys that survive your OnlyAddedKeys filter
+        [K in keyof OnlyAddedKeys<NonNullable<T>, Base> &
+          string]-?: NonNullable<NonNullable<T>[K]> extends Function
+          ? never
+          : NonNullable<NonNullable<T>[K]> extends Array<any> | Date | ObjectId
+            ? K // Stop dotting into Arrays, Dates, or ObjectIds
+            : NonNullable<NonNullable<T>[K]> extends object
+              ?
+                  | K
+                  | Join<
+                      K,
+                      Paths<NonNullable<NonNullable<T>[K]>, Base, Prev[D]>
+                    > // Recurse, passing Base down
+              : K; // Resolves primitives
+      }[keyof OnlyAddedKeys<NonNullable<T>, Base> & string] // Output the union of keys
+    : never;
+// 5. Value Resolver (Stays the same, as it just reads the final path)
 export type PathValueOf<
   T,
   P extends string,
-> = PathValue<T, Split<P>>;
-
-// ---------------------- PathValueOf ----------------------
-
-export type PathValue<
-  T,
-  Parts extends string[],
-  Depth extends number = 5
-> = Depth extends 0
-  ? never
-  : T extends unknown
-  ? Parts extends [infer K, ...infer Rest]
-    ? K extends string
-      ? K extends keyof T
-        ? Rest extends string[]
-          ? Rest["length"] extends 0
-            ? T[K] extends (infer A)[]
-              ? A[] | A
-              : T[K]
-            : PathValue<T[K], Rest, Prev[Depth]>
-          : never
-        : never
-      : never
-    : T
-  : never; // ---------------------- Paths ----------------------
-export type Paths<
-  T,
-  Depth extends number = 5,
-  OriginalDepth extends number = Depth
-> = Depth extends never
-  ? never
-  : {
-      [K in OnlyClassKeys<NonOptional<T>>]: K extends "_id"
-        ? StripPrototypePrefix<`${K}`>
-        : StripPrototypePrefix<
-            PathsHelper<K, NonOptional<T>[K], Depth, OriginalDepth>
-          >;
-    }[OnlyClassKeys<NonOptional<T>>];
-type PathsHelper<
-  K extends string,
-  V,
-  Depth extends number,
-  OriginalDepth extends number
-> = Recurseable<V> extends never
-  ? `${K}`
-  : `${K}` | Join<K, Paths<NonOptional<V>, Prev[Depth], OriginalDepth>>;
-  
-export type DeAutoUpdateClient<T> = T extends AutoUpdatedClientObject<infer U>
-  ? U
-  : T;
-
-    export type OnlyAddedKeys<Sub, Parent> = Pick<
-  Sub, Exclude<keyof Sub, keyof Omit<Parent, "_id">>
->;
+> = P extends `${infer K}.${infer Rest}`
+  ? K extends keyof NonNullable<T>
+    ? PathValueOf<NonNullable<NonNullable<T>[K]>, Rest>
+    : never
+  : P extends keyof NonNullable<T>
+    ? NonNullable<T>[P]
+    : never;
+    
+export type Pure<T> = Pick<T, keyof OnlyAddedKeys<T, AutoUpdatedClientObject<unknown>>>;
 

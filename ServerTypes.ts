@@ -1,9 +1,9 @@
 import { Objekt, Status } from "./TestTypes.js";
 import { classProp, classRef, populatedRef } from "./CommonTypes.js";
 import { Types } from "mongoose";
-import { prop, Ref } from "@typegoose/typegoose";
+import { prop } from "@typegoose/typegoose";
 import { AutoUpdatedServerObject } from "./AutoUpdatedServerObjectClass.js";
-export class Test extends AutoUpdatedServerObject<any> {
+export class Test extends AutoUpdatedServerObject<Test> {
   @classProp
   public _id!: Types.ObjectId;
 
@@ -37,8 +37,7 @@ export class Test extends AutoUpdatedServerObject<any> {
   @populatedRef("Test:refarr")
   public parent!: Test | null;
 }
-
-export class Test2 extends AutoUpdatedServerObject<any> {
+export class Test2 extends AutoUpdatedServerObject<Test2> {
   @classProp
   public _id!: string;
 }

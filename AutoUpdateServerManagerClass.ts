@@ -10,16 +10,17 @@ import {
   InstanceOf,
   IsData,
   LoggersType,
+  Pure,
   ServerResponse,
   ServerUpdateRequest,
   SocketEvent,
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { getModelForClass } from "@typegoose/typegoose";
-import { DeAutoUpdateServer, Paths, PathValueOf } from "./CommonTypes_server.js";
+import { Paths, PathValueOf } from "./CommonTypes_server.js";
+import { DeAutoUpdate } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
 import a from "node-machine-id";
-import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
 
 export type WrappedInstances<
   T extends Record<string, AutoUpdatedServerObject<any>>,
@@ -70,7 +71,7 @@ export type AUSOption<
   accessDefinitions?: AccessMiddleware<T, C>;
   onUpdate?: (
     obj: C,
-    set: <K extends Paths<C>>(
+    set: <K extends Paths<C, AutoUpdatedServerObject<C>>>(
       key: K,
       val: PathValueOf<C, K>,
     ) => Promise<{ success: boolean; msg: string }>,
@@ -93,7 +94,7 @@ export enum DEMEventTypes {
   "startup" = "startup",
 }
 
-export type DEMEvent<C extends AutoUpdatedServerObject<any>> =
+export type DEMEvent<C extends AutoUpdatedServerObject<C>> =
   | {
       type: DEMEventTypes.delete | DEMEventTypes.get;
       manager: AutoUpdateServerManager<C>;
@@ -106,7 +107,7 @@ export type DEMEvent<C extends AutoUpdatedServerObject<any>> =
       object: C;
       data: {
         _id: string;
-        key: Paths<C>;
+        key: Paths<C, AutoUpdatedServerObject<C>>;
         value: any;
       };
     }
@@ -297,10 +298,10 @@ export async function AUSManagerFactory<
         key,
         loggers,
         socket,
-        getModelForClass(def.class),
+        getModelForClass(def.class) as any,
         managers,
         emitter,
-        def.options,
+        def.options as any,
       ) as any;
       managers[key] = c;
     } catch (error: any) {
@@ -352,11 +353,12 @@ export async function AUSManagerFactory<
 }
 
 export class AutoUpdateServerManager<
-  T extends AutoUpdatedServerObject<T>,
+  T extends AutoUpdatedServerObject<any>,
 > extends AutoUpdateManager<T> {
   public readonly model: ReturnModelType<Constructor<T>, BeAnObject>;
   private readonly clientSockets: Set<Socket> = new Set<Socket>();
   public readonly options?: AUSOption<T, any>;
+  private missingObjects_: string[] = [];
   protected override objects_: { [_id: string]: T } = {};
   public readonly managers: Record<string, AutoUpdateServerManager<any>>;
   constructor(
@@ -485,7 +487,10 @@ export class AutoUpdateServerManager<
     );
     socket.on(
       "new" + this.className,
-      async (data: Omit<DeAutoUpdateServer<T>,"_id">, ack: (res: ServerResponse<T>) => void) => {
+      async (
+        data: Omit<IsData<T>, keyof AutoUpdatedServerObject<any> | "_id">,
+        ack: (res: ServerResponse<T>) => void,
+      ) => {
         this.loggers.debug(
           "Recieved new object creation in manager " + this.className,
         );
@@ -577,11 +582,15 @@ export class AutoUpdateServerManager<
       this.clientSockets.delete(socket);
     });
   }
-  public getObject(_id: string): T;
-  public getObject(_id?: undefined | null): null;
-  public getObject(_id?: string | null): T | null {
-    return _id ? this.objects_[_id] : null;
+  
+  public getObject(_id?: string): T | null {
+    if(!_id) return null
+    if(this.missingObjects_.includes(_id)) return null
+    if(this.objects_[_id])return this.objects_[_id];
+    this.handleGetMissingObject(_id).then(obj => obj ? this.objects_[_id] = obj : this.missingObjects_.push(_id)).catch(_ => this.missingObjects_.push(_id));
+    return null;
   }
+
 
   public get objects(): { [_id: string]: T } {
     return this.objects_ as any;
@@ -591,7 +600,7 @@ export class AutoUpdateServerManager<
     return Object.values(this.objects_) as any;
   }
 
-  protected async handleGetMissingObject(_id: string) {
+  public async handleGetMissingObject(_id: string) {
     const document = await this.model.findById(_id);
     if (!document) throw new Error(`No document with id ${_id} in DB.`);
     if (!this.managers) throw new Error(`No managers.`);
@@ -613,7 +622,9 @@ export class AutoUpdateServerManager<
     return object;
   }
 
-  public async createObject(data: Omit<DeAutoUpdateServer<T>, "_id">) {
+  public async createObject(
+    data: Omit<IsData<Pure<T>>, keyof AutoUpdatedServerObject<any> | "_id">,
+  ) {
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
     (data as any)._id = undefined;
