@@ -1,6 +1,4 @@
 import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
-import { Test } from "./ClientTypes.js";
-import { Paths } from "./CommonTypes.js";
 import { Status } from "./TestTypes.js";
 import { initClientManagers } from "./test_lib.js";
 
@@ -30,5 +28,3 @@ managers.Test.createObject({
   obj: null,
   parent: null,
 });
-obj2.extractedData
-type x = keyof AutoUpdatedClientObject<any>

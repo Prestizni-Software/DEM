@@ -16,11 +16,11 @@ import {
   SocketEvent,
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
-import { getModelForClass } from "@typegoose/typegoose";
 import { Paths, PathValueOf } from "./CommonTypes_server.js";
 import { DeAutoUpdate } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
 import a from "node-machine-id";
+import { getModelForClass } from "@typegoose/typegoose";
 
 export type WrappedInstances<
   T extends Record<string, AutoUpdatedServerObject<any>>,
@@ -292,13 +292,14 @@ export async function AUSManagerFactory<
   for (const key in defs) {
     loggers.debug(`Creating manager for ${key}`);
     const def = defs[key];
+    const model = getModelForClass(def.class);
     try {
       const c = new AutoUpdateServerManager(
         def.class,
         key,
         loggers,
         socket,
-        getModelForClass(def.class) as any,
+        model,
         managers,
         emitter,
         def.options as any,
@@ -358,7 +359,6 @@ export class AutoUpdateServerManager<
   public readonly model: ReturnModelType<Constructor<T>, BeAnObject>;
   private readonly clientSockets: Set<Socket> = new Set<Socket>();
   public readonly options?: AUSOption<T, any>;
-  private missingObjects_: string[] = [];
   protected override objects_: { [_id: string]: T } = {};
   public readonly managers: Record<string, AutoUpdateServerManager<any>>;
   constructor(
@@ -401,6 +401,8 @@ export class AutoUpdateServerManager<
           this.emitter,
         ));
       await this.objects_[doc].isPreLoadedAsync();
+      this.objects_[doc].loadMissingReferences();
+      this.objects_[doc].contactChildren();
     }
     this.loggers.debug(
       "Loaded manager DB " +
@@ -582,15 +584,11 @@ export class AutoUpdateServerManager<
       this.clientSockets.delete(socket);
     });
   }
-  
-  public getObject(_id?: string): T | null {
-    if(!_id) return null
-    if(this.missingObjects_.includes(_id)) return null
-    if(this.objects_[_id])return this.objects_[_id];
-    this.handleGetMissingObject(_id).then(obj => obj ? this.objects_[_id] = obj : this.missingObjects_.push(_id)).catch(_ => this.missingObjects_.push(_id));
-    return null;
-  }
 
+  public getObject(_id?: string): T | null {
+    if (!_id) return null;
+    return this.objects_[_id];
+  }
 
   public get objects(): { [_id: string]: T } {
     return this.objects_ as any;
@@ -637,9 +635,10 @@ export class AutoUpdateServerManager<
       this,
       this.emitter,
     );
+    this.objects_[object._id] = object;
+    await object.isPreLoadedAsync();
     object.loadMissingReferences();
     await object.onUpdate();
-    this.objects_[object._id] = object;
     object.contactChildren();
     for (const socket of this.clientSockets) {
       try {

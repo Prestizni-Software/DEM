@@ -253,7 +253,6 @@ describe("Server ", () => {
   }, 1000);
 
   test("Setting parent value from client", async () => {
-    console.error(testClient1Object2.parent?.description);
     await testClient1Object2.setValue("parent", testClient1Object3);
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(testServerObject2.parent?._id).toBe(
@@ -266,7 +265,6 @@ describe("Server ", () => {
   }, 1000);
 
   test("Denied deletion from client", async () => {
-    console.error("gay2");
     expect((await testClient2Object2.destroy()).success).toBe(false);
   }, 1000);
 

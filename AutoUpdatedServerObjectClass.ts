@@ -11,11 +11,9 @@ import {
   LoggersType,
   EventEmitter3,
   IsData,
-  InstanceOf,
 } from "./CommonTypes.js";
 import { Paths, PathValueOf } from "./CommonTypes_server.js";
 import { DocumentType } from "@typegoose/typegoose";
-import { Types } from "mongoose";
 
 type SocketType = Server<
   DefaultEventsMap,
@@ -45,7 +43,6 @@ export async function createAutoUpdatedClass<
     emitter,
   );
   await instance.loadFromDB();
-  await instance.isPreLoadedAsync();
   return instance;
 }
 
@@ -54,7 +51,7 @@ export abstract class AutoUpdatedServerObject<
   T,
 > extends AutoUpdatedClientObject<T> {
   protected override readonly isServer: boolean = true;
-  protected entry: DocumentType<InstanceOf<T>>;
+  protected entry: DocumentType<T>;
   declare public parentManager: AutoUpdateServerManager<
     AutoUpdatedServerObject<T>
   >;
@@ -119,16 +116,16 @@ export abstract class AutoUpdatedServerObject<
     for (const prop of this.properties) {
       if (typeof prop !== "string") continue;
       const isRef = getMetadataRecursive("isRef", this, prop);
-      if (isRef && (this.data as any)[prop]) {
-        (this.data as any)[prop] = Array.isArray((this.data as any)[prop])
-          ? (this.data as any)[prop]
+      if (isRef && (this.data)[prop]) {
+        (this.data)[prop] = Array.isArray((this.data)[prop])
+          ? ((this.data)[prop] as any)
               .map((item: any) =>
                 item ? new ObjectId(item as string | ObjectId) : null,
               )
               .filter(Boolean)
           : (new ObjectId(
-              (this.data as any)[prop] as string | ObjectId,
-            ) as any);
+              (this.data)[prop] as string | ObjectId,
+            ));
       }
     }
     this.parentManager = parentManager;
@@ -146,17 +143,9 @@ export abstract class AutoUpdatedServerObject<
         this.entry = await this.parentManager.managers[
           this.className
         ].model.create(this.data);
-        for (const prop of this.properties) {
-          const pointer = getMetadataRecursive("refsTo", this, prop.toString());
-          if (!pointer || !(this.data as any)[prop]) continue;
-          this.data["_id"] = this.entry._id;
-          await this.createdWithParent(
-            pointer.split(":"),
-            (this.data as any)[prop].toString(),
-          );
-        }
       }
-      this.data = this.entry.toObject() as any;
+      this.data = { ...this.data, ...this.entry.toObject() } as any;
+      this.generateSettersAndGetters();
     } catch (error: any) {
       this.loggers.error(
         "Error loading object from database: " + error.message,

@@ -3,14 +3,12 @@ import _ from "lodash";
 import {
   Constructor,
   EventEmitter3,
-  InstanceOf,
   IsData,
   LoggersType,
   PathValueOf,
   ServerResponse,
   ServerUpdateRequest,
   Paths,
-  DeAutoUpdate,
   OnlyAddedKeys,
   ExtractedData,
 } from "./CommonTypes.js";
@@ -63,7 +61,7 @@ export abstract class AutoUpdatedClientObject<T> {
   private referencesLoaded = false;
   private readonly loadShit = async (): Promise<void> => {
     if (this.isLoaded) {
-      try {
+      try {this.generateSettersAndGetters();
         await this.loadForceReferences();
         for (const thing of this.toChangeOnParents) {
           await this.setValue__(thing.key, thing.value);
@@ -87,6 +85,7 @@ export abstract class AutoUpdatedClientObject<T> {
         },
       );
     });
+    this.generateSettersAndGetters();
     try {
       await this.loadForceReferences();
       for (const thing of this.toChangeOnParents) {
@@ -275,7 +274,7 @@ export abstract class AutoUpdatedClientObject<T> {
           } else {
             this.data[key] =
               (this.data[key] as any)?._id?.toString() ??
-              (this.data[key])?.toString();
+              this.data[key]?.toString();
           }
         }
       }
@@ -328,23 +327,19 @@ export abstract class AutoUpdatedClientObject<T> {
       this.loggers.error("Most likely cycled object: " + error.message);
       this.loggers.error(error.stack);
     }
-    this.socket.emit(
-      "new" + this.className,
-      data,
-      (res: ServerResponse<T>) => {
-        if (!res.success) {
-          this.isLoading = false;
-          this.loggers.error("Could not create data on server: " + res.message);
-          this.emitter.emit("pre-loaded" + this.EmitterID, true, res.message);
-          return;
-        }
-        this.data = res.data as IsData<T>;
+    this.socket.emit("new" + this.className, data, (res: ServerResponse<T>) => {
+      if (!res.success) {
         this.isLoading = false;
-        this.loggers.debug("Created new object: " + this.data._id);
-        this.emitter.emit("pre-loaded" + this.EmitterID);
-        if (!this.isServer) this.openSockets();
-      },
-    );
+        this.loggers.error("Could not create data on server: " + res.message);
+        this.emitter.emit("pre-loaded" + this.EmitterID, true, res.message);
+        return;
+      }
+      this.data = res.data as IsData<T>;
+      this.isLoading = false;
+      this.loggers.debug("Created new object: " + this.data._id);
+      this.emitter.emit("pre-loaded" + this.EmitterID);
+      if (!this.isServer) this.openSockets();
+    });
   }
 
   public get extractedData(): ExtractedData<T, AutoUpdatedClientObject<T>> {
@@ -389,7 +384,9 @@ export abstract class AutoUpdatedClientObject<T> {
   ): Promise<ServerResponse<undefined>> {
     try {
       await this.setValue__(update.key, update.value, true);
-      this.loggers.debug(`Applied patch ${update.key} set to ${JSON.stringify(update.value)}`);
+      this.loggers.debug(
+        `Applied patch ${update.key} set to ${JSON.stringify(update.value)}`,
+      );
 
       // Return success with the applied patch
       return { success: true, data: undefined, message: "" };
@@ -407,7 +404,7 @@ export abstract class AutoUpdatedClientObject<T> {
     }
   }
 
-  private generateSettersAndGetters() {
+  protected generateSettersAndGetters() {
     for (const key of this.properties) {
       if (typeof key !== "string") return;
 
@@ -419,27 +416,17 @@ export abstract class AutoUpdatedClientObject<T> {
           if (isRef) {
             if (Array.isArray(this.data[k])) {
               const filtered = this.data[k]
-                .map(async (id: string) => this.findReference(id))
+                .map((id: string) => this.findReference(id))
                 .filter(Boolean);
-              if (
-                filtered.length !== this.data[k].length &&
-                this.parentManager.isLoaded
-              )
-                this.data[k] = filtered.map(
-                  (obj: any) => obj._id?.toString() ?? obj.toString(),
-                );
-
               return filtered;
             } else {
               const result = this.findReference(this.data[k]);
-              if (!result && this.data[k] && this.parentManager.isLoaded)
-                this.data[k] = undefined!;
               return result;
             }
           } else return this.data[k];
         },
         enumerable: true,
-        configurable: false,
+        configurable: true,
       });
     }
   }
@@ -476,10 +463,23 @@ export abstract class AutoUpdatedClientObject<T> {
             return v._id?.toString() ?? v;
           })
         : (val?._id ?? val);
-    message += JSON.stringify(val);
+    try {
+      message += JSON.stringify(val);
+    } catch (error) {
+      const _ = error;
+      this.loggers.error("Circular object detected when setting value: " + key);
+      if (val instanceof AutoUpdatedClientObject) {
+        val = val.extractedData._id;
+        message += JSON.stringify(val);
+      }
+    }
     this.loggers.debug(message);
     try {
       if (val instanceof AutoUpdatedClientObject) val = val.extractedData._id;
+      if (Array.isArray(val))
+        val = val.map((v) =>
+          v instanceof AutoUpdatedClientObject ? v.extractedData._id : v,
+        );
       const path = key.split(".");
       let obj = this.data as any;
       let lastClass = this as any;
@@ -542,10 +542,7 @@ export abstract class AutoUpdatedClientObject<T> {
         };
       }
 
-      if (
-        !this.properties.includes(lastPath as any) &&
-        !lastPath.includes(".")
-      ) {
+      if (!this.properties.includes(lastPath) && !lastPath.includes(".")) {
         let nearest = "";
         for (const prop of this.properties) {
           if (typeof prop !== "string") continue;
@@ -621,7 +618,11 @@ export abstract class AutoUpdatedClientObject<T> {
             res.msg.split("\n").join("\n  ");
         } else {
           const isRef = getMetadataRecursive("isRef", this, key);
-          if (isRef && this.isServer && ObjectId.isValid(val))
+          if (
+            isRef && this.isServer && Array.isArray(val)
+              ? !val.some((v) => !ObjectId.isValid(v))
+              : ObjectId.isValid(val)
+          )
             val = Array.isArray(val)
               ? val.map((v) => new ObjectId(v as string | ObjectId))
               : new ObjectId(val as string | ObjectId);
@@ -647,6 +648,7 @@ export abstract class AutoUpdatedClientObject<T> {
       } catch (error: any) {
         success = false;
         message += "\nError from inner setValue function: \n  " + error.message;
+        message += error.stack;
       }
 
       if (!success) {
@@ -715,7 +717,16 @@ export abstract class AutoUpdatedClientObject<T> {
       Array.isArray(this.getValue(key)) &&
       !Array.isArray(val)
     ) {
-      val = this.getValue(key).concat(val);
+      val = [
+        ...new Set(
+          this.getValue(key)
+            .concat(val)
+            .map(
+              (v: any) =>
+                v._id?.toString() ?? new ObjectId(v as string | ObjectId),
+            ),
+        ),
+      ];
     }
     const res = await this.setValueInternal(lastPath, val, silent, noUpdate);
     if (
@@ -729,7 +740,10 @@ export abstract class AutoUpdatedClientObject<T> {
         ...new Set(
           this.getValue(key)
             .concat(val)
-            .map((v: any) => v.toString()),
+            .map(
+              (v: any) =>
+                v._id?.toString() ?? new ObjectId(v as string | ObjectId),
+            ),
         ),
       ];
     }
@@ -754,7 +768,7 @@ export abstract class AutoUpdatedClientObject<T> {
               const _ = error;
             }
           }
-          if (!result)
+          if (!result) {
             this.loggers.warn(
               "Failed to update childerns parent for " +
                 this.className +
@@ -763,6 +777,8 @@ export abstract class AutoUpdatedClientObject<T> {
                 "'s parent to " +
                 this.data._id,
             );
+            continue;
+          }
         }
         this.referencesLoaded = false;
         result.loadMissingReferences();
@@ -877,8 +893,14 @@ export abstract class AutoUpdatedClientObject<T> {
       if (typeof key !== "string") return;
       const isRef = Reflect.getMetadata("isRef", proto, key);
       const pointer = Reflect.getMetadata("refsTo", proto, key);
-      if (pointer && obj === this.data && obj[key])
+      if (
+        pointer &&
+        obj === this.data &&
+        obj[key] &&
+        !alreadySeen.includes(obj)
+      )
         await this.createdWithParent(pointer.split(":"), obj[key]);
+      alreadySeen.push(obj[key]);
       if (isRef) {
         await this.handleLoad(obj, key, alreadySeen);
       }
@@ -936,10 +958,10 @@ export abstract class AutoUpdatedClientObject<T> {
           ", parent is null",
       );
     const obj = this.parentManager.managers[pointer[0]]?.getObject(
-      (parent as any)._id?.toString() ?? (parent as any).toString(),
+      (parent as any)._id?.toString() ?? parent.toString(),
     );
     const val = obj?.getValue(pointer[1] as any);
-    if (!val) return;
+
     if (Array.isArray(val)) {
       const originalLength = val.length;
       const filtred = val.filter(Boolean);
@@ -953,15 +975,15 @@ export abstract class AutoUpdatedClientObject<T> {
             " - some values were undefined",
         );
       }
-      if (filtred.map((id: any) => id?._id.toString()).includes(this.data._id))
+      if (filtred.map((id: any) => id?._id?.toString()).includes(this.data._id))
         obj?.contactChildren();
       else
         await obj?.setValue(pointer[1] as any, [
           ...new Set([...filtred, this.data._id]),
         ]);
-    } else if (val?.toString() === this.data?._id.toString())
+    } else if (val?.toString() === this.data?._id?.toString())
       obj?.contactChildren();
-    else await obj?.setValue(pointer[1] as any, this.data?._id.toString());
+    else await obj?.setValue(pointer[1] as any, this.data?._id?.toString());
   }
 
   public async destroy(
@@ -1026,10 +1048,10 @@ export abstract class AutoUpdatedClientObject<T> {
       throw new Error(`No AutoUpdateManager found for class ${pointer[0]}`);
 
     for (const obj of ac.objectsAsArray) {
-      let eData = obj.extractedData as any;
+      let eData = obj.extractedData;
       let found;
       for (const pathPart of pointer[1].split(".")) {
-        if (
+        try {if (
           !eData[pathPart] ||
           (Array.isArray(eData[pathPart]) &&
             !eData[pathPart]
@@ -1042,9 +1064,13 @@ export abstract class AutoUpdatedClientObject<T> {
           break;
         }
         found = eData = eData[pathPart];
+        } catch (error: any) {
+          console.error(error);
+        }
+        
       }
       if (found) {
-        (this.data as any)[prop] = (obj as any)._id;
+        (this.data as any)[prop] = obj._id;
         return;
       }
     }

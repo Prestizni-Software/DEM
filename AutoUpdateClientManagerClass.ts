@@ -136,7 +136,6 @@ export class AutoUpdateClientManager<
   protected objects_: { [_id: string]: T } = {};
   public readonly managers: Record<string, AutoUpdateClientManager<any>>;
   public callbacks: DEMClientCallbacks<T>;
-  private readonly missingObjects_: string[] = [];
   declare public socket: Socket;
   constructor(
     classParam: Constructor<T>,
@@ -344,14 +343,7 @@ export class AutoUpdateClientManager<
 
   public getObject(_id?: string): T | null {
     if (!_id) return null;
-    if (this.missingObjects_.includes(_id)) return null;
-    if (this.objects_[_id]) return this.objects_[_id];
-    this.handleGetMissingObject(_id)
-      .then((obj) =>
-        obj ? (this.objects_[_id] = obj) : this.missingObjects_.push(_id),
-      )
-      .catch((_) => this.missingObjects_.push(_id));
-    return null;
+    return this.objects_[_id];
   }
 
   public get objects(): { [_id: string]: T } {
@@ -376,8 +368,8 @@ export class AutoUpdateClientManager<
           async (
             res: ServerResponse<{ ids: string[]; properties: string[] }>,
           ) => {
-            if (res.success && res.data.ids.includes(_id)) resolve(true);
-            resolve(false);
+            if (res.success && res.data.ids.includes(_id)) resolve(false);
+            resolve(true);
           },
         ),
       )

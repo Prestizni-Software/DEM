@@ -1,8 +1,4 @@
 
-import { Pure } from "./CommonTypes.js";
-import { AutoUpdatedServerObject } from "./AutoUpdatedServerObjectClass.js";
-import { Paths } from "./CommonTypes_server.js";
-import { Test } from "./ServerTypes.js";
 import { Status } from "./TestTypes.js";
 import { initServerManagers } from "./test_lib.js";
 
@@ -64,4 +60,3 @@ await obj1.setValue_(
   refarr
 );
 await obj1.setValue_("active", false);
-obj1.extractedData

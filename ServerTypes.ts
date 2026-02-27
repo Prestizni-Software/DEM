@@ -7,19 +7,19 @@ export class Test extends AutoUpdatedServerObject<Test> {
   @classProp
   public _id!: Types.ObjectId;
 
-  @prop({ required: true })
+  @prop({ required: true, type: () => Boolean })
   @classProp
   public active!: boolean;
 
-  @prop({ required: true })
+  @prop({ required: true, type: () => String, enum: Status })
   @classProp
   public status!: Status;
 
-  @prop({ required: false })
+  @prop({ required: false, type: () => String })
   @classProp
   public description!: string | null;
 
-  @prop({ required: false })
+  @prop({ required: false, ref: () => Test })
   @classProp
   @classRef()
   public ref!: Test | null;
@@ -29,7 +29,7 @@ export class Test extends AutoUpdatedServerObject<Test> {
   @classRef()
   public refarr!: Test[];
 
-  @prop({ required: false })
+  @prop({ required: false, type: () => Object })
   @classProp
   public obj!: Objekt | null;
 

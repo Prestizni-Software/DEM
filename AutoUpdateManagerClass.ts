@@ -2,7 +2,6 @@ import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
 import {
   Constructor,
   EventEmitter3,
-  IsData,
   LoggersType,
 } from "./CommonTypes.js";
 import "reflect-metadata";
