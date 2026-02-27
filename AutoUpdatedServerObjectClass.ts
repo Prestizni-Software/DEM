@@ -221,7 +221,7 @@ export abstract class AutoUpdatedServerObject<
     this.socket.emit("delete" + this.className, this.data._id);
     this.socket.removeAllListeners("update" + this.className + this.data._id);
     this.socket.removeAllListeners("delete" + this.className);
-    this.wipeSelf();
+    await this.wipeSelf();
     return {
       success: true,
       message: "Deleted",

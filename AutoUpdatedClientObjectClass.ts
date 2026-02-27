@@ -61,7 +61,8 @@ export abstract class AutoUpdatedClientObject<T> {
   private referencesLoaded = false;
   private readonly loadShit = async (): Promise<void> => {
     if (this.isLoaded) {
-      try {this.generateSettersAndGetters();
+      try {
+        this.generateSettersAndGetters();
         await this.loadForceReferences();
         for (const thing of this.toChangeOnParents) {
           await this.setValue__(thing.key, thing.value);
@@ -98,7 +99,6 @@ export abstract class AutoUpdatedClientObject<T> {
       this.loggers.error(error.message);
       this.loggers.error(error.stack);
     }
-    this.callbacks.new(this as any);
   };
 
   constructor();
@@ -362,6 +362,7 @@ export abstract class AutoUpdatedClientObject<T> {
   public async isPreLoadedAsync(): Promise<boolean> {
     await this.loadShit();
     this.generateSettersAndGetters();
+    this.callbacks.new(this as any);
     return true;
   }
 
@@ -445,7 +446,6 @@ export abstract class AutoUpdatedClientObject<T> {
     val: PathValueOf<IsData<T>, K>,
   ): Promise<{ success: boolean; msg: string }> {
     const result = await this.setValue__(key, val);
-    if (this.isLoaded) this.callbacks.update(this as any, key);
     return result;
   }
   protected async setValue__(
@@ -480,6 +480,30 @@ export abstract class AutoUpdatedClientObject<T> {
         val = val.map((v) =>
           v instanceof AutoUpdatedClientObject ? v.extractedData._id : v,
         );
+      let originalVal = this.getValue(key);
+      if (Array.isArray(originalVal)) {
+        originalVal = originalVal.map((v) =>
+          v instanceof AutoUpdatedClientObject ? v.extractedData._id : v,
+        );
+      } else {
+        originalVal =
+          originalVal instanceof AutoUpdatedClientObject
+            ? originalVal.extractedData._id
+            : originalVal;
+      }
+      if (
+        (Array.isArray(originalVal) &&
+          Array.isArray(val) &&
+          !originalVal.some((v) => !val.includes(v))) ||
+        (Array.isArray(originalVal) &&
+          !Array.isArray(val) &&
+          originalVal.includes(val)) ||
+        (!Array.isArray(originalVal) &&
+          !Array.isArray(val) &&
+          originalVal === val)
+      ) {
+        return { success: true, msg: "" };
+      }
       const path = key.split(".");
       let obj = this.data as any;
       let lastClass = this as any;
@@ -563,8 +587,9 @@ export abstract class AutoUpdatedClientObject<T> {
         let isPopulated = getMetadataRecursive("refsTo", this, lastPath);
         if (isPopulated) {
           isPopulated = isPopulated.split(":");
-          const parentObj =
-            this.parentManager.managers[isPopulated[0]].getObject(val);
+          const parentObj = this.parentManager.managers[
+            isPopulated[0]
+          ].getObject(val) as AutoUpdatedClientObject<any>;
           if (!parentObj) {
             message +=
               "\nFailed to set value for " +
@@ -588,6 +613,12 @@ export abstract class AutoUpdatedClientObject<T> {
           if (this.isServer) {
             const value = parentObj.getValue(isPopulated[1]);
             if (Array.isArray(value)) {
+              if (
+                value
+                  .map((v) => v._id?.toString() ?? v.toString())
+                  .includes(this.data._id.toString())
+              )
+                return { success: true, msg: message + "\nValue already set" };
               res = await parentObj.setValue__(
                 isPopulated[1],
                 value.concat(this.data._id.toString()),
@@ -595,7 +626,12 @@ export abstract class AutoUpdatedClientObject<T> {
                 false,
                 true,
               );
-            } else
+            } else {
+              if (
+                (value._id?.toString() ?? value.toString()) ===
+                this.data._id.toString()
+              )
+                return { success: true, msg: message + "\nValue already set" };
               res = await parentObj.setValue__(
                 isPopulated[1],
                 this.data._id.toString(),
@@ -603,7 +639,18 @@ export abstract class AutoUpdatedClientObject<T> {
                 false,
                 true,
               );
-          } else
+            }
+          } else {
+            const value = parentObj.getValue(isPopulated[1]);
+            if (
+              Array.isArray(value)
+                ? value
+                    .map((v) => v._id?.toString() ?? v.toString())
+                    .includes(this.data._id.toString())
+                : (value._id?.toString() ?? value.toString()) ===
+                  this.data._id.toString()
+            )
+              return { success: true, msg: message + "\nValue already set" };
             ({ res, val } = await this.preInnerSetValue(
               noGet,
               key,
@@ -612,6 +659,7 @@ export abstract class AutoUpdatedClientObject<T> {
               silent,
               noUpdate,
             ));
+          }
           success = res.success;
           message +=
             "\nReport from inner setValue function: " +
@@ -672,8 +720,9 @@ export abstract class AutoUpdatedClientObject<T> {
       await this.findAndLoadReferences(lastPath, val);
       const isRef = getMetadataRecursive("isRef", this, path.at(-1));
       if (isRef && this.parentManager.isLoaded) {
-        this.contactChildren();
+        await this.contactChildren();
       }
+      if (this.isLoaded) this.callbacks.update(this as any, key);
       return {
         success: true,
         msg: "Successfully set " + key + " to " + val,
@@ -959,14 +1008,15 @@ export abstract class AutoUpdatedClientObject<T> {
       );
     const obj = this.parentManager.managers[pointer[0]]?.getObject(
       (parent as any)._id?.toString() ?? parent.toString(),
-    );
-    const val = obj?.getValue(pointer[1] as any);
+    ) as AutoUpdatedClientObject<any>;
+    if (!obj) return;
+    const val = obj.getValue(pointer[1]);
 
     if (Array.isArray(val)) {
       const originalLength = val.length;
       const filtred = val.filter(Boolean);
       if (filtred.length !== originalLength) {
-        await obj?.setValue(pointer[1] as any, filtred);
+        await obj.setValue(pointer[1], filtred);
         this.loggers.warn(
           "Array value changed from " +
             originalLength +
@@ -976,14 +1026,14 @@ export abstract class AutoUpdatedClientObject<T> {
         );
       }
       if (filtred.map((id: any) => id?._id?.toString()).includes(this.data._id))
-        obj?.contactChildren();
+        await obj.contactChildren();
       else
-        await obj?.setValue(pointer[1] as any, [
+        await obj.setValue(pointer[1] as any, [
           ...new Set([...filtred, this.data._id]),
         ]);
     } else if (val?.toString() === this.data?._id?.toString())
-      obj?.contactChildren();
-    else await obj?.setValue(pointer[1] as any, this.data?._id?.toString());
+      await obj.contactChildren();
+    else await obj.setValue(pointer[1] as any, this.data?._id?.toString());
   }
 
   public async destroy(
@@ -992,7 +1042,6 @@ export abstract class AutoUpdatedClientObject<T> {
     if (!once) {
       return await this.parentManager.deleteObject(this.data._id);
     }
-    await this.callbacks.delete(this as any);
     const res = await new Promise<{ success: boolean; message: string }>(
       (resolve) => {
         this.socket.emit(
@@ -1013,11 +1062,6 @@ export abstract class AutoUpdatedClientObject<T> {
               });
               return;
             }
-            this.socket.removeAllListeners(
-              "update" + this.className + this.data._id,
-            );
-            this.socket.removeAllListeners("delete" + this.className);
-            this.wipeSelf();
             resolve({
               success: true,
               message: "Deleted",
@@ -1047,27 +1091,27 @@ export abstract class AutoUpdatedClientObject<T> {
     if (!ac)
       throw new Error(`No AutoUpdateManager found for class ${pointer[0]}`);
 
-    for (const obj of ac.objectsAsArray) {
+    for (const obj of ac.objectsAsArray as AutoUpdatedClientObject<any>[]) {
       let eData = obj.extractedData;
       let found;
       for (const pathPart of pointer[1].split(".")) {
-        try {if (
-          !eData[pathPart] ||
-          (Array.isArray(eData[pathPart]) &&
-            !eData[pathPart]
-              .map((id: any) => id.toString())
-              .includes((this as any)._id.toString())) ||
-          (!Array.isArray(eData[pathPart]) &&
-            eData[pathPart].toString() !== this.data._id.toString())
-        ) {
-          found = false;
-          break;
-        }
-        found = eData = eData[pathPart];
+        try {
+          if (
+            !eData[pathPart] ||
+            (Array.isArray(eData[pathPart]) &&
+              !eData[pathPart]
+                .map((id: any) => id.toString())
+                .includes((this as any)._id.toString())) ||
+            (!Array.isArray(eData[pathPart]) &&
+              eData[pathPart].toString() !== this.data._id.toString())
+          ) {
+            found = false;
+            break;
+          }
+          found = eData = eData[pathPart];
         } catch (error: any) {
           console.error(error);
         }
-        
       }
       if (found) {
         (this.data as any)[prop] = obj._id;
@@ -1075,8 +1119,9 @@ export abstract class AutoUpdatedClientObject<T> {
       }
     }
   }
-  protected wipeSelf() {
+  protected async wipeSelf() {
     if ((this.data as any).Wiped) return;
+    await this.callbacks.delete(this as any);
     const _id = this.data._id.toString();
     for (const key of Object.keys(this.data)) {
       delete (this.data as any)[key];
@@ -1085,16 +1130,25 @@ export abstract class AutoUpdatedClientObject<T> {
     this.loggers.info(`[${_id}] ${this.className} object wiped`);
   }
 
-  public contactChildren() {
+  public async contactChildren() {
     for (const prop of this.properties) {
       const pointer = getMetadataRecursive("refsTo", this, prop.toString());
       const isRef = getMetadataRecursive("isRef", this, prop.toString());
       if (isRef && !pointer) {
-        if (!this.getValue(prop as any)) continue;
+        let obj = this.getValue(prop as any);
+        try {
+          if (Array.isArray(obj) ? obj.length > 0 : !!obj)
+            obj = await this.parentManager.handleGetMissingObject(
+              this.getValueInternal(prop as any),
+            );
+        } catch (error: any) {
+          const _ = error;
+        }
+        if (!obj) continue;
         if (Array.isArray(this.getValue(prop as any))) {
           for (const child of this.getValue(prop as any)) {
             try {
-              child?.loadMissingReferences();
+              child.loadMissingReferences();
             } catch (error: any) {
               this.loggers.error(error.message);
             }

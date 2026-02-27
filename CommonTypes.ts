@@ -46,7 +46,7 @@ export type IsData<T> = {
   [K in keyof T]: AllowStringForRefs<T[K]>;
 } & { _id: any };
 
-export type ExtractedData<T, Base> = {
+export type ExtractedData<T, Base = AutoUpdatedClientObject<T>> = {
     [K in keyof FixPure<T, Base>]: OnlyStringForRefs<T[K]>;
 };
 export type FixPure<T, Base> = Omit<T, keyof Omit<Base, "_id">>;

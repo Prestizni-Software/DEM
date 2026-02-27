@@ -355,6 +355,7 @@ export class AutoUpdateClientManager<
   }
 
   public async handleGetMissingObject(_id: string): Promise<T> {
+    if(!_id) throw new Error("No id.");
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug(
       "Getting missing object " + _id + " from manager " + this.className,
@@ -408,7 +409,7 @@ export class AutoUpdateClientManager<
         this.emitter,
       );
       await object.isPreLoadedAsync();
-      object.contactChildren();
+      await object.contactChildren();
       object.loadMissingReferences();
       this.objects_[object._id] = object;
       return object;

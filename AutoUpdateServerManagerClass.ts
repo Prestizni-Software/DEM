@@ -402,7 +402,7 @@ export class AutoUpdateServerManager<
         ));
       await this.objects_[doc].isPreLoadedAsync();
       this.objects_[doc].loadMissingReferences();
-      this.objects_[doc].contactChildren();
+      await this.objects_[doc].contactChildren();
     }
     this.loggers.debug(
       "Loaded manager DB " +
@@ -467,7 +467,7 @@ export class AutoUpdateServerManager<
           "Deleting object from manager " + this.className + " - " + id,
         );
         try {
-          await this.objects_[id]?.destroy();
+          await this.deleteObject(id);
           ack({
             success: true,
             message: "Deleted successfully",
@@ -616,7 +616,7 @@ export class AutoUpdateServerManager<
     );
     await object.isPreLoadedAsync();
     object.loadMissingReferences();
-    object.contactChildren();
+    await object.contactChildren();
     return object;
   }
 
@@ -639,7 +639,7 @@ export class AutoUpdateServerManager<
     await object.isPreLoadedAsync();
     object.loadMissingReferences();
     await object.onUpdate();
-    object.contactChildren();
+    await object.contactChildren();
     for (const socket of this.clientSockets) {
       try {
         const theTruth =
