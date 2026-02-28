@@ -57,7 +57,7 @@ export abstract class AutoUpdatedClientObject<T> {
   protected isLoadingReferences = true;
   private readonly EmitterID = new ObjectId().toHexString();
   protected readonly toChangeOnParents: { key: string; value: any }[] = [];
-  protected callbacks: DEMClientCallbacks<T>;
+  public callbacks: DEMClientCallbacks<T>;
   private referencesLoaded = false;
   private readonly loadShit = async (): Promise<void> => {
     if (this.isLoaded) {
@@ -362,7 +362,6 @@ export abstract class AutoUpdatedClientObject<T> {
   public async isPreLoadedAsync(): Promise<boolean> {
     await this.loadShit();
     this.generateSettersAndGetters();
-    this.callbacks.new(this as any);
     return true;
   }
 
@@ -1047,7 +1046,7 @@ export abstract class AutoUpdatedClientObject<T> {
         this.socket.emit(
           "delete" + this.className,
           this.data._id,
-          (res: ServerResponse<undefined>) => {
+          async (res: ServerResponse<undefined>) => {
             if (!res.success) {
               this.loggers.error(
                 "Error deleting object from database - " +
@@ -1121,7 +1120,6 @@ export abstract class AutoUpdatedClientObject<T> {
   }
   protected async wipeSelf() {
     if ((this.data as any).Wiped) return;
-    await this.callbacks.delete(this as any);
     const _id = this.data._id.toString();
     for (const key of Object.keys(this.data)) {
       delete (this.data as any)[key];

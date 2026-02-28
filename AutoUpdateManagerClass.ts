@@ -69,8 +69,10 @@ export abstract class AutoUpdateManager<T extends AutoUpdatedClientObject<any>> 
   public async deleteObject(
     _id: string,
   ): Promise<{ success: boolean; message: string }> {
-    const res = await this.objects_[_id]?.destroy(true);
+    const o = this.objects_[_id];
+    const res = await o?.destroy(true);
     if (res?.success) delete this.objects_[_id];
+    await o?.callbacks.delete(this as any);
     return res ?? { success: true, message: "Already gone" };
   }
 

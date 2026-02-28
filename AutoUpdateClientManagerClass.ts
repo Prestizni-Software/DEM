@@ -388,6 +388,9 @@ export class AutoUpdateClientManager<
     );
     await object.isPreLoadedAsync();
     object.loadMissingReferences();
+    this.objects_[object._id] = object;
+    
+    this.callbacks.new(this as any);
     return object;
   }
 
@@ -412,6 +415,7 @@ export class AutoUpdateClientManager<
       await object.contactChildren();
       object.loadMissingReferences();
       this.objects_[object._id] = object;
+    this.callbacks.new(this as any);
       return object;
     } catch (error: any) {
       this.loggers.error(

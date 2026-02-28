@@ -654,8 +654,11 @@ export class AutoUpdateServerManager<
           this.loggers.debug("Emitting new object " + object._id);
           socket.emit("new" + this.className, object._id);
         }
-      } catch (error) {
+      } catch (error: any) {
         const _ = error;
+        this.loggers.error("Error when emitting new object to client: " + error.name);
+        this.loggers.error(error.message);
+        this.loggers.error(error.stack);
       }
       if (!object._id)
         throw new Error(`Never... failed to get object somehow: ${object}`);
