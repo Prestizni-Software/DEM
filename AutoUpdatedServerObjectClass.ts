@@ -116,16 +116,14 @@ export abstract class AutoUpdatedServerObject<
     for (const prop of this.properties) {
       if (typeof prop !== "string") continue;
       const isRef = getMetadataRecursive("isRef", this, prop);
-      if (isRef && (this.data)[prop]) {
-        (this.data)[prop] = Array.isArray((this.data)[prop])
-          ? ((this.data)[prop] as any)
+      if (isRef && this.data[prop]) {
+        this.data[prop] = Array.isArray(this.data[prop])
+          ? (this.data[prop] as any)
               .map((item: any) =>
                 item ? new ObjectId(item as string | ObjectId) : null,
               )
               .filter(Boolean)
-          : (new ObjectId(
-              (this.data)[prop] as string | ObjectId,
-            ));
+          : new ObjectId(this.data[prop] as string | ObjectId);
       }
     }
     this.parentManager = parentManager;
@@ -140,9 +138,9 @@ export abstract class AutoUpdatedServerObject<
         _id: this.data._id,
       }))!;
       if (!this.entry) {
-        this.entry = await this.parentManager.managers[
+        this.entry = (await this.parentManager.managers[
           this.className
-        ].model.create(this.data);
+        ].model.create(this.data)) as any;
       }
       this.data = { ...this.data, ...this.entry.toObject() } as any;
       this.generateSettersAndGetters();

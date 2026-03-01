@@ -1,18 +1,19 @@
 import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
-import {
-  Constructor,
-  EventEmitter3,
-  LoggersType,
-} from "./CommonTypes.js";
+import { Constructor, EventEmitter3, LoggersType } from "./CommonTypes.js";
 import "reflect-metadata";
-export abstract class AutoUpdateManager<T extends AutoUpdatedClientObject<any>> {
+export abstract class AutoUpdateManager<
+  T extends AutoUpdatedClientObject<any>,
+> {
   protected abstract objects_: { [_id: string]: T };
   protected isLoaded_ = false;
   public readonly socket: any;
   protected classParam: Constructor<T>;
   protected properties: (keyof T)[];
   public readonly className: string;
-  public readonly managers: Record<string, AutoUpdateManager<any>>;
+  public readonly managers: Record<
+    string,
+    AutoUpdateManager<AutoUpdatedClientObject<any>>
+  >;
   protected preloaded = false;
   protected waitingToResolveReferences: { [_id: string]: string } = {};
   protected loggers: LoggersType = {
@@ -27,7 +28,7 @@ export abstract class AutoUpdateManager<T extends AutoUpdatedClientObject<any>> 
     className: string,
     socket: any,
     loggers: LoggersType,
-    managers: Record<string, AutoUpdateManager<any>>,
+    managers: Record<string, AutoUpdateManager<AutoUpdatedClientObject<any>>>,
     emitter: EventEmitter3,
   ) {
     this.className = className;
@@ -35,8 +36,7 @@ export abstract class AutoUpdateManager<T extends AutoUpdatedClientObject<any>> 
     this.emitter = emitter;
     this.socket = socket;
     this.classParam = classParam;
-    this.properties =
-      Reflect.getMetadata("props", classParam.prototype);
+    this.properties = Reflect.getMetadata("props", classParam.prototype);
     this.loggers.debug = (s: string) =>
       loggers.debug("[DEM - " + className + " MANAGER] " + s);
     this.loggers.info = (s: string) =>
@@ -61,7 +61,7 @@ export abstract class AutoUpdateManager<T extends AutoUpdatedClientObject<any>> 
 
   public async loadReferences(): Promise<void> {
     for (const obj of this.objectsAsArray) {
-      obj.loadMissingReferences();
+      await obj.loadMissingReferences();
     }
     this.isLoaded_ = true;
   }
@@ -80,12 +80,8 @@ export abstract class AutoUpdateManager<T extends AutoUpdatedClientObject<any>> 
     return Object.keys(this.objects_);
   }
 
-  public abstract handleGetMissingObject(
-    _id: string,
-  ): Promise<T>;
-public abstract createObject(
-    data: Omit<any , "_id">,
-  ): Promise<T>;
+  public abstract handleGetMissingObject(_id: string): Promise<T>;
+  public abstract createObject(data: Omit<any, "_id">): Promise<T>;
   public abstract getObject(_id: string): T | null;
   public abstract get objects(): {
     [_id: string]: T;

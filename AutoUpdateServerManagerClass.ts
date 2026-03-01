@@ -300,7 +300,7 @@ export async function AUSManagerFactory<
         loggers,
         socket,
         model,
-        managers,
+        managers as any,
         emitter,
         def.options as any,
       ) as any;
@@ -360,14 +360,20 @@ export class AutoUpdateServerManager<
   private readonly clientSockets: Set<Socket> = new Set<Socket>();
   public readonly options?: AUSOption<T, any>;
   protected override objects_: { [_id: string]: T } = {};
-  public readonly managers: Record<string, AutoUpdateServerManager<any>>;
+  public readonly managers: Record<
+    string,
+    AutoUpdateServerManager<AutoUpdatedServerObject<any>>
+  >;
   constructor(
     classParam: Constructor<T>,
     className: string,
     loggers: LoggersType,
     socket: Server,
     model: ReturnModelType<Constructor<T>, BeAnObject>,
-    managers: Record<string, AutoUpdateServerManager<any>>,
+    managers: Record<
+      string,
+      AutoUpdateServerManager<AutoUpdatedServerObject<any>>
+    >,
     emitter: EventEmitter3,
     options?: AUSOption<T, any>,
   ) {
@@ -400,9 +406,11 @@ export class AutoUpdateServerManager<
           this,
           this.emitter,
         ));
-      await this.objects_[doc].isPreLoadedAsync();
-      this.objects_[doc].loadMissingReferences();
-      await this.objects_[doc].contactChildren();
+    }
+    for (const object of this.objectsAsArray) {
+      await object.isPreLoadedAsync();
+      await object.contactChildren();
+      await object.loadMissingReferences();
     }
     this.loggers.debug(
       "Loaded manager DB " +
@@ -599,12 +607,10 @@ export class AutoUpdateServerManager<
   }
 
   public async handleGetMissingObject(_id: string) {
+    if (this.getObject(_id)) return this.getObject(_id)!;
     const document = await this.model.findById(_id);
     if (!document) throw new Error(`No document with id ${_id} in DB.`);
     if (!this.managers) throw new Error(`No managers.`);
-    this.loggers.debug(
-      "Getting missing object " + _id + " from manager " + this.className,
-    );
     const object = await createAutoUpdatedClass<T>(
       this.classParam as any,
       this.className,
@@ -614,8 +620,10 @@ export class AutoUpdateServerManager<
       this,
       this.emitter,
     );
+    await object.waitForPreloaded();
+    this.objects_[object._id] = object;
     await object.isPreLoadedAsync();
-    object.loadMissingReferences();
+    await object.loadMissingReferences();
     await object.contactChildren();
     return object;
   }
@@ -635,9 +643,10 @@ export class AutoUpdateServerManager<
       this,
       this.emitter,
     );
+    await object.waitForPreloaded();
     this.objects_[object._id] = object;
     await object.isPreLoadedAsync();
-    object.loadMissingReferences();
+    await object.loadMissingReferences();
     await object.onUpdate();
     await object.contactChildren();
     for (const socket of this.clientSockets) {
@@ -656,7 +665,9 @@ export class AutoUpdateServerManager<
         }
       } catch (error: any) {
         const _ = error;
-        this.loggers.error("Error when emitting new object to client: " + error.name);
+        this.loggers.error(
+          "Error when emitting new object to client: " + error.name,
+        );
         this.loggers.error(error.message);
         this.loggers.error(error.stack);
       }

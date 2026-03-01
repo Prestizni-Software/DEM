@@ -54,7 +54,7 @@ export async function AUCManagerFactory<
         key,
         loggers,
         socket,
-        managers,
+        managers as any,
         emitter,
         {
           ...defaultCallbacks,
@@ -134,7 +134,10 @@ export class AutoUpdateClientManager<
   T extends AutoUpdatedClientObject<any>,
 > extends AutoUpdateManager<T> {
   protected objects_: { [_id: string]: T } = {};
-  public readonly managers: Record<string, AutoUpdateClientManager<any>>;
+  public readonly managers: Record<
+    string,
+    AutoUpdateClientManager<AutoUpdatedClientObject<any>>
+  >;
   public callbacks: DEMClientCallbacks<T>;
   declare public socket: Socket;
   constructor(
@@ -142,7 +145,10 @@ export class AutoUpdateClientManager<
     className: string,
     loggers: LoggersType,
     socket: Socket,
-    managers: Record<string, AutoUpdateClientManager<any>>,
+    managers: Record<
+      string,
+      AutoUpdateClientManager<AutoUpdatedClientObject<any>>
+    >,
     emitter: EventEmitter,
     callbacks: DEMClientCallbacks<T>,
   ) {
@@ -157,7 +163,7 @@ export class AutoUpdateClientManager<
         "Applying new object from manager " + this.className + " - " + id,
       );
       try {
-        this.objects_[id] = await this.handleGetMissingObject(id);
+        await this.handleGetMissingObject(id);
       } catch (error: any) {
         this.loggers.error(
           "Error loading object " +
@@ -264,9 +270,9 @@ export class AutoUpdateClientManager<
           for (const id in this.objects_) {
             this.objects_[id]
               .isPreLoadedAsync()
-              .then(() => {
+              .then(async () => {
                 try {
-                  this.objects_[id].loadMissingReferences();
+                  await this.objects_[id].loadMissingReferences();
                 } catch (error: any) {
                   this.loggers.error(
                     "Error loading missing references for object " +
@@ -355,11 +361,9 @@ export class AutoUpdateClientManager<
   }
 
   public async handleGetMissingObject(_id: string): Promise<T> {
-    if(!_id) throw new Error("No id.");
+    if (this.getObject(_id)) return this.getObject(_id)!;
+    if (!_id) throw new Error("No id.");
     if (!this.managers) throw new Error(`No managers.`);
-    this.loggers.debug(
-      "Getting missing object " + _id + " from manager " + this.className,
-    );
     if (this.objects_[_id]) return this.objects_[_id];
     if (
       await new Promise((resolve, _) =>
@@ -386,10 +390,11 @@ export class AutoUpdateClientManager<
       this.callbacks,
       this.emitter,
     );
-    await object.isPreLoadedAsync();
-    object.loadMissingReferences();
+    await object.waitForPreloaded();
     this.objects_[object._id] = object;
-    
+    await object.isPreLoadedAsync();
+    await object.loadMissingReferences();
+
     this.callbacks.new(this as any);
     return object;
   }
@@ -411,11 +416,12 @@ export class AutoUpdateClientManager<
         this.callbacks,
         this.emitter,
       );
-      await object.isPreLoadedAsync();
-      await object.contactChildren();
-      object.loadMissingReferences();
+      await object.waitForPreloaded();
       this.objects_[object._id] = object;
-    this.callbacks.new(this as any);
+      await object.isPreLoadedAsync();
+      await object.loadMissingReferences();
+      await object.contactChildren();
+      this.callbacks.new(this as any);
       return object;
     } catch (error: any) {
       this.loggers.error(

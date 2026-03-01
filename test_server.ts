@@ -29,10 +29,11 @@ const obj2 = await managers.Test.createObject({
   obj: null,
   parent: obj1,
 });
+await obj2.setValue_("parent", null);
 const x = [obj1, obj2._id, obj2._id.toString()];
 const obj3 = await managers.Test.createObject({
   active: true,
-  status: Status.INACTIVE,
+  status: Status.INACTIVE,  
   description: "Obj3",
   ref: obj1._id,
   refarr: [obj1._id, obj2],

@@ -58,7 +58,6 @@ export abstract class AutoUpdatedClientObject<T> {
   private readonly EmitterID = new ObjectId().toHexString();
   protected readonly toChangeOnParents: { key: string; value: any }[] = [];
   public callbacks: DEMClientCallbacks<T>;
-  private referencesLoaded = false;
   private readonly loadShit = async (): Promise<void> => {
     if (this.isLoaded) {
       try {
@@ -76,16 +75,7 @@ export abstract class AutoUpdatedClientObject<T> {
       return;
     }
 
-    await new Promise<void>((resolve, reject) => {
-      this.emitter.once(
-        "pre-loaded" + this.EmitterID,
-        (failed: boolean, reason: string) => {
-          if (failed) {
-            reject(new Error(reason));
-          } else resolve();
-        },
-      );
-    });
+    await this.waitForPreloaded();
     this.generateSettersAndGetters();
     try {
       await this.loadForceReferences();
@@ -249,6 +239,7 @@ export abstract class AutoUpdatedClientObject<T> {
             return;
           }
           this.data = res.data as IsData<T>;
+          this.generateSettersAndGetters();
           this.isLoading = false;
           this.emitter.emit("pre-loaded" + this.EmitterID);
           this.openSockets();
@@ -298,6 +289,20 @@ export abstract class AutoUpdatedClientObject<T> {
     this.generateSettersAndGetters();
   }
 
+  public async waitForPreloaded() {
+    if(this.isLoaded) return;
+    await new Promise<void>((resolve, reject) => {
+      this.emitter.once(
+        "pre-loaded" + this.EmitterID,
+        (failed: boolean, reason: string) => {
+          if (failed) {
+            reject(new Error(reason));
+          } else resolve();
+        }
+      );
+    });
+  }
+
   protected handleNewObject(data: IsData<T>) {
     this.isLoading = true;
     if (!this.className)
@@ -335,6 +340,7 @@ export abstract class AutoUpdatedClientObject<T> {
         return;
       }
       this.data = res.data as IsData<T>;
+      this.generateSettersAndGetters();
       this.isLoading = false;
       this.loggers.debug("Created new object: " + this.data._id);
       this.emitter.emit("pre-loaded" + this.EmitterID);
@@ -365,10 +371,8 @@ export abstract class AutoUpdatedClientObject<T> {
     return true;
   }
 
-  public loadMissingReferences(): void {
-    if (this.referencesLoaded) return;
-    this.referencesLoaded = true;
-    this.checkForMissingRefs();
+  public async loadMissingReferences(): Promise<void> {
+    await this.checkForMissingRefs();
     this.generateSettersAndGetters();
   }
 
@@ -389,6 +393,7 @@ export abstract class AutoUpdatedClientObject<T> {
       );
 
       // Return success with the applied patch
+      if (this.isLoaded) this.callbacks.update(this as any, update.key);
       return { success: true, data: undefined, message: "" };
     } catch (error: any) {
       this.loggers.error(
@@ -493,6 +498,7 @@ export abstract class AutoUpdatedClientObject<T> {
       if (
         (Array.isArray(originalVal) &&
           Array.isArray(val) &&
+          originalVal.length === val.length &&
           !originalVal.some((v) => !val.includes(v))) ||
         (Array.isArray(originalVal) &&
           !Array.isArray(val) &&
@@ -586,83 +592,132 @@ export abstract class AutoUpdatedClientObject<T> {
         let isPopulated = getMetadataRecursive("refsTo", this, lastPath);
         if (isPopulated) {
           isPopulated = isPopulated.split(":");
-          const parentObj = this.parentManager.managers[
-            isPopulated[0]
-          ].getObject(val) as AutoUpdatedClientObject<any>;
-          if (!parentObj) {
-            message +=
-              "\nFailed to set value for " +
-              this.className +
-              " parent not found";
-            this.loggers.error(message);
-            return { success: false, msg: message };
-          }
-          if (
-            parentObj.getValue(isPopulated[1]) &&
-            !Array.isArray(parentObj.getValue(isPopulated[1]))
-          ) {
-            message +=
-              "\nThis is a 1:1 relationship and the parent already has a parent with the ID: " +
-              (parentObj.getValue(isPopulated[1])._id?.toString() ??
-                parentObj.getValue(isPopulated[1]).toString()) +
+          if (val !== null && val !== undefined) {
+            const parentObj = this.parentManager.managers[
+              isPopulated[0]
+            ].getObject(val) as AutoUpdatedClientObject<any>;
+            if (!parentObj) {
+              message +=
+                "\n   Failed to set value for " +
+                this.className +
+                " parent not found";
               this.loggers.error(message);
-            return { success: false, msg: message };
-          }
-          let res;
-          if (this.isServer) {
-            const value = parentObj.getValue(isPopulated[1]);
-            if (Array.isArray(value)) {
-              if (
-                value
-                  .map((v) => v._id?.toString() ?? v.toString())
-                  .includes(this.data._id.toString())
-              )
-                return { success: true, msg: message + "\nValue already set" };
-              res = await parentObj.setValue__(
-                isPopulated[1],
-                value.concat(this.data._id.toString()),
-                false,
-                false,
-                true,
-              );
-            } else {
-              if (
-                (value._id?.toString() ?? value.toString()) ===
-                this.data._id.toString()
-              )
-                return { success: true, msg: message + "\nValue already set" };
-              res = await parentObj.setValue__(
-                isPopulated[1],
-                this.data._id.toString(),
-                false,
-                false,
-                true,
-              );
+              return { success: false, msg: message };
             }
-          } else {
-            const value = parentObj.getValue(isPopulated[1]);
             if (
-              Array.isArray(value)
-                ? value
+              parentObj.getValue(isPopulated[1]) &&
+              !Array.isArray(parentObj.getValue(isPopulated[1]))
+            ) {
+              message +=
+                "\nThis is a 1:1 relationship and the parent already has a parent with the ID: " +
+                (parentObj.getValue(isPopulated[1])._id?.toString() ??
+                  parentObj.getValue(isPopulated[1]).toString()) +
+                this.loggers.error(message);
+              return { success: false, msg: message };
+            }
+            let res;
+            if (this.isServer) {
+              const value = parentObj.getValue(isPopulated[1]);
+              if (Array.isArray(value)) {
+                if (
+                  value
                     .map((v) => v._id?.toString() ?? v.toString())
                     .includes(this.data._id.toString())
-                : (value._id?.toString() ?? value.toString()) ===
+                )
+                  return {
+                    success: true,
+                    msg: message + "\nValue already set",
+                  };
+                res = await parentObj.setValue__(
+                  isPopulated[1],
+                  value.concat(this.data._id.toString()),
+                  false,
+                  false,
+                  true,
+                );
+              } else {
+                if (
+                  (value._id?.toString() ?? value.toString()) ===
                   this.data._id.toString()
-            )
-              return { success: true, msg: message + "\nValue already set" };
-            ({ res, val } = await this.preInnerSetValue(
-              noGet,
-              key,
-              val,
-              lastPath,
-              silent,
-              noUpdate,
-            ));
+                )
+                  return {
+                    success: true,
+                    msg: message + "\nValue already set",
+                  };
+                res = await parentObj.setValue__(
+                  isPopulated[1],
+                  this.data._id.toString(),
+                  false,
+                  false,
+                  true,
+                );
+              }
+            } else {
+              const value = parentObj.getValue(isPopulated[1]);
+              if (
+                Array.isArray(value)
+                  ? value
+                      .map((v) => v._id?.toString() ?? v.toString())
+                      .includes(this.data._id.toString())
+                  : (value._id?.toString() ?? value.toString()) ===
+                    this.data._id.toString()
+              )
+                return { success: true, msg: message + "\nValue already set" };
+              ({ res, val } = await this.preInnerSetValue(
+                noGet,
+                key,
+                val,
+                lastPath,
+                silent,
+                noUpdate,
+              ));
+            }
+            success = res.success;
+            message +=
+              "\nReport from inner setValue function: " +
+              res.msg.split("\n").join("\n  ");
+          } else {
+            const originalParenValue = this.getValue(key).getValue(
+              isPopulated[1],
+            );
+            if (
+              !originalParenValue ||
+              (Array.isArray(originalParenValue) &&
+                !originalParenValue.some(
+                  (v: any) =>
+                    (v._id?.toString() ?? v.toString()) === this._id.toString(),
+                ))
+            ) {
+              message += "\n   Value already set";
+              return { success: true, msg: message };
+            }
+            const parentObj = this.parentManager.managers[
+              isPopulated[0]
+            ].getObject(originalVal) as AutoUpdatedClientObject<any>;
+            if (!parentObj) {
+              message +=
+                "\n   Failed to set value for " +
+                this.className +
+                " parent not found";
+              this.loggers.error(message);
+              return { success: false, msg: message };
+            }
+            let res;
+            if (Array.isArray(originalParenValue)) {
+              res = await parentObj.setValue__(
+                isPopulated[1],
+                originalParenValue
+                  .map((v: any) => v._id?.toString() ?? v.toString())
+                  .filter((v) => v !== this._id.toString()),
+              );
+            } else {
+              res = await parentObj.setValue__(isPopulated[1], null);
+            }
+            success = res.success;
+            message +=
+              "\nReport from inner setValue function: " +
+              res.msg.split("\n").join("\n  ");
           }
-          success = res.success;
-          message +=
-            "\nReport from inner setValue function: " +
-            res.msg.split("\n").join("\n  ");
         } else {
           const isRef = getMetadataRecursive("isRef", this, key);
           if (
@@ -771,8 +826,9 @@ export abstract class AutoUpdatedClientObject<T> {
             .concat(val)
             .map(
               (v: any) =>
-                v._id?.toString() ?? new ObjectId(v as string | ObjectId),
-            ),
+                v?._id?.toString() ?? new ObjectId(v as string | ObjectId),
+            )
+            .filter(Boolean),
         ),
       ];
     }
@@ -790,8 +846,9 @@ export abstract class AutoUpdatedClientObject<T> {
             .concat(val)
             .map(
               (v: any) =>
-                v._id?.toString() ?? new ObjectId(v as string | ObjectId),
-            ),
+                v?._id?.toString() ?? new ObjectId(v as string | ObjectId),
+            )
+            .filter(Boolean),
         ),
       ];
     }
@@ -802,6 +859,7 @@ export abstract class AutoUpdatedClientObject<T> {
     const isRef = getMetadataRecursive("isRef", this, lastPath);
     if (isRef) {
       for (const id of Array.isArray(value) ? value : [value]) {
+        if (!id) continue;
         let result;
         for (const manager of Object.values(this.parentManager.managers)) {
           result = manager.getObject(id?.toString());
@@ -828,13 +886,12 @@ export abstract class AutoUpdatedClientObject<T> {
             continue;
           }
         }
-        this.referencesLoaded = false;
-        result.loadMissingReferences();
+        await result.loadMissingReferences();
       }
     }
   }
 
-  public getValue(key_: Paths<T, AutoUpdatedClientObject<T>>) {
+  public getValue(key_: Paths<T, AutoUpdatedClientObject<unknown>>) {
     let value: any;
     const key = key_ as string;
 
@@ -870,6 +927,7 @@ export abstract class AutoUpdatedClientObject<T> {
         if (silent) {
           if (noUpdate) return;
           return this.onUpdate(true).then(() => {
+            if (this.isLoaded) this.callbacks.update(this as any, key);
             return resolve({ success: true, msg: "Success - silent" });
           });
         }
@@ -913,7 +971,7 @@ export abstract class AutoUpdatedClientObject<T> {
     }
   }
 
-  public async onUpdate(noUpdate: boolean) {
+  public async onUpdate(_: boolean) {
     return;
   }
 
@@ -974,14 +1032,17 @@ export abstract class AutoUpdatedClientObject<T> {
 
   private async handleLoad(obj: any, key: string, alreadySeen: any[]) {
     if (!this.parentManager) throw new Error("No manager");
-    const refId = obj[key];
-    if (refId) {
-      for (const manager of Object.values(this.parentManager.managers)) {
-        const result = manager.getObject(refId);
-        if (result && !alreadySeen.includes(refId)) {
-          alreadySeen.push(refId);
-          await result.loadForceReferences(undefined, undefined, alreadySeen);
-          break;
+    const refIds = Array.isArray(obj[key]) ? obj[key] : [obj[key]];
+
+    for (const refId of refIds) {
+      if (refId) {
+        for (const manager of Object.values(this.parentManager.managers)) {
+          const result = manager.getObject(refId);
+          if (result && !alreadySeen.includes(refId)) {
+            alreadySeen.push(refId);
+            await result.loadForceReferences(undefined, undefined, alreadySeen);
+            break;
+          }
         }
       }
     }
@@ -1072,45 +1133,35 @@ export abstract class AutoUpdatedClientObject<T> {
     return res;
   }
 
-  private checkForMissingRefs() {
+  private async checkForMissingRefs() {
     for (const prop of this.properties) {
       let pointer = getMetadataRecursive("refsTo", this, prop.toString());
       if (pointer) {
         pointer = pointer.split(":");
         if (pointer.length != 2)
           throw new Error(
-            "population rf incorrectly defined. Sould be 'ParentClass:PropName'",
+            "population ref incorrectly defined. Sould be 'ParentClass:PropName'",
           );
-        this.findMissingObjectReference(prop, pointer);
+        await this.findMissingObjectReference(prop, pointer);
       }
     }
   }
-  private findMissingObjectReference(prop: any, pointer: string[]) {
+  private async findMissingObjectReference(prop: any, pointer: string[]) {
     const ac = this.parentManager.managers[pointer[0]];
     if (!ac)
       throw new Error(`No AutoUpdateManager found for class ${pointer[0]}`);
 
-    for (const obj of ac.objectsAsArray as AutoUpdatedClientObject<any>[]) {
-      let eData = obj.extractedData;
+    for (const obj of ac.objectsAsArray) {
+      await obj.waitForPreloaded();
       let found;
-      for (const pathPart of pointer[1].split(".")) {
-        try {
-          if (
-            !eData[pathPart] ||
-            (Array.isArray(eData[pathPart]) &&
-              !eData[pathPart]
-                .map((id: any) => id.toString())
-                .includes((this as any)._id.toString())) ||
-            (!Array.isArray(eData[pathPart]) &&
-              eData[pathPart].toString() !== this.data._id.toString())
-          ) {
-            found = false;
-            break;
-          }
-          found = eData = eData[pathPart];
-        } catch (error: any) {
-          console.error(error);
-        }
+      if (Array.isArray(obj.getValue(pointer[1]))) {
+        found = (obj.getValue(pointer[1]) as any[])
+          .map((id: any) => id._id?.toString() ?? id.toString())
+          .includes(this.data._id.toString());
+      } else {
+        found =
+          obj.getValue(pointer[1])?._id?.toString() ===
+          this.data._id.toString();
       }
       if (found) {
         (this.data as any)[prop] = obj._id;
@@ -1129,30 +1180,66 @@ export abstract class AutoUpdatedClientObject<T> {
   }
 
   public async contactChildren() {
+    let childsManager: null | AutoUpdateManager<AutoUpdatedClientObject<any>> =
+      null;
+    const findMissingObjectWithoutKnownManager = async (
+      o: any,
+    ): Promise<any> => {
+      if (o instanceof AutoUpdatedClientObject) return o;
+      if (childsManager)
+        try {
+          return await childsManager.handleGetMissingObject(
+            o._id?.toString() ?? o.toString(),
+          );
+        } catch (error) {
+          const _ = error;
+          this.loggers.error("This should fucking not happen wtffffff");
+          childsManager = null;
+        }
+      else {
+        for (const manager of Object.values(this.parentManager.managers)) {
+          try {
+            const newO = await manager.handleGetMissingObject(
+              o._id?.toString() ?? o.toString(),
+            );
+            childsManager = manager;
+            return newO;
+          } catch (e) {
+            const _ = e;
+          }
+        }
+        return undefined;
+      }
+    };
+
     for (const prop of this.properties) {
       const pointer = getMetadataRecursive("refsTo", this, prop.toString());
       const isRef = getMetadataRecursive("isRef", this, prop.toString());
-      if (isRef && !pointer) {
-        let obj = this.getValue(prop as any);
+      if (!isRef || pointer) continue;
+      let obj = this.getValue(prop as any);
+      if (!obj || (Array.isArray(obj) && obj.length == 0)) {
+        obj = this.getValueInternal(prop);
         try {
-          if (Array.isArray(obj) ? obj.length > 0 : !!obj)
-            obj = await this.parentManager.handleGetMissingObject(
-              this.getValueInternal(prop as any),
+          if (Array.isArray(obj))
+            obj = await Promise.all(
+              obj.map(findMissingObjectWithoutKnownManager),
             );
+          else obj = await findMissingObjectWithoutKnownManager(obj);
         } catch (error: any) {
           const _ = error;
         }
-        if (!obj) continue;
-        if (Array.isArray(this.getValue(prop as any))) {
-          for (const child of this.getValue(prop as any)) {
-            try {
-              child.loadMissingReferences();
-            } catch (error: any) {
-              this.loggers.error(error.message);
-            }
-          }
-        } else this.getValue(prop as any)?.loadMissingReferences();
       }
+
+      if (!obj) continue;
+      if (Array.isArray(obj)) {
+        for (const child of obj) {
+          try {
+            await child.loadMissingReferences();
+          } catch (error: any) {
+            this.loggers.error(error.message);
+          }
+        }
+      } else await obj.loadMissingReferences();
     }
   }
 
