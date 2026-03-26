@@ -64,7 +64,7 @@ export abstract class AutoUpdatedClientObject<T> {
         this.generateSettersAndGetters();
         await this.loadForceReferences();
         for (const thing of this.toChangeOnParents) {
-          await this.setValue__(thing.key, thing.value);
+          await this.setValue__(thing.key, thing.value, true, false, true);
         }
       } catch (error: any) {
         this.loggers.error("Error loading references");
@@ -80,7 +80,7 @@ export abstract class AutoUpdatedClientObject<T> {
     try {
       await this.loadForceReferences();
       for (const thing of this.toChangeOnParents) {
-        await this.setValue__(thing.key, thing.value);
+        await this.setValue__(thing.key, thing.value, true, false, true);
       }
       this.isLoadingReferences = false;
     } catch (error: any) {
@@ -290,7 +290,7 @@ export abstract class AutoUpdatedClientObject<T> {
   }
 
   public async waitForPreloaded() {
-    if(this.isLoaded) return;
+    if (this.isLoaded) return;
     await new Promise<void>((resolve, reject) => {
       this.emitter.once(
         "pre-loaded" + this.EmitterID,
@@ -298,7 +298,7 @@ export abstract class AutoUpdatedClientObject<T> {
           if (failed) {
             reject(new Error(reason));
           } else resolve();
-        }
+        },
       );
     });
   }
@@ -312,20 +312,21 @@ export abstract class AutoUpdatedClientObject<T> {
     this.loggers.debug(
       this.className + " - Requesting new object creation on server",
     );
-    for (const key of this.properties) {
-      if (typeof key !== "string") continue;
-      let pointer = getMetadataRecursive("refsTo", this, key);
-      if (pointer) {
-        pointer = pointer.split(":");
-        if (pointer.length != 2)
-          throw new Error(
-            "population ref incorrectly defined. Sould be 'ParentClass:PropName.Path'",
-          );
-        const temp = data[key];
-        delete data[key];
-        if (temp) this.toChangeOnParents.push({ key: key, value: temp });
+    if (this.isServer)
+      for (const key of this.properties) {
+        if (typeof key !== "string") continue;
+        let pointer = getMetadataRecursive("refsTo", this, key);
+        if (pointer) {
+          pointer = pointer.split(":");
+          if (pointer.length != 2)
+            throw new Error(
+              "population ref incorrectly defined. Sould be 'ParentClass:PropName.Path'",
+            );
+          const temp = data[key];
+          delete data[key];
+          if (temp) this.toChangeOnParents.push({ key: key, value: temp });
+        }
       }
-    }
     try {
       data = _.cloneDeep(data);
     } catch (error: any) {
@@ -1076,7 +1077,7 @@ export abstract class AutoUpdatedClientObject<T> {
       const originalLength = val.length;
       const filtred = val.filter(Boolean);
       if (filtred.length !== originalLength) {
-        await obj.setValue(pointer[1], filtred);
+        await obj.setValue__(pointer[1], filtred, true, false, true);
         this.loggers.warn(
           "Array value changed from " +
             originalLength +
@@ -1088,12 +1089,12 @@ export abstract class AutoUpdatedClientObject<T> {
       if (filtred.map((id: any) => id?._id?.toString()).includes(this.data._id))
         await obj.contactChildren();
       else
-        await obj.setValue(pointer[1] as any, [
+        await obj.setValue__(pointer[1] as any, [
           ...new Set([...filtred, this.data._id]),
-        ]);
+        ], true, false, true);
     } else if (val?.toString() === this.data?._id?.toString())
       await obj.contactChildren();
-    else await obj.setValue(pointer[1] as any, this.data?._id?.toString());
+    else await obj.setValue__(pointer[1] as any, this.data?._id?.toString(), true, false, true);
   }
 
   public async destroy(
@@ -1239,7 +1240,7 @@ export abstract class AutoUpdatedClientObject<T> {
             this.loggers.error(error.message);
           }
         }
-      } else await obj.loadMissingReferences();
+      } else await obj?.loadMissingReferences();
     }
   }
 

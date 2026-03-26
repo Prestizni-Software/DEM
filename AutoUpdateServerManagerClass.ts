@@ -7,7 +7,6 @@ import {
 import {
   Constructor,
   EventEmitter3,
-  InstanceOf,
   IsData,
   LoggersType,
   Pure,
@@ -17,7 +16,6 @@ import {
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { Paths, PathValueOf } from "./CommonTypes_server.js";
-import { DeAutoUpdate } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
 import a from "node-machine-id";
 import { getModelForClass } from "@typegoose/typegoose";
@@ -498,7 +496,7 @@ export class AutoUpdateServerManager<
     socket.on(
       "new" + this.className,
       async (
-        data: Omit<IsData<T>, keyof AutoUpdatedServerObject<any> | "_id">,
+        data: Omit<IsData<Pure<T>>, "_id">,
         ack: (res: ServerResponse<T>) => void,
       ) => {
         this.loggers.debug(
@@ -629,7 +627,7 @@ export class AutoUpdateServerManager<
   }
 
   public async createObject(
-    data: Omit<IsData<Pure<T>>, keyof AutoUpdatedServerObject<any> | "_id">,
+    data: Omit<IsData<Pure<T, AutoUpdatedServerObject<any>>>, "_id">,
   ) {
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);

@@ -400,7 +400,7 @@ export class AutoUpdateClientManager<
   }
 
   public async createObject(
-    data: Omit<IsData<Pure<T>>, keyof AutoUpdatedClientObject<any> | "_id">,
+    data: Omit<IsData<Pure<T>>, "_id">,
   ) {
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
@@ -417,12 +417,13 @@ export class AutoUpdateClientManager<
         this.emitter,
       );
       await object.waitForPreloaded();
-      this.objects_[object._id] = object;
-      await object.isPreLoadedAsync();
-      await object.loadMissingReferences();
-      await object.contactChildren();
-      this.callbacks.new(this as any);
-      return object;
+      const id = object._id;
+      this.objects_[id] = object;
+      await this.objects_[id].isPreLoadedAsync();
+      await this.objects_[id].loadMissingReferences();
+      await this.objects_[id].contactChildren();
+      this.callbacks.new(this.objects_[id]);
+      return this.objects_[id];
     } catch (error: any) {
       this.loggers.error(
         "Error creating new object from manager " + this.className,

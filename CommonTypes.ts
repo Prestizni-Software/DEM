@@ -49,7 +49,7 @@ export type IsData<T> = {
 export type ExtractedData<T, Base = AutoUpdatedClientObject<T>> = {
     [K in keyof FixPure<T, Base>]: OnlyStringForRefs<T[K]>;
 };
-export type FixPure<T, Base> = Omit<T, keyof Omit<Base, "_id">>;
+type FixPure<T, Base> = Omit<T, keyof Omit<Base, "_id">>;
 export type SocketEvent = [string, any, (res: ServerResponse<any>) => void];
 
 export type ServerResponse<T> =
@@ -166,5 +166,5 @@ export type PathValueOf<
     ? NonNullable<T>[P]
     : never;
     
-export type Pure<T> = Pick<T, keyof OnlyAddedKeys<T, AutoUpdatedClientObject<unknown>>>;
+export type Pure<T, Base = AutoUpdatedClientObject<T>> = FixPure<T, Base>;
 

@@ -1,4 +1,6 @@
 import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
+import { Test } from "./ClientTypes.js";
+import { Pure } from "./CommonTypes.js";
 import { Status } from "./TestTypes.js";
 import { initClientManagers } from "./test_lib.js";
 
@@ -17,13 +19,13 @@ await obj2.setValue(
   "parent", obj2._id);
 await obj.setValue("active", false);
 await obj.setValue("active", true);
-
+type x = Pure<Test>;
 await obj.destroy();
 managers.Test.createObject({
   active: true,
   status: Status.INACTIVE,
   description: "ObjClient",
-  ref: null,
+  ref: obj._id,
   refarr: [],
   obj: null,
   parent: null,
