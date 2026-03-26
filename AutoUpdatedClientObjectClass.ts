@@ -64,7 +64,7 @@ export abstract class AutoUpdatedClientObject<T> {
         this.generateSettersAndGetters();
         await this.loadForceReferences();
         for (const thing of this.toChangeOnParents) {
-          await this.setValue__(thing.key, thing.value, true, false, true);
+          await this.setValue__(thing.key, thing.value);
         }
       } catch (error: any) {
         this.loggers.error("Error loading references");
@@ -80,7 +80,7 @@ export abstract class AutoUpdatedClientObject<T> {
     try {
       await this.loadForceReferences();
       for (const thing of this.toChangeOnParents) {
-        await this.setValue__(thing.key, thing.value, true, false, true);
+        await this.setValue__(thing.key, thing.value);
       }
       this.isLoadingReferences = false;
     } catch (error: any) {
@@ -1077,7 +1077,7 @@ export abstract class AutoUpdatedClientObject<T> {
       const originalLength = val.length;
       const filtred = val.filter(Boolean);
       if (filtred.length !== originalLength) {
-        await obj.setValue__(pointer[1], filtred, true, false, true);
+        await obj.setValue__(pointer[1], filtred);
         this.loggers.warn(
           "Array value changed from " +
             originalLength +
@@ -1091,10 +1091,10 @@ export abstract class AutoUpdatedClientObject<T> {
       else
         await obj.setValue__(pointer[1] as any, [
           ...new Set([...filtred, this.data._id]),
-        ], true, false, true);
+        ]);
     } else if (val?.toString() === this.data?._id?.toString())
       await obj.contactChildren();
-    else await obj.setValue__(pointer[1] as any, this.data?._id?.toString(), true, false, true);
+    else await obj.setValue__(pointer[1] as any, this.data?._id?.toString());
   }
 
   public async destroy(
