@@ -1,5 +1,5 @@
 import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
-import { Constructor, EventEmitter3, LoggersType } from "./CommonTypes.js";
+import { Constructor, EventEmitter3, LoggersType, Cache } from "./CommonTypes.js";
 import "reflect-metadata";
 export abstract class AutoUpdateManager<
   T extends AutoUpdatedClientObject<any>,
@@ -10,6 +10,9 @@ export abstract class AutoUpdateManager<
   protected classParam: Constructor<T>;
   protected properties: (keyof T)[];
   public readonly className: string;
+  public readonly cache:Cache<any> = {
+    references:{}
+  };
   public readonly managers: Record<
     string,
     AutoUpdateManager<AutoUpdatedClientObject<any>>

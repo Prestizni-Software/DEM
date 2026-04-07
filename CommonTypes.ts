@@ -2,6 +2,7 @@ import { EventEmitter } from "eventemitter3";
 import { ObjectId, ObjectIdLike } from "bson";
 import "reflect-metadata";
 import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass";
+import { AutoUpdateManager } from "./AutoUpdateManagerClass";
 
 type RefType = string | ObjectId;
 export type EventEmitter3 = EventEmitter;
@@ -40,6 +41,12 @@ type OnlyStringForRefs<V> =
     : IsAUCO<NonNullable<V>> extends true
       ? string
       : V;
+
+export type Cache<T> = {
+  references:{
+    [K in keyof T]?: AutoUpdateManager<AutoUpdatedClientObject<any>>
+  }
+}
 
 // The upgraded IsData type
 export type IsData<T> = {

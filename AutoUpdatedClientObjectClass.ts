@@ -422,11 +422,11 @@ export abstract class AutoUpdatedClientObject<T> {
           if (isRef) {
             if (Array.isArray(this.data[k])) {
               const filtered = this.data[k]
-                .map((id: string) => this.findReference(id))
+                .map((id: string) => this.findReference(id, key))
                 .filter(Boolean);
               return filtered;
             } else {
-              const result = this.findReference(this.data[k]);
+              const result = this.findReference(this.data[k], key);
               return result;
             }
           } else return this.data[k];
@@ -437,11 +437,16 @@ export abstract class AutoUpdatedClientObject<T> {
     }
   }
 
-  protected findReference(id: string | ObjectId): any {
+  protected findReference(id: string | ObjectId, key: string): any {
     if (typeof id !== "string" && !ObjectId.isValid(id)) return id;
+    if (this.parentManager.cache.references[key])
+      return this.parentManager.cache.references[key].getObject(id.toString());
     for (const manager of Object.values(this.parentManager.managers)) {
       const result = manager.getObject(id.toString());
-      if (result) return result;
+      if (result) {
+        this.parentManager.cache.references[key] = manager;
+        return result;
+      }
     }
     return undefined;
   }
