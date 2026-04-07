@@ -140,6 +140,8 @@ export class AutoUpdateClientManager<
   >;
   public callbacks: DEMClientCallbacks<T>;
   declare public socket: Socket;
+  public totalObjects: number = 0;
+  public loadedObjects: number = 0;
   constructor(
     classParam: Constructor<T>,
     className: string,
@@ -163,7 +165,9 @@ export class AutoUpdateClientManager<
         "Applying new object from manager " + this.className + " - " + id,
       );
       try {
+        this.totalObjects += 1;
         await this.handleGetMissingObject(id);
+        this.loadedObjects += 1;
       } catch (error: any) {
         this.loggers.error(
           "Error loading object " +
@@ -181,6 +185,8 @@ export class AutoUpdateClientManager<
         "Applying object deletion from manager " + this.className + " - " + id,
       );
       try {
+        this.totalObjects -= 1;
+        this.loadedObjects -= 1;
         await this.deleteObject(id);
       } catch (error: any) {
         this.loggers.error(
@@ -239,6 +245,7 @@ export class AutoUpdateClientManager<
               "] entries",
           );
           this.loggers.debug(data.ids.join(", "));
+          this.totalObjects = data.ids.length;
           let i = 0;
           for (const id of data.ids) {
             try {
@@ -273,6 +280,7 @@ export class AutoUpdateClientManager<
               .then(async () => {
                 try {
                   await this.objects_[id].loadMissingReferences();
+                  this.loadedObjects += 1;
                 } catch (error: any) {
                   this.loggers.error(
                     "Error loading missing references for object " +
