@@ -34,11 +34,19 @@ This is a TypeScript library for real-time data synchronization using Socket.io 
 ### Key Files
 
 - `AutoUpdatedClientObjectClass.ts` - Base client object implementation
+- `AutoUpdatedServerObjectClass.ts` - Extended Server variation of the base object implementation
 - `AutoUpdateManagerClass.ts` - Base manager implementation  
 - `AutoUpdateClientManagerClass.ts` - Client-specific manager with factory
+- `AutoUpdateServerManagerClass.ts` - Server-specific manager with factory
 - `CommonTypes.ts` - Shared types and decorator functions
 - `test_lib.ts` - Test setup utilities for client/server initialization
 - `tests/dem.test.ts` - End-to-end tests demonstrating usage
+- `client.ts` - Example client implementation
+- `server.ts` - Example server implementation
+- `socket_test.ts` - Socket.io connection testing
+- `TestTypes.ts` - Shared test constants and enums
+- `ServerTypes.ts` - Server-specific type definitions
+- `ClientTypes.ts` - Client-specific type definitions
 
 ### Common Patterns
 
@@ -103,3 +111,13 @@ Tests use a real MongoDB instance and Socket.io server:
 - Reference loading errors are logged with full stack traces
 - Circular reference detection prevents infinite loops
 - WebSocket events are prefixed with class names (e.g., "newMyClass", "updateMyClass-id")
+
+### Important Notes
+
+**Everything in the root folder is important**:
+- Source files (.ts) contain the core implementation
+- Test files demonstrate usage patterns and should be referenced when understanding the library
+- Configuration files (package.json, tsconfig.json) are essential for building and testing
+- The dist/ folder contains compiled output but should not be modified directly
+
+When working with this codebase, always check both client and server implementations as they work together to provide the synchronization functionality.
