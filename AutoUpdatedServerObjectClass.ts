@@ -109,6 +109,7 @@ export abstract class AutoUpdatedServerObject<
         update: (x: any) => {},
         delete: (x: any) => {},
         new: (x: any) => {},
+        progress: (x: any) => {},
       },
       emitter,
       true,

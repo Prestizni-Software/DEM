@@ -20,6 +20,7 @@ export type DEMClientCallbacks<T> = {
   new: (obj: T) => Promise<void> | void;
   update: (obj: T, key: string) => Promise<void> | void;
   delete: (obj: T) => Promise<void> | void;
+  progress: (percent: number) => void;
 };
 
 type SocketType = Socket<any, any>;
@@ -1201,9 +1202,9 @@ export abstract class AutoUpdatedClientObject<T> {
           return await childsManager.handleGetMissingObject(
             o._id?.toString() ?? o.toString(),
           );
-        } catch (error) {
-          const _ = error;
+        } catch (error:any) {
           this.loggers.error("This should fucking not happen wtffffff");
+          this.loggers.error(error.message);
           childsManager = null;
         }
       else {

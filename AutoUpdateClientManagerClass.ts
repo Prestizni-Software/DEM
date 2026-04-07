@@ -6,7 +6,6 @@ import {
 } from "./AutoUpdatedClientObjectClass.js";
 import {
   Constructor,
-  DeAutoUpdate,
   IsData,
   LoggersType,
   Pure,
@@ -30,12 +29,13 @@ export async function AUCManagerFactory<
   emitter: EventEmitter = new EventEmitter(),
   callbacks: Partial<{
     [K in keyof T]: Partial<DEMClientCallbacks<InstanceType<T[K]>>>;
-  }> = {},
+  } & Partial<DEMClientCallbacks<any>>> = {},
 ): Promise<WrappedInstances<T>> {
   const defaultCallbacks: DEMClientCallbacks<AutoUpdatedClientObject<any>> = {
-    new: (x: any) => {},
-    update: (x: any, y: any) => {},
-    delete: (x: any) => {},
+    new: (callbacks.new ?? ((x: any) => {})),
+    update: callbacks.update ?? ((x: any, y: any) => {}),
+    delete: callbacks.delete ?? ((x: any) => {}),
+    progress: callbacks.progress ?? ((x: any) => {}),
   };
   if (disableDEMDebugMessages) {
     loggers.debug = (_) => {};
@@ -281,6 +281,10 @@ export class AutoUpdateClientManager<
                 try {
                   await this.objects_[id].loadMissingReferences();
                   this.loadedObjects += 1;
+                  this.loggers.debug(
+                    "Loaded object " + id + " from manager " + this.className + " - " + this.loadedObjects + "/" + this.totalObjects,
+                  )
+                  this.callbacks.progress(this.loadedObjects/ this.totalObjects);
                 } catch (error: any) {
                   this.loggers.error(
                     "Error loading missing references for object " +
