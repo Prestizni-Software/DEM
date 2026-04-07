@@ -46,6 +46,8 @@ export abstract class AutoUpdatedClientObject<T> {
     warn: () => {},
   };
   protected isLoading = true;
+  protected isLoadingReferences = true;
+  protected checkedMissingRefs = false;
   protected readonly emitter: EventEmitter3;
   public readonly properties: (keyof OnlyAddedKeys<
     T,
@@ -54,7 +56,6 @@ export abstract class AutoUpdatedClientObject<T> {
   public readonly classParam: Constructor<T>;
   public readonly className: string;
   public parentManager: AutoUpdateManager<AutoUpdatedClientObject<T>>;
-  protected isLoadingReferences = true;
   private readonly EmitterID = new ObjectId().toHexString();
   protected readonly toChangeOnParents: { key: string; value: any }[] = [];
   public callbacks: DEMClientCallbacks<T>;
@@ -1153,6 +1154,9 @@ export abstract class AutoUpdatedClientObject<T> {
     }
   }
   private async findMissingObjectReference(prop: any, pointer: string[]) {
+    if (this.checkedMissingRefs && this.isLoadingReferences) return;
+    this.checkedMissingRefs = true;
+
     const ac = this.parentManager.managers[pointer[0]];
     if (!ac)
       throw new Error(`No AutoUpdateManager found for class ${pointer[0]}`);
@@ -1240,7 +1244,7 @@ export abstract class AutoUpdatedClientObject<T> {
       if (Array.isArray(obj)) {
         for (const child of obj) {
           try {
-            await child.loadMissingReferences();
+            await child?.loadMissingReferences();
           } catch (error: any) {
             this.loggers.error(error.message);
           }
