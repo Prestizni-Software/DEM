@@ -180,4 +180,5 @@ export const EVENT_UPDATE = "update";
 export const EVENT_DELETE = "delete";
 export const EVENT_NEW = "new";
 export const EVENT_GET = "get";
+export const EVENT_STARTUP = "startup";
 

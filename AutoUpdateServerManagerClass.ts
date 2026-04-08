@@ -13,6 +13,11 @@ import {
   ServerResponse,
   ServerUpdateRequest,
   SocketEvent,
+  EVENT_NEW,
+  EVENT_UPDATE,
+  EVENT_DELETE,
+  EVENT_GET,
+  EVENT_STARTUP,
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { Paths, PathValueOf } from "./CommonTypes_server.js";
@@ -173,23 +178,23 @@ function setupSocketMiddleware<
 
         const id = e.slice(-24);
         switch (true) {
-          case e.startsWith("new"):
+          case e.startsWith(EVENT_NEW):
             demEvent.type = DEMEventTypes.new;
-            demEvent.manager = managers[e.replace("new", "")];
+            demEvent.manager = managers[e.replace(EVENT_NEW, "")];
             demEvent.data = event[1];
             break;
 
-          case e.startsWith("update"):
+          case e.startsWith(EVENT_UPDATE):
             demEvent.type = DEMEventTypes.update;
             demEvent.manager =
-              managers[e.replace("update", "").replace(id, "")];
+              managers[e.replace(EVENT_UPDATE, "").replace(id, "")];
             demEvent.object = demEvent.manager.getObject(id);
             demEvent.data = event[1];
             break;
 
-          case e.startsWith("delete"):
+          case e.startsWith(EVENT_DELETE):
             demEvent.type = DEMEventTypes.delete;
-            demEvent.manager = managers[e.replace("delete", "")];
+            demEvent.manager = managers[e.replace(EVENT_DELETE, "")];
             demEvent.object = demEvent.manager.getObject(event[1]);
             if (!demEvent.object) {
               event[2]({
@@ -201,15 +206,15 @@ function setupSocketMiddleware<
             }
             break;
 
-          case e.startsWith("get"):
+          case e.startsWith(EVENT_GET):
             demEvent.type = DEMEventTypes.get;
-            demEvent.manager = managers[e.replace("get", "").replace(id, "")];
+            demEvent.manager = managers[e.replace(EVENT_GET, "").replace(id, "")];
             demEvent.object = demEvent.manager.getObject(id);
             break;
 
-          case e.startsWith("startup"):
+          case e.startsWith(EVENT_STARTUP):
             demEvent.type = DEMEventTypes.startup;
-            demEvent.manager = managers[e.replace("startup", "")];
+            demEvent.manager = managers[e.replace(EVENT_STARTUP, "")];
             break;
 
           default:
