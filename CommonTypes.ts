@@ -175,3 +175,9 @@ export type PathValueOf<
     
 export type Pure<T, Base = AutoUpdatedClientObject<T>> = FixPure<T, Base>;
 
+export const EVENT_PRE_LOADED = "pre-loaded";
+export const EVENT_UPDATE = "update";
+export const EVENT_DELETE = "delete";
+export const EVENT_NEW = "new";
+export const EVENT_GET = "get";
+

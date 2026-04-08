@@ -11,6 +11,7 @@ import {
   Paths,
   OnlyAddedKeys,
   ExtractedData,
+  EVENT_PRE_LOADED,
 } from "./CommonTypes.js";
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
