@@ -175,7 +175,10 @@ export type PathValueOf<
     
 export type Pure<T, Base = AutoUpdatedClientObject<T>> = FixPure<T, Base>;
 
-export const EVENT_PRE_LOADED = "pre-loaded";
+// Internal client events
+export const EVENT_INTERNAL_PRE_LOADED = "pre-loaded";
+
+// Server socket events
 export const EVENT_UPDATE = "update";
 export const EVENT_DELETE = "delete";
 export const EVENT_NEW = "new";

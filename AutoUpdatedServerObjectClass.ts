@@ -11,6 +11,8 @@ import {
   LoggersType,
   EventEmitter3,
   IsData,
+  EVENT_DELETE,
+  EVENT_UPDATE,
 } from "./CommonTypes.js";
 import { Paths, PathValueOf } from "./CommonTypes_server.js";
 import { DocumentType } from "@typegoose/typegoose";
@@ -176,7 +178,7 @@ export abstract class AutoUpdatedServerObject<
       );
 
       const update = this.makeUpdate(key, value);
-      const event = "update" + this.className + this.data._id;
+      const event = EVENT_UPDATE + this.className + this.data._id;
       this.socket.emit(event, update);
 
       return {
@@ -217,9 +219,9 @@ export abstract class AutoUpdatedServerObject<
         message: "Deletion uncussessful: " + error.message,
       };
     }
-    this.socket.emit("delete" + this.className, this.data._id);
-    this.socket.removeAllListeners("update" + this.className + this.data._id);
-    this.socket.removeAllListeners("delete" + this.className);
+    this.socket.emit(EVENT_DELETE + this.className, this.data._id);
+    this.socket.removeAllListeners(EVENT_UPDATE + this.className + this.data._id);
+    this.socket.removeAllListeners(EVENT_DELETE + this.className);
     await this.wipeSelf();
     return {
       success: true,

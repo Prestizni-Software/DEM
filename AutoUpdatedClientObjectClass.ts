@@ -11,7 +11,11 @@ import {
   Paths,
   OnlyAddedKeys,
   ExtractedData,
-  EVENT_PRE_LOADED,
+  EVENT_INTERNAL_PRE_LOADED,
+  EVENT_DELETE,
+  EVENT_GET,
+  EVENT_NEW,
+  EVENT_UPDATE,
 } from "./CommonTypes.js";
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
@@ -233,7 +237,7 @@ export abstract class AutoUpdatedClientObject<T> {
         "Getting new object from server " + this.className + " - " + data,
       );
       this.socket.emit(
-        "get" + this.className + data,
+        EVENT_GET + this.className + data,
         null,
         (res: ServerResponse<T>) => {
           if (!res.success) {
@@ -241,17 +245,16 @@ export abstract class AutoUpdatedClientObject<T> {
             this.loggers.error(
               "Could not load data from server: " + res.message,
             );
-            this.emitter.emit("pre-loaded" + this.EmitterID);
+            this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
             return;
-          }
-          this.data = res.data as IsData<T>;
-          this.generateSettersAndGetters();
-          this.isLoading = false;
-          this.emitter.emit("pre-loaded" + this.EmitterID);
-          this.openSockets();
-        },
-      );
-      this.data = { _id: data } as IsData<T>;
+            }
+            this.data = res.data as IsData<T>;
+            this.generateSettersAndGetters();
+            this.isLoading = false;
+            this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
+            this.openSockets();
+            },
+            );      this.data = { _id: data } as IsData<T>;
     } else {
       this.isLoading = true;
       this.data = data;
@@ -299,7 +302,7 @@ export abstract class AutoUpdatedClientObject<T> {
     if (this.isLoaded) return;
     await new Promise<void>((resolve, reject) => {
       this.emitter.once(
-        "pre-loaded" + this.EmitterID,
+        EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
         (failed: boolean, reason: string) => {
           if (failed) {
             reject(new Error(reason));
@@ -339,18 +342,18 @@ export abstract class AutoUpdatedClientObject<T> {
       this.loggers.error("Most likely cycled object: " + error.message);
       this.loggers.error(error.stack);
     }
-    this.socket.emit("new" + this.className, data, (res: ServerResponse<T>) => {
+    this.socket.emit(EVENT_NEW + this.className, data, (res: ServerResponse<T>) => {
       if (!res.success) {
         this.isLoading = false;
         this.loggers.error("Could not create data on server: " + res.message);
-        this.emitter.emit("pre-loaded" + this.EmitterID, true, res.message);
+        this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID, true, res.message);
         return;
       }
       this.data = res.data as IsData<T>;
       this.generateSettersAndGetters();
       this.isLoading = false;
       this.loggers.debug("Created new object: " + this.data._id);
-      this.emitter.emit("pre-loaded" + this.EmitterID);
+      this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
       if (!this.isServer) this.openSockets();
     });
   }
@@ -384,7 +387,7 @@ export abstract class AutoUpdatedClientObject<T> {
   }
 
   private openSockets() {
-    const event = "update" + this.className + this.data._id.toString();
+    const event = EVENT_UPDATE + this.className + this.data._id.toString();
     this.socket.on(event, async (update: ServerUpdateRequest<T>) => {
       await this.handleUpdateRequest(update);
     });
@@ -945,7 +948,7 @@ export abstract class AutoUpdatedClientObject<T> {
         }
         try {
           this.socket.emit(
-            "update" + this.className + this.data._id,
+            EVENT_UPDATE + this.className + this.data._id,
             update,
             async (res: ServerResponse<never>) => {
               if (!res.success) {
@@ -1117,7 +1120,7 @@ export abstract class AutoUpdatedClientObject<T> {
     const res = await new Promise<{ success: boolean; message: string }>(
       (resolve) => {
         this.socket.emit(
-          "delete" + this.className,
+          EVENT_DELETE + this.className,
           this.data._id,
           async (res: ServerResponse<undefined>) => {
             if (!res.success) {

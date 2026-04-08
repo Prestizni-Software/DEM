@@ -428,7 +428,7 @@ export class AutoUpdateServerManager<
     this.clientSockets.add(socket);
 
     socket.on(
-      "startup" + this.className,
+      EVENT_STARTUP + this.className,
       async (
         _,
         ack: (
@@ -472,7 +472,7 @@ export class AutoUpdateServerManager<
       },
     );
     socket.on(
-      "delete" + this.className,
+      EVENT_DELETE + this.className,
       async (id: string, ack: (res: ServerResponse<undefined>) => void) => {
         this.loggers.debug(
           "Deleting object from manager " + this.className + " - " + id,
@@ -499,7 +499,7 @@ export class AutoUpdateServerManager<
       },
     );
     socket.on(
-      "new" + this.className,
+      EVENT_NEW + this.className,
       async (
         data: Omit<IsData<Pure<T>>, "_id">,
         ack: (res: ServerResponse<T>) => void,
@@ -526,8 +526,8 @@ export class AutoUpdateServerManager<
         }
       },
     );
-    socket.on("update" + this.className, async () => {});
-    socket.on("get" + this.className, async () => {});
+    socket.on(EVENT_UPDATE + this.className, async () => {});
+    socket.on(EVENT_GET + this.className, async () => {});
     socket.onAny(
       async (
         event: string,
@@ -535,8 +535,8 @@ export class AutoUpdateServerManager<
         ack: (res: ServerResponse<null>) => void,
       ) => {
         if (
-          event.startsWith("update" + this.className) &&
-          event.replace("update" + this.className, "").length === 24
+          event.startsWith(EVENT_UPDATE + this.className) &&
+          event.replace(EVENT_UPDATE + this.className, "").length === 24
         ) {
           this.loggers.debug(
             "Updating object in manager " +
@@ -547,7 +547,7 @@ export class AutoUpdateServerManager<
               JSON.stringify(data),
           );
           try {
-            const id = event.replace("update" + this.className, "");
+            const id = event.replace(EVENT_UPDATE + this.className, "");
             let obj = this.objects_[id];
             if (typeof obj === "string")
               throw new Error(`Never... failed to get object somehow: ${obj}`);
@@ -567,11 +567,11 @@ export class AutoUpdateServerManager<
             ack({ success: false, message: (error as any).message });
           }
         } else if (
-          event.startsWith("get" + this.className) &&
-          event.replace("get" + this.className, "").length === 24
+          event.startsWith(EVENT_GET + this.className) &&
+          event.replace(EVENT_GET + this.className, "").length === 24
         ) {
           try {
-            const id = event.replace("get" + this.className, "");
+            const id = event.replace(EVENT_GET + this.className, "");
             let obj = this.objects_[id];
             ack({
               data: obj.extractedData as any,
