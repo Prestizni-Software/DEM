@@ -61,7 +61,7 @@ export abstract class AutoUpdatedClientObject<T> {
   private readonly EmitterID = new ObjectId().toHexString();
   protected readonly toChangeOnParents: { key: string; value: any }[] = [];
   public callbacks: DEMClientCallbacks<T>;
-  private readonly loadShit = async (): Promise<void> => {
+  private readonly loadReferencesAsync = async (): Promise<void> => {
     if (this.isLoaded) {
       try {
         this.generateSettersAndGetters();
@@ -93,6 +93,9 @@ export abstract class AutoUpdatedClientObject<T> {
       this.loggers.error(error.stack);
     }
   };
+
+  /** @deprecated Use loadReferencesAsync instead */
+  private readonly loadShit = this.loadReferencesAsync;
 
   constructor();
   constructor(
