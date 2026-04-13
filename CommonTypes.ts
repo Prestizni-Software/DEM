@@ -36,17 +36,17 @@ type AllowStringForRefs<V> =
 type OnlyStringForRefs<V> =
   NonNullable<V> extends Array<infer U>
     ? IsAUCO<NonNullable<U>> extends true
-      ? (string)[]
+      ? string[]
       : V
     : IsAUCO<NonNullable<V>> extends true
       ? string
       : V;
 
 export type Cache<T> = {
-  references:{
-    [K in keyof T]?: AutoUpdateManager<AutoUpdatedClientObject<any>>
-  }
-}
+  references: {
+    [K in keyof T]?: AutoUpdateManager<AutoUpdatedClientObject<any>>;
+  };
+};
 
 // The upgraded IsData type
 export type IsData<T> = {
@@ -54,7 +54,7 @@ export type IsData<T> = {
 } & { _id: any };
 
 export type ExtractedData<T, Base = AutoUpdatedClientObject<T>> = {
-    [K in keyof FixPure<T, Base>]: OnlyStringForRefs<T[K]>;
+  [K in keyof FixPure<T, Base>]: OnlyStringForRefs<T[K]>;
 };
 type FixPure<T, Base> = Omit<T, keyof Omit<Base, "_id">>;
 export type SocketEvent = [string, any, (res: ServerResponse<any>) => void];
@@ -172,7 +172,7 @@ export type PathValueOf<
   : P extends keyof NonNullable<T>
     ? NonNullable<T>[P]
     : never;
-    
+
 export type Pure<T, Base = AutoUpdatedClientObject<T>> = FixPure<T, Base>;
 
 // Internal client events
@@ -185,3 +185,10 @@ export const EVENT_NEW = "new";
 export const EVENT_GET = "get";
 export const EVENT_STARTUP = "startup";
 
+export type GlobalCache = {
+  objects: Record<string, { className: string; object: AutoUpdatedClientObject<any> }>;
+};
+
+export const globalCache: GlobalCache = {
+  objects: {},
+};

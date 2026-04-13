@@ -1,5 +1,5 @@
 import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
-import { Constructor, EventEmitter3, LoggersType, Cache } from "./CommonTypes.js";
+import { Constructor, EventEmitter3, LoggersType, Cache, globalCache } from "./CommonTypes.js";
 import "reflect-metadata";
 export abstract class AutoUpdateManager<
   T extends AutoUpdatedClientObject<any>,
@@ -57,6 +57,7 @@ export abstract class AutoUpdateManager<
   public close() {
     for (const id of this.objectIDs) {
       delete this.objects_[id];
+      delete globalCache.objects[id]
     }
     this.socket.disconnect?.() ?? this.socket.disconnectSockets(true);
     this.loggers.info("Goodbye, see you next time!");
@@ -74,7 +75,10 @@ export abstract class AutoUpdateManager<
   ): Promise<{ success: boolean; message: string }> {
     const o = this.objects_[_id];
     const res = await o?.destroy(true);
-    if (res?.success) delete this.objects_[_id];
+    if (res?.success) {
+      delete this.objects_[_id];
+      delete globalCache.objects[_id]
+    }
     await o?.callbacks.delete(this as any);
     return res ?? { success: true, message: "Already gone" };
   }

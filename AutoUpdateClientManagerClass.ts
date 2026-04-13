@@ -6,6 +6,7 @@ import {
 } from "./AutoUpdatedClientObjectClass.js";
 import {
   Constructor,
+  globalCache,
   IsData,
   LoggersType,
   Pure,
@@ -47,9 +48,10 @@ export async function AUCManagerFactory<
   const progressUpdater = callbacks.progress ?? ((x: any) => {});
   const innerProgressUpdater = (fraction: number) => {
     progressUpdater(
-      wholeProgress + (numberOfManagers == 0 ? 1 : (fraction / numberOfManagers)),
+      wholeProgress + (numberOfManagers == 0 ? 1 : fraction / numberOfManagers),
     );
-    if (fraction == 1) wholeProgress += (numberOfManagers == 0 ? 1 : (fraction / numberOfManagers));
+    if (fraction == 1)
+      wholeProgress += numberOfManagers == 0 ? 1 : fraction / numberOfManagers;
   };
   const managers = {} as WrappedInstances<T>;
   const startStartTime = Date.now();
@@ -271,6 +273,10 @@ export class AutoUpdateClientManager<
                 this.callbacks,
                 this.emitter,
               );
+              globalCache.objects[id] = {
+                className: this.className,
+                object: this.objects_[id],
+              };
               this.loggers.debug(
                 "Loading object " + id + " from manager " + this.className,
               );
@@ -425,6 +431,7 @@ export class AutoUpdateClientManager<
     );
     await object.waitForPreloaded();
     this.objects_[object._id] = object;
+    globalCache.objects[object._id] = { className: this.className, object };
     await object.isPreLoadedAsync();
     await object.loadMissingReferences();
 

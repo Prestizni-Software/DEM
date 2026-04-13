@@ -18,6 +18,7 @@ import {
   EVENT_DELETE,
   EVENT_GET,
   EVENT_STARTUP,
+  globalCache,
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types.js";
 import { Paths, PathValueOf } from "./CommonTypes_server.js";
@@ -625,6 +626,7 @@ export class AutoUpdateServerManager<
     );
     await object.waitForPreloaded();
     this.objects_[object._id] = object;
+    globalCache.objects[object._id] = { className: this.className, object };
     await object.isPreLoadedAsync();
     await object.loadMissingReferences();
     await object.contactChildren();
@@ -648,6 +650,7 @@ export class AutoUpdateServerManager<
     );
     await object.waitForPreloaded();
     this.objects_[object._id] = object;
+    globalCache.objects[object._id] = { className: this.className, object };
     await object.isPreLoadedAsync();
     await object.loadMissingReferences();
     await object.onUpdate();

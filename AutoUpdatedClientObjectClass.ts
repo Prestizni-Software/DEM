@@ -16,6 +16,7 @@ import {
   EVENT_GET,
   EVENT_NEW,
   EVENT_UPDATE,
+  globalCache,
 } from "./CommonTypes.js";
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
@@ -448,16 +449,8 @@ export abstract class AutoUpdatedClientObject<T> {
 
   protected findReference(id: string | ObjectId, key: string): any {
     if (typeof id !== "string" && !ObjectId.isValid(id)) return id;
-    if (this.parentManager.cache.references[key])
-      return this.parentManager.cache.references[key].getObject(id.toString());
-    for (const manager of Object.values(this.parentManager.managers)) {
-      const result = manager.getObject(id.toString());
-      if (result) {
-        this.parentManager.cache.references[key] = manager;
-        return result;
-      }
-    }
-    return undefined;
+    return globalCache.objects[id.toString()]?.object;
+    
   }
 
   public async setValue<K extends Paths<T, AutoUpdatedClientObject<T>>>(
@@ -474,6 +467,7 @@ export abstract class AutoUpdatedClientObject<T> {
     noGet: boolean = false,
     noUpdate: boolean = false,
   ): Promise<{ success: boolean; msg: string }> {
+
     let message = "Setting value " + key + " of " + this.className + " to ";
     const isRef = getMetadataRecursive("isRef", this, key);
     if (isRef)
