@@ -209,7 +209,8 @@ function setupSocketMiddleware<
 
           case e.startsWith(EVENT_GET):
             demEvent.type = DEMEventTypes.get;
-            demEvent.manager = managers[e.replace(EVENT_GET, "").replace(id, "")];
+            demEvent.manager =
+              managers[e.replace(EVENT_GET, "").replace(id, "")];
             demEvent.object = demEvent.manager.getObject(id);
             break;
 
@@ -410,6 +411,10 @@ export class AutoUpdateServerManager<
           this,
           this.emitter,
         ));
+      globalCache.objects[doc] = {
+        className: this.className,
+        object: this.objects_[doc],
+      };
     }
     for (const object of this.objectsAsArray) {
       await object.isPreLoadedAsync();

@@ -88,8 +88,11 @@ export abstract class AutoUpdateManager<
   }
 
   public abstract handleGetMissingObject(_id: string): Promise<T>;
+  
   public abstract createObject(data: Omit<any, "_id">): Promise<T>;
+
   public abstract getObject(_id: string): T | null;
+
   public abstract get objects(): {
     [_id: string]: T;
   };

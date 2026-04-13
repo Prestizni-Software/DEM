@@ -16,7 +16,6 @@ import {
   EVENT_GET,
   EVENT_NEW,
   EVENT_UPDATE,
-  globalCache,
 } from "./CommonTypes.js";
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
@@ -449,8 +448,16 @@ export abstract class AutoUpdatedClientObject<T> {
 
   protected findReference(id: string | ObjectId, key: string): any {
     if (typeof id !== "string" && !ObjectId.isValid(id)) return id;
-    return globalCache.objects[id.toString()]?.object;
-    
+    if (this.parentManager.cache.references[key])
+      return this.parentManager.cache.references[key].getObject(id.toString());
+    for (const manager of Object.values(this.parentManager.managers)) {
+      const result = manager.getObject(id.toString());
+      if (result) {
+        this.parentManager.cache.references[key] = manager;
+        return result;
+      }
+    }
+    return undefined;
   }
 
   public async setValue<K extends Paths<T, AutoUpdatedClientObject<T>>>(
@@ -467,7 +474,6 @@ export abstract class AutoUpdatedClientObject<T> {
     noGet: boolean = false,
     noUpdate: boolean = false,
   ): Promise<{ success: boolean; msg: string }> {
-
     let message = "Setting value " + key + " of " + this.className + " to ";
     const isRef = getMetadataRecursive("isRef", this, key);
     if (isRef)
@@ -901,28 +907,33 @@ export abstract class AutoUpdatedClientObject<T> {
   }
 
   public getValue(key_: Paths<T, AutoUpdatedClientObject<unknown>>) {
-    let value: any;
-    const key = key_ as string;
+  const key = key_ as string;
 
-    for (const part of key.split(".")) {
-      try {
-        if (value) value = value[part];
-        else value = (this as any)[part];
-      } catch (error: any) {
-        this.loggers.error(
-          "Error getting value for " +
-            this.className +
-            " on key " +
-            key +
-            " on index " +
-            part +
-            ":" +
-            error.message,
-        );
-      }
-    }
-    return value;
+  if (!key.includes(".")) {
+    let val = (this as any)[key];
+    val ??= (this.data as any)[key];
+    return val;
   }
+
+  let value: any;
+  const parts = key.split(".");
+  
+  for (const part of parts) {
+    try {
+      if (value !== undefined && value !== null) {
+        value = value[part];
+      } else {
+        value = (this as any)[part];
+      }
+    } catch (error: any) {
+      this.loggers.error(
+        `Error getting value for ${this.className} on key ${key} at index ${part}: ${error.message}`
+      );
+      return undefined;
+    }
+  }
+  return value;
+}
 
   protected async setValueInternal(
     key: string,
@@ -1155,32 +1166,68 @@ export abstract class AutoUpdatedClientObject<T> {
       }
     }
   }
-  private async findMissingObjectReference(prop: any, pointer: string[]) {
-    if (this.checkedMissingRefs && this.isLoadingReferences) return;
-    this.checkedMissingRefs = true;
 
-    const ac = this.parentManager.managers[pointer[0]];
-    if (!ac)
-      throw new Error(`No AutoUpdateManager found for class ${pointer[0]}`);
+private async findMissingObjectReference(prop: any, pointer: string[]) {
+  if (this.checkedMissingRefs && this.isLoadingReferences) return;
+  this.checkedMissingRefs = true;
 
-    for (const obj of ac.objectsAsArray) {
+  const ac = this.parentManager.managers[pointer[0]];
+  if (!ac)
+    throw new Error(`No AutoUpdateManager found for class ${pointer[0]}`);
+
+  const targetId = this.data._id.toString();
+  const pointerKey = pointer[1];
+  
+  const isNested = pointerKey.includes(".");
+  const pathParts = isNested ? pointerKey.split(".") : [];
+
+  const pendingObjects = ac.objectsAsArray.filter(obj => !obj.isLoaded);
+  if (pendingObjects.length > 0) {
+    await Promise.all(pendingObjects.map(obj => obj.waitForPreloaded()));
+  }
+
+  for (const obj of ac.objectsAsArray) {
+    if (!obj.isLoaded) {
       await obj.waitForPreloaded();
-      let found;
-      if (Array.isArray(obj.getValue(pointer[1]))) {
-        found = (obj.getValue(pointer[1]) as any[])
-          .map((id: any) => id._id?.toString() ?? id.toString())
-          .includes(this.data._id.toString());
-      } else {
-        found =
-          obj.getValue(pointer[1])?._id?.toString() ===
-          this.data._id.toString();
+    }
+
+    let val: any;
+    if (isNested) {
+      val = obj;
+      for (const element of pathParts) {
+        if (!val) break;
+        val = val[element] ?? val.data?.[element];
       }
-      if (found) {
-        (this.data as any)[prop] = obj._id;
-        return;
+    } else {
+      val = (obj as any)[pointerKey] ?? (obj as any).data?.[pointerKey];
+    }
+
+    if (!val) continue;
+
+    let found = false;
+
+    if (Array.isArray(val)) {
+      for (const element of val) {
+        const item = element;
+        if (!item) continue;
+        
+        const idStr = item._id ? item._id.toString() : item.toString();
+        if (idStr === targetId) {
+          found = true;
+          break; 
+        }
       }
+    } else {
+      const idStr = val._id ? val._id.toString() : val.toString();
+      found = (idStr === targetId);
+    }
+
+    if (found) {
+      (this.data as any)[prop] = obj._id;
+      return; 
     }
   }
+}
   protected async wipeSelf() {
     if ((this.data as any).Wiped) return;
     const _id = this.data._id.toString();

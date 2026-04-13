@@ -222,13 +222,18 @@ describe("Server ", () => {
   }, 1000);
 
   test("Autostatus on set value from client", async () => {
+    while (testClient2Object2.status !== Status.INACTIVE) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
     expect(testClient1Object2.status).toBe(Status.INACTIVE);
     expect(testServerObject2.status).toBe(Status.INACTIVE);
     expect(testClient2Object2.status).toBe(Status.INACTIVE);
   }, 1000);
 
   test("Setting deep value from client", async () => {
+    console.log("DEBUG: testClient1Object2.obj", testClient1Object2.obj);
     await testClient1Object2.setValue("obj.obj._id", "gayUwU69");
+    console.log("DEBUG: testClient1Object2.obj after", testClient1Object2.obj);
     expect(testClient1Object2.obj?.obj?._id).toBe("gayUwU69");
     expect(testServerObject2.obj?.obj?._id).toBe("gayUwU69");
     while (testClient2Object2.obj?.obj?._id !== "gayUwU69") {
