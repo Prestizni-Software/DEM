@@ -27,12 +27,14 @@ export async function AUCManagerFactory<
   socket: Socket,
   disableDEMDebugMessages: boolean = false,
   emitter: EventEmitter = new EventEmitter(),
-  callbacks: Partial<{
-    [K in keyof T]: Partial<DEMClientCallbacks<InstanceType<T[K]>>>;
-  } & Partial<DEMClientCallbacks<any>>> = {},
+  callbacks: Partial<
+    {
+      [K in keyof T]: Partial<DEMClientCallbacks<InstanceType<T[K]>>>;
+    } & Partial<DEMClientCallbacks<any>>
+  > = {},
 ): Promise<WrappedInstances<T>> {
   const defaultCallbacks: DEMClientCallbacks<AutoUpdatedClientObject<any>> = {
-    new: (callbacks.new ?? ((x: any) => {})),
+    new: callbacks.new ?? ((x: any) => {}),
     update: callbacks.update ?? ((x: any, y: any) => {}),
     delete: callbacks.delete ?? ((x: any) => {}),
     progress: callbacks.progress ?? ((x: any) => {}),
@@ -40,6 +42,15 @@ export async function AUCManagerFactory<
   if (disableDEMDebugMessages) {
     loggers.debug = (_) => {};
   }
+  let wholeProgress = 0;
+  let numberOfManagers = Object.keys(defs).length || 1;
+  const progressUpdater = callbacks.progress ?? ((x: any) => {});
+  const innerProgressUpdater = (fraction: number) => {
+    progressUpdater(
+      wholeProgress + (numberOfManagers == 0 ? 1 : (fraction / numberOfManagers)),
+    );
+    if (fraction == 1) wholeProgress += (numberOfManagers == 0 ? 1 : (fraction / numberOfManagers));
+  };
   const managers = {} as WrappedInstances<T>;
   const startStartTime = Date.now();
   let startTime = Date.now();
@@ -59,6 +70,7 @@ export async function AUCManagerFactory<
         {
           ...defaultCallbacks,
           ...callbacks[key],
+          progress: innerProgressUpdater,
         },
       );
       managers[key] = c;
@@ -282,9 +294,18 @@ export class AutoUpdateClientManager<
                   await this.objects_[id].loadMissingReferences();
                   this.loadedObjects += 1;
                   this.loggers.debug(
-                    "Loaded object " + id + " from manager " + this.className + " - " + this.loadedObjects + "/" + this.totalObjects,
-                  )
-                  this.callbacks.progress(this.loadedObjects/ this.totalObjects);
+                    "Loaded object " +
+                      id +
+                      " from manager " +
+                      this.className +
+                      " - " +
+                      this.loadedObjects +
+                      "/" +
+                      this.totalObjects,
+                  );
+                  this.callbacks.progress(
+                    this.loadedObjects / this.totalObjects,
+                  );
                 } catch (error: any) {
                   this.loggers.error(
                     "Error loading missing references for object " +
@@ -411,9 +432,7 @@ export class AutoUpdateClientManager<
     return object;
   }
 
-  public async createObject(
-    data: Omit<IsData<Pure<T>>, "_id">,
-  ) {
+  public async createObject(data: Omit<IsData<Pure<T>>, "_id">) {
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
 
