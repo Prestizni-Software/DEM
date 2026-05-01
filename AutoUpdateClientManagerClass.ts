@@ -26,7 +26,7 @@ export async function AUCManagerFactory<
   defs: T,
   loggers: LoggersType,
   socket: Socket,
-  disableDEMDebugMessages: boolean = false,
+  doDebug: boolean = false,
   emitter: EventEmitter = new EventEmitter(),
   callbacks: Partial<
     {
@@ -40,7 +40,7 @@ export async function AUCManagerFactory<
     delete: callbacks.delete ?? ((x: any) => {}),
     progress: callbacks.progress ?? ((x: any) => {}),
   };
-  if (disableDEMDebugMessages) {
+  if (!doDebug) {
     loggers.debug = (_) => {};
   }
   let wholeProgress = 0;
