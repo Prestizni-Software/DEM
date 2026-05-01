@@ -77,7 +77,7 @@ describe("AutoUpdatedClientObjectClass Comprehensive Tests", () => {
     (obj as any).isServer = true;
     (obj as any).data = data;
     const res = await (obj as any).setValue__("ref1", "parent1");
-    expect(res).toEqual({ success: true, msg: "OK" });
+    expect(res).toEqual({ success: true, msg: "Successfully set ref1 to parent1" });
   });
 
   test("handleUpdateRequest error path", async () => {
@@ -91,6 +91,6 @@ describe("AutoUpdatedClientObjectClass Comprehensive Tests", () => {
     const updateHandler = mockSocket.on.mock.calls.find((c: any) => c[0] && c[0].includes("update"))[1];
     const res = await updateHandler({ key: "prop1", value: "val" });
 
-    expect(res).toEqual({ success: false, message: "Update Fail" });
+    expect(res).toEqual({ success: false, message: "Error applying update: Update Fail" });
   });
 });

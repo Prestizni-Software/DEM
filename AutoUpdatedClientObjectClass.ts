@@ -71,7 +71,7 @@ export abstract class AutoUpdatedClientObject<T> {
         this.generateSettersAndGetters();
         await this.loadForceReferences();
         for (const thing of this.toChangeOnParents) {
-          await this.setValue__(thing.key, thing.value);
+          await this.setValue__(thing.key, thing.value, true, false, true);
         }
       } catch (error: any) {
         this.loggers.error("Error loading references");
@@ -87,7 +87,7 @@ export abstract class AutoUpdatedClientObject<T> {
     try {
       await this.loadForceReferences();
       for (const thing of this.toChangeOnParents) {
-        await this.setValue__(thing.key, thing.value);
+        await this.setValue__(thing.key, thing.value, true, false, true);
       }
       this.isLoadingReferences = false;
     } catch (error: any) {
@@ -388,9 +388,17 @@ export abstract class AutoUpdatedClientObject<T> {
 
   private openSockets() {
     const event = EVENT_UPDATE + this.className + this.data._id.toString();
-    this.socket.on(event, async (update: ServerUpdateRequest<T>) => {
-      await this.handleUpdateRequest(update);
-    });
+    this.socket.on(
+      event,
+      async (
+        update: ServerUpdateRequest<T>,
+        ack: (res: ServerResponse<undefined>) => void,
+      ) => {
+        const res = await this.handleUpdateRequest(update);
+        if (ack && typeof ack === "function") ack(res);
+        return res;
+      },
+    );
   }
 
   private async handleUpdateRequest(
@@ -652,7 +660,7 @@ export abstract class AutoUpdatedClientObject<T> {
                 );
               } else {
                 if (
-                  (value._id?.toString() ?? value.toString()) ===
+                  (value?._id?.toString() ?? value?.toString()) ===
                   this.data._id.toString()
                 )
                   return {
@@ -901,7 +909,15 @@ export abstract class AutoUpdatedClientObject<T> {
             continue;
           }
         }
-        await result.loadMissingReferences();
+        if (result && typeof (result as any).loadMissingReferences === "function") {
+          await result.loadMissingReferences();
+        } else if (result) {
+          this.loggers.warn(
+            `Object in reference resolution is missing loadMissingReferences function. Type: ${typeof result}, ID: ${
+              (result as any)._id ?? result
+            }`,
+          );
+        }
       }
     }
   }
@@ -945,7 +961,7 @@ export abstract class AutoUpdatedClientObject<T> {
     const promise = new Promise<{ success: boolean; msg: string }>(
       (resolve) => {
         if (silent) {
-          if (noUpdate) return;
+          if (noUpdate) return resolve({ success: true, msg: "Success - no update" });
           return this.onUpdate(true).then(() => {
             if (this.isLoaded) this.callbacks.update(this as any, key);
             return resolve({ success: true, msg: "Success - silent" });
@@ -1096,7 +1112,7 @@ export abstract class AutoUpdatedClientObject<T> {
       const originalLength = val.length;
       const filtred = val.filter(Boolean);
       if (filtred.length !== originalLength) {
-        await obj.setValue__(pointer[1], filtred);
+        await obj.setValue__(pointer[1], filtred, true, false, true);
         this.loggers.warn(
           "Array value changed from " +
             originalLength +
@@ -1110,10 +1126,10 @@ export abstract class AutoUpdatedClientObject<T> {
       else
         await obj.setValue__(pointer[1] as any, [
           ...new Set([...filtred, this.data._id]),
-        ]);
+        ], true, false, true);
     } else if (val?.toString() === this.data?._id?.toString())
       await obj.contactChildren();
-    else await obj.setValue__(pointer[1] as any, this.data?._id?.toString());
+    else await obj.setValue__(pointer[1] as any, this.data?._id?.toString(), true, false, true);
   }
 
   public async destroy(
@@ -1293,12 +1309,30 @@ private async findMissingObjectReference(prop: any, pointer: string[]) {
       if (Array.isArray(obj)) {
         for (const child of obj) {
           try {
-            await child?.loadMissingReferences();
+            if (child && typeof (child as any).loadMissingReferences === "function") {
+              await (child as any).loadMissingReferences();
+            } else if (child) {
+              this.loggers.warn(
+                `Object in property ${prop.toString()} is missing loadMissingReferences function. Type: ${typeof child}, ID: ${
+                  (child as any)._id ?? child
+                }`,
+              );
+            }
           } catch (error: any) {
             this.loggers.error(error.message);
           }
         }
-      } else await obj?.loadMissingReferences();
+      } else {
+        if (obj && typeof (obj as any).loadMissingReferences === "function") {
+          await (obj as any).loadMissingReferences();
+        } else if (obj) {
+          this.loggers.warn(
+            `Object in property ${prop.toString()} is missing loadMissingReferences function. Type: ${typeof obj}, ID: ${
+              (obj as any)._id ?? obj
+            }`,
+          );
+        }
+      }
     }
   }
 
