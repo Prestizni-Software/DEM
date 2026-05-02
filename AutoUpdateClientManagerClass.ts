@@ -11,6 +11,7 @@ import {
   LoggersType,
   Pure,
   ServerResponse,
+  EVENT_GET_BATCH,
 } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
 export type WrappedInstances<
@@ -261,91 +262,100 @@ export class AutoUpdateClientManager<
           this.loggers.debug(data.ids.join(", "));
           this.totalObjects = data.ids.length;
           let i = 0;
-          for (const id of data.ids) {
-            try {
-              this.objects_[id] = new this.classParam(
-                this.classParam,
-                this.socket,
-                id,
-                this.loggers,
-                this.className,
-                this,
-                this.callbacks,
-                this.emitter,
+          const chunkSize = 100;
+          for (let j = 0; j < data.ids.length; j += chunkSize) {
+            const chunk = data.ids.slice(j, j + chunkSize);
+            await new Promise<void>((resolveBatch, rejectBatch) => {
+              this.socket.emit(
+                EVENT_GET_BATCH + this.className,
+                chunk,
+                async (res: ServerResponse<IsData<T>[]>) => {
+                  if (!res.success) {
+                    this.loggers.error(
+                      "Error loading batch from server for manager " +
+                        this.className,
+                    );
+                    this.loggers.error(res.message);
+                    rejectBatch(new Error(res.message));
+                    return;
+                  }
+
+                  for (const objData of res.data) {
+                    const id = objData._id;
+                    try {
+                      this.objects_[id] = new this.classParam(
+                        this.classParam,
+                        this.socket,
+                        objData,
+                        this.loggers,
+                        this.className,
+                        this,
+                        this.callbacks,
+                        this.emitter,
+                      );
+                      globalCache.objects[id] = {
+                        className: this.className,
+                        object: this.objects_[id],
+                      };
+                    } catch (error: any) {
+                      this.loggers.error(
+                        "Error creating object " +
+                          id +
+                          " from manager " +
+                          this.className +
+                          " - " +
+                          error.message,
+                      );
+                    }
+                  }
+
+                  const batchPromises = res.data.map(async (objData) => {
+                    const id = objData._id;
+                    if (!this.objects_[id]) return;
+                    try {
+                      this.loggers.debug(
+                        "Loading object " +
+                          id +
+                          " from manager " +
+                          this.className,
+                      );
+
+                      await this.objects_[id].loadMissingReferences();
+                      this.loadedObjects += 1;
+                      this.loggers.debug(
+                        "Loaded object " +
+                          id +
+                          " from manager " +
+                          this.className +
+                          " - " +
+                          this.loadedObjects +
+                          "/" +
+                          this.totalObjects,
+                      );
+                      this.callbacks.progress(
+                        this.loadedObjects / this.totalObjects,
+                      );
+                    } catch (error: any) {
+                      this.loggers.error(
+                        "Error loading object references " +
+                          id +
+                          " from manager " +
+                          this.className +
+                          " - " +
+                          error.message,
+                      );
+                      this.loggers.error(error.stack);
+                    }
+                    i++;
+                  });
+
+                  await Promise.all(batchPromises);
+                  resolveBatch();
+                },
               );
-              globalCache.objects[id] = {
-                className: this.className,
-                object: this.objects_[id],
-              };
-              this.loggers.debug(
-                "Loading object " + id + " from manager " + this.className,
-              );
-            } catch (error: any) {
-              this.loggers.error(
-                "Error loading object " +
-                  id +
-                  " from manager " +
-                  this.className +
-                  " - " +
-                  error.message,
-              );
-              this.loggers.error(error.stack);
-            }
+            });
           }
-          for (const id in this.objects_) {
-            this.objects_[id]
-              .isPreLoadedAsync()
-              .then(async () => {
-                try {
-                  await this.objects_[id].loadMissingReferences();
-                  this.loadedObjects += 1;
-                  this.loggers.debug(
-                    "Loaded object " +
-                      id +
-                      " from manager " +
-                      this.className +
-                      " - " +
-                      this.loadedObjects +
-                      "/" +
-                      this.totalObjects,
-                  );
-                  this.callbacks.progress(
-                    this.loadedObjects / this.totalObjects,
-                  );
-                } catch (error: any) {
-                  this.loggers.error(
-                    "Error loading missing references for object " +
-                      id +
-                      " from manager " +
-                      this.className +
-                      " - " +
-                      error.message,
-                  );
-                  this.loggers.error(error.stack);
-                }
-                i++;
-              })
-              .catch((error: any) => {
-                i++;
-                this.loggers.error(
-                  "Error preloading object " +
-                    id +
-                    " from manager " +
-                    this.className +
-                    " - " +
-                    error.message,
-                );
-                this.loggers.error(error.stack);
-              });
-          }
-          await new Promise((resolve, reject) => {
-            const interval = setInterval(() => {
-              if (i === Object.keys(this.objects_).length) {
-                clearInterval(interval);
-                resolve(null);
-              }
-            }, 100);
-          });
+
           this.loggers.info(
             "Loaded " + this.className + " - [" + i + "] entries",
           );

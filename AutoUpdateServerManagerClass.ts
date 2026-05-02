@@ -17,6 +17,7 @@ import {
   EVENT_UPDATE,
   EVENT_DELETE,
   EVENT_GET,
+  EVENT_GET_BATCH,
   EVENT_STARTUP,
   globalCache,
 } from "./CommonTypes.js";
@@ -95,6 +96,7 @@ export enum DEMEventTypes {
   "update" = "update",
   "delete" = "delete",
   "get" = "get",
+  "getBatch" = "getBatch",
   "startup" = "startup",
 }
 
@@ -104,6 +106,12 @@ export type DEMEvent<C extends AutoUpdatedServerObject<C>> =
       manager: AutoUpdateServerManager<C>;
       object: C;
       data: never;
+    }
+  | {
+      type: DEMEventTypes.getBatch;
+      manager: AutoUpdateServerManager<C>;
+      object: never;
+      data: string[];
     }
   | {
       type: DEMEventTypes.update;
@@ -205,6 +213,12 @@ function setupSocketMiddleware<
               });
               return;
             }
+            break;
+
+          case e.startsWith(EVENT_GET_BATCH):
+            demEvent.type = DEMEventTypes.getBatch;
+            demEvent.manager = managers[e.replace(EVENT_GET_BATCH, "")];
+            demEvent.data = event[1];
             break;
 
           case e.startsWith(EVENT_GET):
@@ -465,6 +479,33 @@ export class AutoUpdateServerManager<
         } catch (error: any) {
           this.loggers.error(
             "Error sending startup data for manager " +
+              this.className +
+              ": " +
+              error.message,
+          );
+          this.loggers.error(error.stack);
+          ack({
+            success: false,
+            message: error.message,
+          });
+        }
+      },
+    );
+    socket.on(
+      EVENT_GET_BATCH + this.className,
+      async (ids: string[], ack: (res: ServerResponse<any[]>) => void) => {
+        try {
+          const results = ids
+            .map((id) => this.objects_[id]?.extractedData)
+            .filter(Boolean);
+          ack({
+            data: results as any,
+            success: true,
+            message: "Batch loaded successfully",
+          });
+        } catch (error: any) {
+          this.loggers.error(
+            "Error sending batch data for manager " +
               this.className +
               ": " +
               error.message,

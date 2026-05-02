@@ -120,13 +120,27 @@ export abstract class AutoUpdatedServerObject<
       if (typeof prop !== "string") continue;
       const isRef = getMetadataRecursive("isRef", this, prop);
       if (isRef && this.data[prop]) {
+        try {
         this.data[prop] = Array.isArray(this.data[prop])
           ? (this.data[prop] as any)
               .map((item: any) =>
-                item ? new ObjectId(item as string | ObjectId) : null,
+                item
+                  ? new ObjectId(
+                      ((item as any)._id ? (item as any)._id : item) as
+                        | string
+                        | ObjectId,
+                    )
+                  : null,
               )
               .filter(Boolean)
-          : new ObjectId(this.data[prop] as string | ObjectId);
+          : new ObjectId(
+              ((this.data[prop] as any)._id
+                ? (this.data[prop] as any)._id
+                : this.data[prop]) as string | ObjectId,
+            );} catch (error) {
+              this.loggers.error("Failed to set referance " + prop + " to " + this.data[prop]);
+              this.loggers.error((error as any).message);
+            }
       }
     }
     this.parentManager = parentManager;
@@ -220,7 +234,9 @@ export abstract class AutoUpdatedServerObject<
       };
     }
     this.socket.emit(EVENT_DELETE + this.className, this.data._id);
-    this.socket.removeAllListeners(EVENT_UPDATE + this.className + this.data._id);
+    this.socket.removeAllListeners(
+      EVENT_UPDATE + this.className + this.data._id,
+    );
     this.socket.removeAllListeners(EVENT_DELETE + this.className);
     await this.wipeSelf();
     return {
