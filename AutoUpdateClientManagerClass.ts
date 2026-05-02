@@ -134,6 +134,13 @@ export async function AUCManagerFactory<
       }
     }, 100);
   });
+
+for(const manager of Object.values(managers) as AutoUpdateClientManager<AutoUpdatedClientObject<any>>[]) {
+  for(const obj of manager.objectsAsArray){
+    obj.loadMissingReferences();
+  }
+}
+
   loggers.debug(
     "Loaded data from server for all managers in " +
       (Date.now() - startTime) +
