@@ -94,6 +94,9 @@ export async function AUCManagerFactory<
   const loadPromises = Object.keys(defs).map(async (key) => {
     let temp2 = { s: Date.now(), f: 0 };
     try {
+      if (!managers[key]) {
+        throw new Error(`Manager ${key} was not created due to previous error`);
+      }
       await managers[key].loadFromServer(temp2);
       loggers.debug(
         "Loaded data from server for manager: " +
@@ -306,6 +309,7 @@ export async function AUCManagerFactory<
             "Loaded " + this.className + " - [" + Object.keys(this.objects_).length + "] entries",
           );
           this.startSocketListeners();
+          this.isLoaded_ = true;
 
           resolve();
         },

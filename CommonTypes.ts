@@ -77,9 +77,9 @@ export type ServerUpdateRequest<T> = {
 };
 
 export function classProp(target: any, propertyKey: string) {
-  const props = Reflect.getMetadata("props", target) || [];
-  props.push(propertyKey);
-  Reflect.defineMetadata("props", props, target);
+  const props = Reflect.getOwnMetadata("props", target) || [];
+  const newProps = [...props, propertyKey];
+  Reflect.defineMetadata("props", newProps, target);
 }
 
 export function populatedRef(where: string) {
