@@ -56,10 +56,7 @@ export async function AUCManagerFactory<
   const managers = {} as WrappedInstances<T>;
   const startStartTime = Date.now();
   let startTime = Date.now();
-  let temp = 0;
   for (const key in defs) {
-    let message = `Creating manager for: ${key}`;
-    temp = Date.now();
     try {
       const Model = defs[key];
       const c = new AutoUpdateClientManager(
@@ -83,56 +80,45 @@ export async function AUCManagerFactory<
         )
       )
         throw error;
+      let message = `Creating manager for: ${key}`;
       message += "\n Error creating manager: " + key;
       message += "\n " + error.message;
       loggers.error(message);
       loggers.error(error.stack);
       continue;
     }
-    loggers.debug(
-      "Created manager: " + key + " in " + (Date.now() - temp) + "ms",
-    );
   }
   loggers.debug("Created all managers in " + (Date.now() - startTime) + "ms");
   startTime = Date.now();
-  let i = 0;
-  for (const key in defs) {
+
+  const loadPromises = Object.keys(defs).map(async (key) => {
     let temp2 = { s: Date.now(), f: 0 };
-    managers[key]
-      .loadFromServer(temp2)
-      .then(() => {
-        i++;
-        loggers.debug(
-          "Loaded data from server for manager: " +
-            key +
-            " in " +
-            (temp2.f - temp2.s) +
-            "ms",
-        );
-      })
-      .catch((error: any) => {
-        i++;
-        if (
-          error.message.includes(
-            "Local type does not match server type for manager",
-          )
+    try {
+      await managers[key].loadFromServer(temp2);
+      loggers.debug(
+        "Loaded data from server for manager: " +
+          key +
+          " in " +
+          (temp2.f - temp2.s) +
+          "ms",
+      );
+    } catch (error: any) {
+      if (
+        error.message.includes(
+          "Local type does not match server type for manager",
         )
-          throw error;
-        let message = "Error loading data from server for manager: " + key;
-        message += "\n " + error.message;
-        message += "\n Failed in " + (temp2.f - temp2.s) + "ms";
-        loggers.error(message);
-        loggers.error(error.stack);
-      });
-  }
-  await new Promise((resolve, reject) => {
-    const interval = setInterval(() => {
-      if (i === Object.keys(defs).length) {
-        clearInterval(interval);
-        resolve(null);
-      }
-    }, 100);
+      )
+        throw error;
+      let message = "Error loading data from server for manager: " + key;
+      message += "\n " + error.message;
+      message += "\n Failed in " + (temp2.f - temp2.s) + "ms";
+      loggers.error(message);
+      loggers.error(error.stack);
+    }
   });
+
+  await Promise.all(loadPromises);
+
   loggers.debug(
     "Loaded data from server for all managers in " +
       (Date.now() - startTime) +
@@ -142,11 +128,11 @@ export async function AUCManagerFactory<
     "Loaded all managers in " + (Date.now() - startStartTime) + "ms",
   );
   return managers;
-}
+  }
 
-export class AutoUpdateClientManager<
+  export class AutoUpdateClientManager<
   T extends AutoUpdatedClientObject<any>,
-> extends AutoUpdateManager<T> {
+  > extends AutoUpdateManager<T> {
   protected objects_: { [_id: string]: T } = {};
   public readonly managers: Record<
     string,
@@ -247,7 +233,6 @@ export class AutoUpdateClientManager<
           );
           if (!allowedToLoad) {
             this.loggers.error(errorMessage);
-
             reject(new Error(errorMessage));
             return;
           }
@@ -258,9 +243,12 @@ export class AutoUpdateClientManager<
               data.ids.length +
               "] entries",
           );
-          this.loggers.debug(data.ids.join(", "));
+          // Only join and log if we're actually going to use the debug log
+          if (this.loggers.debug && this.loggers.debug.toString().length > 15) {
+             this.loggers.debug(data.ids.join(", "));
+          }
           this.totalObjects = data.ids.length;
-          let i = 0;
+
           for (const id of data.ids) {
             try {
               this.objects_[id] = new this.classParam(
@@ -277,9 +265,6 @@ export class AutoUpdateClientManager<
                 className: this.className,
                 object: this.objects_[id],
               };
-              this.loggers.debug(
-                "Loading object " + id + " from manager " + this.className,
-              );
             } catch (error: any) {
               this.loggers.error(
                 "Error loading object " +
@@ -292,62 +277,33 @@ export class AutoUpdateClientManager<
               this.loggers.error(error.stack);
             }
           }
-          for (const id in this.objects_) {
-            this.objects_[id]
-              .isPreLoadedAsync()
-              .then(async () => {
-                try {
-                  await this.objects_[id].loadMissingReferences();
-                  this.loadedObjects += 1;
-                  this.loggers.debug(
-                    "Loaded object " +
-                      id +
-                      " from manager " +
-                      this.className +
-                      " - " +
-                      this.loadedObjects +
-                      "/" +
-                      this.totalObjects,
-                  );
-                  this.callbacks.progress(
-                    this.loadedObjects / this.totalObjects,
-                  );
-                } catch (error: any) {
-                  this.loggers.error(
-                    "Error loading missing references for object " +
-                      id +
-                      " from manager " +
-                      this.className +
-                      " - " +
-                      error.message,
-                  );
-                  this.loggers.error(error.stack);
-                }
-                i++;
-              })
-              .catch((error: any) => {
-                i++;
-                this.loggers.error(
-                  "Error preloading object " +
-                    id +
-                    " from manager " +
-                    this.className +
-                    " - " +
-                    error.message,
-                );
-                this.loggers.error(error.stack);
-              });
-          }
-          await new Promise((resolve, reject) => {
-            const interval = setInterval(() => {
-              if (i === Object.keys(this.objects_).length) {
-                clearInterval(interval);
-                resolve(null);
+
+          const objectPromises = Object.keys(this.objects_).map(async (id) => {
+            const obj = this.objects_[id];
+            try {
+              await obj.isPreLoadedAsync();
+              await obj.loadMissingReferences();
+              this.loadedObjects += 1;
+              if (this.totalObjects < 100 || this.loadedObjects % Math.ceil(this.totalObjects / 100) === 0 || this.loadedObjects === this.totalObjects) {
+                this.callbacks.progress(this.loadedObjects / this.totalObjects);
               }
-            }, 100);
+            } catch (error: any) {
+              this.loggers.error(
+                "Error loading object " +
+                  id +
+                  " from manager " +
+                  this.className +
+                  " - " +
+                  error.message,
+              );
+              this.loggers.error(error.stack);
+            }
           });
+
+          await Promise.all(objectPromises);
+
           this.loggers.info(
-            "Loaded " + this.className + " - [" + i + "] entries",
+            "Loaded " + this.className + " - [" + Object.keys(this.objects_).length + "] entries",
           );
           this.startSocketListeners();
 

@@ -16,6 +16,7 @@ import {
   EVENT_GET,
   EVENT_NEW,
   EVENT_UPDATE,
+  globalCache,
 } from "./CommonTypes.js";
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
@@ -377,7 +378,6 @@ export abstract class AutoUpdatedClientObject<T> {
 
   public async isPreLoadedAsync(): Promise<boolean> {
     await this.loadShit();
-    this.generateSettersAndGetters();
     return true;
   }
 
@@ -427,12 +427,18 @@ export abstract class AutoUpdatedClientObject<T> {
     }
   }
 
+  private __gettersGenerated = false;
   protected generateSettersAndGetters() {
+    if (this.__gettersGenerated) return;
+    this.__gettersGenerated = true;
+
     for (const key of this.properties) {
-      if (typeof key !== "string") return;
+      if (typeof key !== "string") continue;
 
       const k = key as keyof IsData<T>;
       const isRef = getMetadataRecursive("isRef", this, key);
+
+      if (Object.getOwnPropertyDescriptor(this, key)) continue;
 
       Object.defineProperty(this, key, {
         get: () => {
@@ -1032,7 +1038,7 @@ export abstract class AutoUpdatedClientObject<T> {
     const props = Reflect.getMetadata("props", proto) || [];
 
     for (const key of props) {
-      if (typeof key !== "string") return;
+      if (typeof key !== "string") continue;
       const isRef = Reflect.getMetadata("isRef", proto, key);
       const pointer = Reflect.getMetadata("refsTo", proto, key);
       if (
@@ -1042,7 +1048,9 @@ export abstract class AutoUpdatedClientObject<T> {
         !alreadySeen.includes(obj)
       )
         await this.createdWithParent(pointer.split(":"), obj[key]);
-      alreadySeen.push(obj[key]);
+      
+      if (obj[key] && !alreadySeen.includes(obj[key])) alreadySeen.push(obj[key]);
+      
       if (isRef) {
         await this.handleLoad(obj, key, alreadySeen);
       }
@@ -1072,10 +1080,21 @@ export abstract class AutoUpdatedClientObject<T> {
 
     for (const refId of refIds) {
       if (refId) {
+        const idStr = refId.toString();
+        // Check global cache first to avoid iterating managers
+        if (globalCache.objects[idStr]) {
+            const result = globalCache.objects[idStr].object;
+            if (result && !alreadySeen.includes(idStr)) {
+                alreadySeen.push(idStr);
+                await result.loadForceReferences(undefined, undefined, alreadySeen);
+            }
+            continue;
+        }
+
         for (const manager of Object.values(this.parentManager.managers)) {
-          const result = manager.getObject(refId);
-          if (result && !alreadySeen.includes(refId)) {
-            alreadySeen.push(refId);
+          const result = manager.getObject(idStr);
+          if (result && !alreadySeen.includes(idStr)) {
+            alreadySeen.push(idStr);
             await result.loadForceReferences(undefined, undefined, alreadySeen);
             break;
           }
@@ -1197,12 +1216,13 @@ private async findMissingObjectReference(prop: any, pointer: string[]) {
   const isNested = pointerKey.includes(".");
   const pathParts = isNested ? pointerKey.split(".") : [];
 
-  const pendingObjects = ac.objectsAsArray.filter(obj => !obj.isLoaded);
+  const allObjects = Object.values(ac.objects);
+  const pendingObjects = allObjects.filter(obj => !obj.isLoaded);
   if (pendingObjects.length > 0) {
     await Promise.all(pendingObjects.map(obj => obj.waitForPreloaded()));
   }
 
-  for (const obj of ac.objectsAsArray) {
+  for (const obj of allObjects) {
     if (!obj.isLoaded) {
       await obj.waitForPreloaded();
     }
@@ -1223,8 +1243,8 @@ private async findMissingObjectReference(prop: any, pointer: string[]) {
     let found = false;
 
     if (Array.isArray(val)) {
-      for (const element of val) {
-        const item = element;
+      for (let i = 0; i < val.length; i++) {
+        const item = val[i];
         if (!item) continue;
         
         const idStr = item._id ? item._id.toString() : item.toString();
