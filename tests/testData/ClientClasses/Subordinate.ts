@@ -1,4 +1,4 @@
-import { MongoId, SubordinateType } from "./enums.js";
+import type { MongoId, SubordinateType } from "./enums.js";
 import {
   classProp,
   classRef,
@@ -9,19 +9,19 @@ import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.j
 
 export class Subordinate extends AutoUpdatedClientObject<any> {
   @classProp
-  public _id: MongoId;
+  public _id!: MongoId;
 
   @classProp
-  public login: string;
+  public login!: string;
 
   @classProp
-  public name: string;
+  public name!: string;
 
   @classProp
-  public phone: string;
+  public phone!: string;
 
   @classProp
-  public type: SubordinateType; // discriminator key
+  public type!: SubordinateType; // discriminator key
 
   //id of company where the subordinate is employed
   @classProp
@@ -31,7 +31,5 @@ export class Subordinate extends AutoUpdatedClientObject<any> {
   //id of construction where the subordinate is currently on site
   @classProp
   @classRef()
-  public onSite: Construction;
+  public onSite!: Construction;
 }
-
-

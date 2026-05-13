@@ -111,5 +111,5 @@
     "skipDefaultLibCheck": false /* Skip type checking .d.ts files that are included with TypeScript. */,
     "skipLibCheck": false /* Skip type checking all .d.ts files. */
   },
-  "exclude": ["expo-test/**", "dist/**", "coverage/**", "tests/**"]
+  "exclude": ["expo-test/**", "dist/**", "coverage/**"]
 }

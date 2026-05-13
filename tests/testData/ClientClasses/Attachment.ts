@@ -4,7 +4,7 @@ import {
   populatedRef,
 } from "../../../CommonTypes.js";
 import { Subordinate } from "./Subordinate.js";
-import { GeoAttachmentType, MongoId } from "./enums.js";
+import type { GeoAttachmentType, MongoId } from "./enums.js";
 import { Protocol } from "./Protocol.js";
 import { MeasurementTask } from "./MeasurementTask.js";
 import { ProtocolTask } from "./ProtocolTask.js";
@@ -13,29 +13,29 @@ import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.j
 type FileType = GeoAttachmentType;
 export class Attachment extends AutoUpdatedClientObject<any> {
   @classProp
-  public _id: MongoId;
+  public _id!: MongoId;
 
   @classProp
-  public path: string;
+  public path!: string;
 
   @classProp
-  public fileName: string;
+  public fileName!: string;
 
   @classProp
   @classRef()
-  public creator: Subordinate;
+  public creator!: Subordinate;
 
   @classProp
-  public lastEdited: Date;
+  public lastEdited!: Date;
 
   @classProp
-  public size: number;
+  public size!: number;
 
   @classProp
-  public type: FileType;
+  public type!: FileType;
 
   @classProp
-  public createdAt: Date;
+  public createdAt!: Date;
 
   @classProp
   @populatedRef("Protocol:protocol")

@@ -523,6 +523,10 @@ export abstract class AutoUpdatedClientObject<T> {
     }
   }
 
+  public async onUpdate(noUpdate: boolean = false) {
+    return;
+  }
+
   protected async createdWithParent(pointer: string[], parent: T | string) {
     if (pointer.length !== 2) return;
     const parentId = (parent as any)._id?.toString() ?? (parent as string).toString();

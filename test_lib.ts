@@ -4,13 +4,13 @@ import {
 } from "./AutoUpdateServerManagerClass.js";
 import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
-import { Status } from "./TestTypes.js";
 import mongoose from "mongoose";
 import { io } from "socket.io-client";
 import { AUCManagerFactory } from "./AutoUpdateClientManagerClass.js";
-import { Test as ClientTest, Test2 as ClientTest2 } from "./ClientTypes.js";
-import { Test2 as ServerTest2, Test as ServerTest } from "./ServerTypes.js";
 import { logger } from "@typegoose/typegoose/lib/logSettings.js";
+import * as ServerClasses from "./tests/testData/ServerClasses/index.js";
+import * as ClientClasses from "./tests/testData/ClientClasses/index.js";
+import { SubordinateType } from "./tests/testData/types.js";
 
 export const initServerManagers = async () => {
   const server = new Server();
@@ -27,19 +27,12 @@ export const initServerManagers = async () => {
   });
   const managers = await AUSManagerFactory(
     {
-      Test2: {
-        class: ServerTest2,
+      Company: {
+        class: ServerClasses.Company,
       },
-      Test: {
-        class: ServerTest,
+      Subordinate: {
+        class: ServerClasses.Subordinate,
         options: {
-          onUpdate: async (obj, set) => {
-            if (obj.status === Status.ACTIVE && !obj.active) {
-              await set("status", Status.INACTIVE);
-            } else if (obj.status === Status.INACTIVE && obj.active) {
-              await set("status", Status.ACTIVE);
-            }
-          },
           accessDefinitions: {
             startupMiddleware: async (objects, managers, socket) => {
               const returns =
@@ -47,16 +40,10 @@ export const initServerManagers = async () => {
                   ? objects
                   : objects.filter(
                       (obj) =>
-                        obj.description &&
-                        obj.description !== "TestObj3" &&
-                        obj.description !== "TestObj4",
+                        obj.name &&
+                        obj.name !== "Redacted" &&
+                        obj.name !== "Secret",
                     );
-              logger.error(
-                objects.map((obj) => obj.description ?? "" + obj._id),
-              );
-              logger.error(
-                returns.map((obj) => obj.description ?? "" + obj._id),
-              );
               return returns;
             },
             eventMiddleware: async (event, managers, socket) => {
@@ -78,7 +65,7 @@ export const initServerManagers = async () => {
     },
     io,
   );
-  return managers;
+  return { managers, io, server };
 };
 
 export const initClientManagers = async (id: string) => {
@@ -90,22 +77,19 @@ export const initClientManagers = async (id: string) => {
 
   const managers = await AUCManagerFactory(
     {
-      Test: ClientTest,
-      Test2: ClientTest2,
+      Subordinate: ClientClasses.Subordinate,
+      Company: ClientClasses.Company,
     },
     {
       debug: (msg: string) => console.log("CLIENT " + msg),
       error: (msg: string) => console.error("CLIENT " + msg),
       info: (msg: string) => console.log("CLIENT " + msg),
-      warn: (msg: string) => console.warn("CLIENT " + msg),
+      warn: (msg: string) => console.log("CLIENT " + msg),
     },
     socket,
   );
-  return managers;
+  return { managers, socket };
 };
-
-import * as ServerClasses from "./tests/testData/ServerClasses/index.js";
-import * as ClientClasses from "./tests/testData/ClientClasses/index.js";
 
 export const initFullServerManagers = async (port: number = 3002) => {
   const server = new Server();

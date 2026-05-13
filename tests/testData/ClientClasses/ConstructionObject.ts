@@ -1,4 +1,4 @@
-import { MongoId } from "./enums.js";
+import type { MongoId } from "./enums.js";
 import {
   classProp,
   classRef,
@@ -11,11 +11,11 @@ import { Subordinate } from "./Subordinate.js";
 
 export class ConstructionObject extends AutoUpdatedClientObject<any> {
   @classProp
-  public _id: MongoId;
+  public _id!: MongoId;
 
   //Stavební objekt samotný
   @classProp
-  public number: string;
+  public number!: string;
 
   @classProp
   @classRef()
@@ -28,10 +28,8 @@ export class ConstructionObject extends AutoUpdatedClientObject<any> {
   //parent construction
   @classProp
   @populatedRef("Construction:objects")
-  public parent: Construction;
+  public parent!: Construction;
 
   @classProp
-  public path: string;
+  public path!: string;
 }
-
-

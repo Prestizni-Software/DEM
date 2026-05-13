@@ -1,4 +1,5 @@
-import { MongoId, AssignmentType, Section } from "./enums.js";
+import { AssignmentType } from "./enums.js";
+import type { MongoId, Section } from "./enums.js";
 import {
   classProp,
   classRef,
@@ -13,10 +14,10 @@ import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.j
 
 export class ProtocolTask extends AutoUpdatedClientObject<any> {
   @classProp
-  public _id: MongoId;
+  public _id!: MongoId;
 
   @classProp
-  element: string;
+  element!: string;
 
   @classProp
   isAVAG: boolean = false;
@@ -26,7 +27,7 @@ export class ProtocolTask extends AutoUpdatedClientObject<any> {
 
   @classProp
   @classRef()
-  constructionObject: ConstructionObject;
+  constructionObject!: ConstructionObject;
 
   @classProp
   section?: Section;
@@ -38,27 +39,27 @@ export class ProtocolTask extends AutoUpdatedClientObject<any> {
   folderName?: string;
 
   @classProp
-  whenCreated: Date;
+  whenCreated!: Date;
 
   @classProp
   @classRef()
-  createdBy: Subordinate;
+  createdBy!: Subordinate;
 
   @classProp
-  assignmentType: AssignmentType; // Creation
+  assignmentType!: AssignmentType; // Creation
 
   // Creation
   @classProp
   @classRef()
-  measurementTypes: MeasurementType[];
+  measurementTypes!: MeasurementType[];
 
   // Creation
   @classProp
-  protocoling: string[]; //Creation
+  protocoling!: string[]; //Creation
 
   @classProp
   @classRef()
-  attachments: Attachment[];
+  attachments!: Attachment[];
 
   //Creation
   //Creation
@@ -74,11 +75,9 @@ export class ProtocolTask extends AutoUpdatedClientObject<any> {
   controlProtocol?: Protocol;
 
   @classProp
-  complex: boolean;
+  complex!: boolean;
 
   @classProp
   @classRef()
-  measurements: MeasurementTask[];
+  measurements!: MeasurementTask[];
 }
-
-

@@ -1,8 +1,10 @@
 import {
   Priority,
   TaskStatus,
-  MongoId,
   MeasuringMachine,
+} from "./enums.js";
+import type {
+  MongoId,
 } from "./enums.js";
 import {
   classRef,
@@ -21,13 +23,13 @@ type MeasuringApparatus = MeasuringMachine;
 export class MeasurementTask extends AutoUpdatedClientObject<any> {
   @populatedRef("ProtocolTask:measurements")
   @classProp
-  parent: ProtocolTask;
+  parent!: ProtocolTask;
 
   @classProp
-  public _id: MongoId;
+  public _id!: MongoId;
 
   @classProp
-  priority: Priority;
+  priority!: Priority;
 
   @classProp
   visitWanted: boolean = false;
@@ -39,7 +41,7 @@ export class MeasurementTask extends AutoUpdatedClientObject<any> {
   folderName?: string;
 
   @classProp
-  whenCreated: Date;
+  whenCreated!: Date;
 
   @classProp
   whenMeasured?: Date;
@@ -53,11 +55,11 @@ export class MeasurementTask extends AutoUpdatedClientObject<any> {
 
   @classProp
   @classRef()
-  attachments: Attachment[];
+  attachments!: Attachment[];
 
   @classProp
   @classRef()
-  createdBy: Subordinate;
+  createdBy!: Subordinate;
 
   @classProp
   measuringApparatus?: MeasuringApparatus | null; //Accepted -> Waiting for data
@@ -68,13 +70,11 @@ export class MeasurementTask extends AutoUpdatedClientObject<any> {
 
   @classProp
   @classRef()
-  comments: Comments[];
+  comments!: Comments[];
 
   @classProp
-  status: TaskStatus;
+  status!: TaskStatus;
   
   @classProp
   lastUpdate: number = Date.now();
 }
-
-

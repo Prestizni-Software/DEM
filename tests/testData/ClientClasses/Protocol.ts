@@ -1,4 +1,5 @@
-import { ApprovementStatus, MongoId, ProtocolStatus } from "./enums.js";
+import { ApprovementStatus, ProtocolStatus } from "./enums.js";
+import type { MongoId } from "./enums.js";
 import {
   classProp,
   classRef,
@@ -12,13 +13,13 @@ import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.j
 
 export class Protocol extends AutoUpdatedClientObject<any> {
   @classProp
-  public _id: MongoId;
+  public _id!: MongoId;
 
   @classProp
-  isControl: boolean;
+  isControl!: boolean;
 
   @classProp
-  status: ProtocolStatus;
+  status!: ProtocolStatus;
 
   @classProp
   @classRef()
@@ -33,11 +34,11 @@ export class Protocol extends AutoUpdatedClientObject<any> {
 
   @classProp
   @classRef()
-  comments: Comments[];
+  comments!: Comments[];
 
   @classProp
   @classRef()
-  supervisor_comments: Comments[];
+  supervisor_comments!: Comments[];
 
   @classProp
   @classRef()
@@ -57,13 +58,13 @@ export class Protocol extends AutoUpdatedClientObject<any> {
   whenAssigned?: Date;
 
   @classProp
-  hsvAprovement: ApprovementStatus;
+  hsvAprovement!: ApprovementStatus;
 
   @classProp
-  supervisorAprovement: ApprovementStatus;
+  supervisorAprovement!: ApprovementStatus;
 
   @classProp
-  folderName: string;
+  folderName!: string;
 
   @classProp
   uploadedToAspehub: boolean = false;
@@ -71,5 +72,3 @@ export class Protocol extends AutoUpdatedClientObject<any> {
   @classProp
   lastUpdate: number = Date.now();
 }
-
-

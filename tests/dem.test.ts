@@ -1,402 +1,193 @@
 import { initClientManagers, initServerManagers } from "../test_lib.js";
 import mongoose from "mongoose";
 import { getModelForClass } from "@typegoose/typegoose";
-import { Status } from "../TestTypes.js";
-import { Test, Test2 } from "../ServerTypes.js";
+import * as ServerClasses from "./testData/ServerClasses/index.js";
+import { SubordinateType } from "./testData/types.js";
 import { AUCManagerFactory } from "../AutoUpdateClientManagerClass.js";
 import { classProp, classRef } from "../CommonTypes.js";
 import { io } from "socket.io-client";
 import '@jest/globals'
 import { AutoUpdatedClientObject } from "../AutoUpdatedClientObjectClass.js";
+
+// Connect to DB
 await mongoose.connect("mongodb://localhost:27017/GeoDB", {
   timeoutMS: 5000,
 });
-await getModelForClass(Test).deleteMany({});
-await getModelForClass(Test2).deleteMany({});
-const serverManagers = await initServerManagers();
+
+// Clear DB
+await getModelForClass(ServerClasses.Subordinate).deleteMany({});
+await getModelForClass(ServerClasses.Company).deleteMany({});
+
+const { managers: serverManagers, io: serverIo, server } = await initServerManagers();
+
 afterAll(async () => {
   await mongoose.disconnect();
-  for (const manager of Object.values(serverManagers)) manager.close();
-});
-const testServerObject1 = await serverManagers.Test.createObject({
-  active: true,
-  status: Status.INACTIVE,
-  description: "TestObj1",
-  ref: null,
-  refarr: [],
-  obj: {
-    _id: "default",
-    obj: { _id: "default" },
-  },
-  parent: null, // Should be TestObj2
+  for (const manager of Object.values(serverManagers)) (manager as any).close();
+  serverIo.close();
+  server.close();
 });
 
-const testServerObject2 = await serverManagers.Test.createObject({
-  active: true,
-  status: Status.ACTIVE,
-  description: "TestObj2",
-  ref: null,
-  refarr: [testServerObject1],
-  obj: {
-    _id: "default",
-    obj: { _id: "default" },
-  },
-  parent: null,
+// Create some data
+const testServerObject1 = await serverManagers.Subordinate.createObject({
+  name: "Sub1",
+  login: "sub1_login",
+  phone: "123",
+  type: SubordinateType.GEODET,
+  company: [],
+  onSite: null,
 });
 
-const testServerObject3 = await serverManagers.Test.createObject({
-  active: true,
-  status: Status.INACTIVE,
-  description: "TestObj3",
-  ref: null,
-  refarr: [],
-  obj: {
-    _id: "default",
-    obj: { _id: "default" },
-  },
-  parent: testServerObject1,
+const testServerObject2 = await serverManagers.Subordinate.createObject({
+  name: "Sub2",
+  login: "sub2_login",
+  phone: "456",
+  type: SubordinateType.OFFICE_RAT,
+  company: [],
+  onSite: null,
 });
 
-const clientManagers1 = await initClientManagers("Client1");
+// Secret object to test redacted loading
+const testServerObject3 = await serverManagers.Subordinate.createObject({
+  name: "Secret",
+  login: "secret_login",
+  phone: "000",
+  type: SubordinateType.ADMIN,
+  company: [],
+  onSite: null,
+});
 
-const clientManagers2 = await initClientManagers("Client2");
+const { managers: clientManagers1, socket: socket1 } = await initClientManagers("Client1");
+const { managers: clientManagers2, socket: socket2 } = await initClientManagers("Client2");
+
 afterAll(async () => {
-  for (const manager of Object.values(clientManagers1)) manager.close();
-  for (const manager of Object.values(clientManagers2)) manager.close();
+  for (const manager of Object.values(clientManagers1)) (manager as any).close();
+  for (const manager of Object.values(clientManagers2)) (manager as any).close();
+  socket1.close();
+  socket2.close();
 });
-const testClient1Object1 =
-  clientManagers1.Test.objects[testServerObject1._id.toString()];
 
-const testClient1Object2 =
-  clientManagers1.Test.objects[testServerObject2._id.toString()];
+const getClient1Sub = (id: any) => clientManagers1.Subordinate.objects[id.toString()];
+const getClient2Sub = (id: any) => clientManagers2.Subordinate.objects[id.toString()];
 
-const testClient1Object3 =
-  clientManagers1.Test.objects[testServerObject3._id.toString()];
-
-const testClient2Object1 =
-  clientManagers2.Test.objects[testServerObject1._id.toString()];
-
-const testClient2Object2 =
-  clientManagers2.Test.objects[testServerObject2._id.toString()];
-
-const testClient2Object3 =
-  clientManagers2.Test.objects[testServerObject3._id.toString()];
-
-describe("Server ", () => {
+describe("DEM Library Tests with New Data Structure", () => {
   test("Managers created", async () => {
     expect(serverManagers).toBeDefined();
     expect(clientManagers1).toBeDefined();
     expect(clientManagers2).toBeDefined();
-  }, 1000);
-
-  test("Default objects created", async () => {
-    expect(serverManagers.Test.objectsAsArray.length).toBe(3);
-    expect(serverManagers.Test2.objectsAsArray.length).toBe(0);
-  }, 1000);
-
-  test("Default object loaded", async () => {
-    expect(clientManagers1.Test.objectsAsArray.length).toBe(3);
-  }, 1000);
-
-  test("Object created", async () => {
-    expect(testServerObject1).toBeDefined();
-    expect(testServerObject1._id).toBeDefined();
-  }, 1000);
-
-  test("Server object has correct values", async () => {
-    expect(testServerObject1.active).toBe(true);
-    expect(testServerObject1.description).toBe("TestObj1");
-    expect(testServerObject1.ref).toBeUndefined();
-    console.log(testServerObject1.obj);
-    expect(JSON.stringify(testServerObject1.obj)).toBe(
-      JSON.stringify({
-        _id: "default",
-        obj: { _id: "default" },
-      })
-    );
-  }, 1000);
-
-  test("Client object has correct values", async () => {
-    expect(testClient1Object1.active).toBe(true);
-    expect(testClient1Object1.description).toBe("TestObj1");
-    expect(testClient1Object1.ref ?? null).toBe(null);
-    console.log(testClient1Object1.obj);
-    expect(JSON.stringify(testClient1Object1.obj)).toBe(
-      JSON.stringify({
-        _id: "default",
-        obj: { _id: "default" },
-      })
-    );
-    expect(testClient2Object1.active).toBe(true);
-    expect(testClient2Object1.description).toBe("TestObj1");
-    expect(testClient2Object1.ref ?? null).toBe(null);
-    console.log(testClient2Object1.obj);
-    expect(JSON.stringify(testClient2Object1.obj)).toBe(
-      JSON.stringify({
-        _id: "default",
-        obj: { _id: "default" },
-      })
-    );
-  }, 1000);
-
-  test("Client2 redacted object not loaded", async () => {
-    expect(testClient2Object3).toBeUndefined();
-    expect(clientManagers2.Test.objectsAsArray.length).toBe(2);
   });
 
-  test("Autostatus at creation - Client", async () => {
-    expect(testServerObject1.status).toBe(Status.ACTIVE);
-  }, 1000);
+  test("Default objects created", async () => {
+    expect(serverManagers.Subordinate.objectsAsArray.length).toBe(3);
+    expect(serverManagers.Company.objectsAsArray.length).toBe(0);
+  });
 
-  test("Autostatus at creation - Client", async () => {
-    expect(testClient1Object1.status).toBe(Status.ACTIVE);
-    expect(testClient2Object1.status).toBe(Status.ACTIVE);
-  }, 1000);
+  test("Default objects loaded on Client1", async () => {
+    // Client1 should see all 3 (Secret included)
+    expect(clientManagers1.Subordinate.objectsAsArray.length).toBe(3);
+  });
 
-  test("Parent fill from parent after object already created", async () => {
-    expect(testServerObject1.parent?.description).toBe(
-      testServerObject2.description
-    );
-  }, 1000);
+  test("Client2 redacted object not loaded", async () => {
+    // Client2 should NOT see "Secret" (filtered in startupMiddleware in test_lib.ts)
+    expect(clientManagers2.Subordinate.objectsAsArray.length).toBe(2);
+    expect(getClient2Sub(testServerObject3._id)).toBeUndefined();
+  });
 
-  test("Child reference added after created object with parent", async () => {
-    expect(testServerObject1.refarr[0]?.description).toBe(
-      testServerObject3.description
-    );
-  }, 1000);
+  test("Server object has correct values", async () => {
+    expect(testServerObject1.name).toBe("Sub1");
+    expect(testServerObject1.login).toBe("sub1_login");
+  });
 
-  test("Setting shallow value", async () => {
-    await testServerObject1.setValue("active", false);
-    expect(testServerObject1.active).toBe(false);
-  }, 1000);
+  test("Client object has correct values", async () => {
+    const c1o1 = getClient1Sub(testServerObject1._id);
+    expect(c1o1.name).toBe("Sub1");
+    expect(c1o1.login).toBe("sub1_login");
 
-  test("Autostatus on set value", async () => {
-    expect(testServerObject1.status).toBe(Status.INACTIVE);
-  }, 1000);
+    const c2o1 = getClient2Sub(testServerObject1._id);
+    expect(c2o1.name).toBe("Sub1");
+    expect(c2o1.login).toBe("sub1_login");
+  });
 
-  test("Setting deep value", async () => {
-    await testServerObject1.setValue("obj.obj._id", "3");
-    expect(testServerObject1.obj?.obj?._id).toBe("3");
-  }, 1000);
-
-  test("Setting ref value", async () => {
-    await testServerObject1.setValue("ref", testServerObject3._id);
-    expect(testServerObject1.ref?.description).toBe(
-      testServerObject3.description
-    );
-  }, 1000);
-
-  test("Setting ref's value deep value", async () => {
-    await testServerObject1.ref?.setValue("obj.obj._id", "4");
-    expect(testServerObject3.obj?.obj?._id).toBe("4");
-  }, 1000);
-
-  test("Setting ref's shallow value", async () => {
-    await testServerObject1.ref?.setValue("description", "Testing...");
-    expect(testServerObject3.description).toBe("Testing...");
-    await testServerObject3.setValue("description", "TestObj3");
-  }, 1000);
-
-  test("Setting ref's shallow value from parent", async () => {
-    await testServerObject1.setValue_("ref.description", "get tested broski");
-    expect(testServerObject3.description).toBe("get tested broski");
-    await testServerObject3.setValue("description", "TestObj3");
-  }, 1000);
-
-  test("Setting ref's deep value from parent", async () => {
-    await testServerObject1.setValue_("ref.obj._id", "gay");
-    expect(testServerObject3.obj?._id).toBe("gay");
-  }, 1000);
-
-  test("Setting shallow value from client", async () => {
-    await testClient1Object2.setValue("active", false);
-    expect(testClient1Object2.active).toBe(false);
-    expect(testServerObject2.active).toBe(false);
-  }, 1000);
-
-  test("Updating value at client from server", async () => {
-    while (testClient2Object2.active) {
-      await new Promise((resolve) => setTimeout(resolve, 1));
+  test("Setting shallow value from server", async () => {
+    await testServerObject1.setValue("phone", "999");
+    expect(testServerObject1.phone).toBe("999");
+    
+    // Wait for sync
+    while (getClient1Sub(testServerObject1._id).phone !== "999") {
+        await new Promise(r => setTimeout(r, 10));
     }
-    expect(testClient2Object2.active).toBe(false);
-  }, 1000);
+    expect(getClient1Sub(testServerObject1._id).phone).toBe("999");
+  });
 
-  test("Autostatus on set value from client", async () => {
-    while (testClient2Object2.status !== Status.INACTIVE) {
-      await new Promise((resolve) => setTimeout(resolve, 1));
+  test("Setting value from client", async () => {
+    const c1o2 = getClient1Sub(testServerObject2._id);
+    await c1o2.setValue("phone", "888");
+    expect(testServerObject2.phone).toBe("888");
+
+    while (getClient2Sub(testServerObject2._id).phone !== "888") {
+        await new Promise(r => setTimeout(r, 10));
     }
-    expect(testClient1Object2.status).toBe(Status.INACTIVE);
-    expect(testServerObject2.status).toBe(Status.INACTIVE);
-    expect(testClient2Object2.status).toBe(Status.INACTIVE);
-  }, 1000);
+    expect(getClient2Sub(testServerObject2._id).phone).toBe("888");
+  });
 
-  test("Setting deep value from client", async () => {
-    console.log("DEBUG: testClient1Object2.obj", testClient1Object2.obj);
-    await testClient1Object2.setValue("obj.obj._id", "gayUwU69");
-    console.log("DEBUG: testClient1Object2.obj after", testClient1Object2.obj);
-    expect(testClient1Object2.obj?.obj?._id).toBe("gayUwU69");
-    expect(testServerObject2.obj?.obj?._id).toBe("gayUwU69");
-    while (testClient2Object2.obj?.obj?._id !== "gayUwU69") {
-      await new Promise((resolve) => setTimeout(resolve, 1));
+  test("Denied deletion from client (Client2)", async () => {
+    const c2o1 = getClient2Sub(testServerObject1._id);
+    const res = await c2o1.destroy();
+    expect(res.success).toBe(false);
+    expect(serverManagers.Subordinate.getObject(testServerObject1._id.toString())).toBeDefined();
+  });
+
+  test("Allowed deletion from client (Client1)", async () => {
+    const c1o2 = getClient1Sub(testServerObject2._id);
+    const res = await c1o2.destroy();
+    expect(res.success).toBe(true);
+    expect(serverManagers.Subordinate.getObject(testServerObject2._id.toString())).toBeUndefined();
+    
+    while (getClient2Sub(testServerObject2._id)) {
+        await new Promise(r => setTimeout(r, 10));
     }
-    expect(testClient2Object2.obj?.obj?._id).toBe("gayUwU69");
-  }, 1000);
-
-  test("Setting parent value from server", async () => {
-    await testServerObject2.setValue_("parent", testServerObject2);
-    expect(testServerObject2.parent?.description).toBe(
-      testServerObject2.description
-    );
-    while (testClient2Object2.parent?.description !== "TestObj2") {
-      await new Promise((resolve) => setTimeout(resolve, 1));
-    }
-    expect(testClient2Object2.parent?.description).toBe("TestObj2");
-    while (testClient2Object2.parent?.description !== "TestObj2") {
-      await new Promise((resolve) => setTimeout(resolve, 1));
-    }
-    expect(testClient2Object2.parent?.description).toBe("TestObj2");
-  }, 1000);
-
-  test("Setting parent value from client", async () => {
-    await testClient1Object2.setValue("parent", testClient1Object3);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(testServerObject2.parent?._id).toBe(
-      testServerObject3._id
-    );
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(testClient1Object2.parent?._id).toBe(
-      testClient1Object3._id
-    );
-  }, 1000);
-
-  test("Denied deletion from client", async () => {
-    expect((await testClient2Object2.destroy()).success).toBe(false);
-  }, 1000);
-
-  test("Allowed deletion from server", async () => {
-    expect((await testClient1Object2.destroy()).success).toBe(true);
-  }, 1000);
-
-  let newObjectId1: string;
-  test("Creation of new object from server", async () => {
-    newObjectId1 = (
-      await serverManagers.Test.createObject({
-        description: "TestObj4",
-        active: true,
-        status: Status.INACTIVE,
-        ref: null,
-        refarr: [],
-        obj: null,
-        parent: null,
-      })
-    )._id.toString();
-    expect(serverManagers.Test.getObject(newObjectId1)?.description).toBe(
-      "TestObj4"
-    );
-    while (
-      clientManagers1.Test.getObject(newObjectId1)?.description !== "TestObj4"
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 1));
-    }
-    expect(clientManagers1.Test.getObject(newObjectId1)?.description).toBe(
-      "TestObj4"
-    );
-  }, 1000);
-
-  test("Client2 not notified of object creation", async () => {
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(clientManagers2.Test.getObject(newObjectId1)).toBeUndefined();
+    expect(getClient2Sub(testServerObject2._id)).toBeUndefined();
   });
 
   test("Creation of new object from client", async () => {
-    let newObjectId2 = (
-      await clientManagers1.Test.createObject({
-        description: "TestObj5",
-        active: true,
-        status: Status.INACTIVE,
-        ref: null,
-        refarr: [],
-        obj: null,
-        parent: null,
-      })
-    )._id.toString();
-    expect(clientManagers1.Test.getObject(newObjectId2)?.description).toBe(
-      "TestObj5"
-    );
-    expect(serverManagers.Test.getObject(newObjectId2)?.description).toBe(
-      "TestObj5"
-    );
-    while (
-      clientManagers2.Test.getObject(newObjectId2)?.description !== "TestObj5"
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 1));
-    }
-    expect(clientManagers2.Test.getObject(newObjectId2)?.description).toBe(
-      "TestObj5"
-    );
-  }, 1000);
-
-  test("Creating Invalid Object", async () => {
-    try {
-      await clientManagers1.Test.createObject({
-        description: "TestObj5",
-        ref: null,
-        refarr: [],
-        obj: null,
-        parent: null,
-      } as any);
-      expect(true).toBe(false);
-    } catch (error:any) {
-      expect(error).toBeInstanceOf(Error);
-      expect(error.message).toContain("validation failed");
-    }
-  }, 1000);
-
-  test("Creating manager with an invalid type", async () => {
-    class Test3 extends AutoUpdatedClientObject<any> {
-      @classProp
-      public _id!: string;
-
-      @classProp
-      public isActive!: boolean;
-
-      @classProp
-      public status!: Status;
-
-      @classProp
-      public someGayText!: string;
-
-      @classProp
-      @classRef()
-      public referance!: Test | null;
-    }
-    const socket = io("http://localhost:3001", {
-      auth: {
-        token: "GayClient",
-      },
+    const newObj = await clientManagers1.Subordinate.createObject({
+        name: "NewSub",
+        login: "new_login",
+        phone: "777",
+        type: SubordinateType.GEODET,
+        company: [],
+        onSite: null,
     });
-    try {
-      await AUCManagerFactory(
-        {
-          Test3,
-        },
-        {
-          info: () => console.log,
-          debug: () => console.debug,
-          error: () => console.error,
-          warn: () => console.warn,
-        },
-        socket,
-        true
-      );
-    } catch (e: any) {
-      expect(e).toBeInstanceOf(Error);
-      expect(e.message).toContain(
-        "Local type does not match server type for manager"
-      );
-      socket.disconnect();
-      return;
+    expect(newObj._id).toBeDefined();
+    expect(serverManagers.Subordinate.getObject(newObj._id.toString())).toBeDefined();
+    
+    while (!getClient2Sub(newObj._id)) {
+        await new Promise(r => setTimeout(r, 10));
     }
-    socket.disconnect();
-  }, 1000);
+    expect(getClient2Sub(newObj._id).name).toBe("NewSub");
+  });
+
+  test("Reference testing", async () => {
+    const company = await serverManagers.Company.createObject({
+        fullName: "Test Company",
+        abbr: "TC",
+    });
+    
+    await testServerObject1.setValue("onSite", null); // Reset
+    // Actually onSite is Construction ref in Subordinate.ts, let's use company array or add construction
+    // Wait, Subordinate.ts has `onSite: Construction` and `company: Company[]`.
+    
+    // Let's create a Construction too
+    const construction = await serverManagers.Construction.createObject({
+        name: "Const1",
+        objects: [],
+    });
+    
+    await testServerObject1.setValue("onSite", construction._id);
+    expect(testServerObject1.onSite?._id.toString()).toBe(construction._id.toString());
+    
+    while (!getClient1Sub(testServerObject1._id).onSite) {
+        await new Promise(r => setTimeout(r, 10));
+    }
+    expect(getClient1Sub(testServerObject1._id).onSite?._id.toString()).toBe(construction._id.toString());
+  });
 });

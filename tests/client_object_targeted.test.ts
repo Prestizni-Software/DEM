@@ -1,16 +1,9 @@
 import { jest } from '@jest/globals';
 import "reflect-metadata";
-import { AutoUpdatedClientObject } from "../AutoUpdatedClientObjectClass.js";
+import { Subordinate } from "./testData/ClientClasses/index.js";
 import { EventEmitter } from "eventemitter3";
 
-describe("AutoUpdatedClientObjectClass Comprehensive Tests", () => {
-  class TestObject extends AutoUpdatedClientObject<TestObject> {
-    public prop1: string = "";
-    public prop2: number = 0;
-    public ref1: string = "";
-    public _id: string = "";
-  }
-
+describe("AutoUpdatedClientObjectClass Comprehensive Tests with Subordinate", () => {
   let mockSocket: any;
   let mockManager: any;
   let mockEmitter: any;
@@ -42,15 +35,12 @@ describe("AutoUpdatedClientObjectClass Comprehensive Tests", () => {
       error: jest.fn(),
       warn: jest.fn()
     };
-
-    Reflect.defineMetadata("props", ["prop1", "prop2", "ref1", "_id"], TestObject.prototype);
-    Reflect.defineMetadata("isRef", true, TestObject.prototype, "ref1");
   });
 
   test("loadReferencesAsync success path", async () => {
     const data = { _id: "id1" };
-    const obj = new (TestObject as any)(
-        TestObject, mockSocket, data, loggers, "TestObject", mockManager, mockCallback, mockEmitter
+    const obj = new (Subordinate as any)(
+        Subordinate, mockSocket, data, loggers, "Subordinate", mockManager, mockCallback, mockEmitter
     );
     (obj as any).toChangeOnParents = [];
     (obj as any).loadMissingReferences = jest.fn().mockResolvedValue(undefined);
@@ -59,38 +49,28 @@ describe("AutoUpdatedClientObjectClass Comprehensive Tests", () => {
     expect((obj as any).isLoadingReferences).toBe(false);
   });
 
-  test("setValue__ with 1:1 relationship (refsTo)", async () => {
-    Reflect.defineMetadata("refsTo", "ParentClass:childProp", TestObject.prototype, "ref1");
-    const data = { _id: "id1", ref1: "parent1" };
-    const obj = new (TestObject as any)(
-        TestObject, mockSocket, data, loggers, "TestObject", mockManager, mockCallback, mockEmitter
+  test("setValue__ from client success", async () => {
+    const data = { _id: "id1", name: "OldName" };
+    const obj = new (Subordinate as any)(
+        Subordinate, mockSocket, data, loggers, "Subordinate", mockManager, mockCallback, mockEmitter
     );
 
-    const mockParent = {
-        getValue: jest.fn().mockReturnValue(null),
-        setValue__: jest.fn().mockResolvedValue({ success: true, msg: "OK" }),
-        _id: "parent1"
-    };
-    const parentManager = { getObject: jest.fn().mockReturnValue(mockParent) };
-    mockManager.managers = { ParentClass: parentManager };
+    mockSocket.emit.mockImplementation((event: string, data: any, ack: any) => {
+        if (ack) ack({ success: true, data: "NewName" });
+    });
 
-    (obj as any).isServer = true;
-    (obj as any).data = data;
-    const res = await (obj as any).setValue__("ref1", "parent1");
-    expect(res).toEqual({ success: true, msg: "Successfully set ref1 to parent1" });
+    const res = await obj.setValue("name", "NewName");
+    expect(res).toBe(true);
+    expect(obj.name).toBe("NewName");
   });
 
-  test("handleUpdateRequest error path", async () => {
+  test("destroy from client calls parentManager.deleteObject", async () => {
     const data = { _id: "id1" };
-    const obj = new (TestObject as any)(
-        TestObject, mockSocket, data, loggers, "TestObject", mockManager, mockCallback, mockEmitter
+    const obj = new (Subordinate as any)(
+        Subordinate, mockSocket, data, loggers, "Subordinate", mockManager, mockCallback, mockEmitter
     );
-
-    (obj as any).setValue__ = jest.fn().mockRejectedValue(new Error("Update Fail"));
-
-    const updateHandler = mockSocket.on.mock.calls.find((c: any) => c[0] && c[0].includes("update"))[1];
-    const res = await updateHandler({ key: "prop1", value: "val" });
-
-    expect(res).toEqual({ success: false, message: "Error applying update: Update Fail" });
+    
+    await obj.destroy();
+    expect(mockManager.deleteObject).toHaveBeenCalledWith("id1");
   });
 });

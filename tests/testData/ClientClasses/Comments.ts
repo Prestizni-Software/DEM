@@ -1,4 +1,4 @@
-import { MongoId } from "./enums.js";
+import type { MongoId } from "./enums.js";
 import {
   classProp,
   classRef,
@@ -11,27 +11,27 @@ import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.j
 
 export class Comments extends AutoUpdatedClientObject<any> {
   @classProp
-  _id: MongoId;
+  _id!: MongoId;
 
   @classProp
-  when: number;
+  when!: number;
 
   @classProp
-  what: string;
+  what!: string;
 
   @classProp
-  status: string;
-
-  @classProp
-  @classRef()
-  who: Subordinate;
+  status!: string;
 
   @classProp
   @classRef()
-  mentions: Subordinate[];
+  who!: Subordinate;
 
   @classProp
-  isSystemMessage: boolean;
+  @classRef()
+  mentions!: Subordinate[];
+
+  @classProp
+  isSystemMessage!: boolean;
 
   @classProp
   @populatedRef("Protocol:comments")
