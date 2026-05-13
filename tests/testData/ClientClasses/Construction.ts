@@ -1,9 +1,9 @@
 import {
   classProp,
   classRef,
-} from "@prestizni-software/client-dem/dist/CommonTypes";
-import { MongoId } from "../../types";
-import { AutoUpdatedClientObject } from "@prestizni-software/client-dem/dist/AutoUpdatedClientObjectClass";
+} from "../../../CommonTypes.js";
+import { MongoId } from "./enums.js";
+import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.js";
 export class Construction extends AutoUpdatedClientObject<any> {
   @classProp
   public _id: MongoId;
@@ -16,3 +16,5 @@ export class Construction extends AutoUpdatedClientObject<any> {
   @classRef()
   public objects: MongoId[];
 }
+
+

@@ -146,6 +146,9 @@ export abstract class AutoUpdatedServerObject<
         ].model.create(this.data)) as any;
       }
       this.data = { ...this.data, ...this.entry.toObject() } as any;
+      if (!this.data._id && (this.entry as any)._id) {
+        this.data._id = (this.entry as any)._id;
+      }
       this.generateSettersAndGetters();
     } catch (error: any) {
       this.loggers.error(
@@ -172,13 +175,16 @@ export abstract class AutoUpdatedServerObject<
     _silent: boolean = false,
   ): Promise<{ success: boolean; msg: string }> {
     try {
+      if (!this.data?._id) {
+          throw new Error(`Cannot update object ${this.className} - missing _id. Data: ${JSON.stringify(this.data)}`);
+      }
       await this.parentManager.managers[this.className].model.updateOne(
         { _id: this.data._id },
         { $set: { [key]: value } },
       );
 
       const update = this.makeUpdate(key, value);
-      const event = EVENT_UPDATE + this.className + this.data._id;
+      const event = EVENT_UPDATE + this.className + this.data._id.toString();
       this.socket.emit(event, update);
 
       return {
@@ -186,7 +192,7 @@ export abstract class AutoUpdatedServerObject<
         msg: "Updated",
       };
     } catch (error) {
-      this.loggers.error("Error saving object: " + (error as Error).message);
+      this.loggers.error(`Error saving object [${this.className}: ${this.data?._id ?? "not loaded"}]: ` + (error as Error).message);
       this.loggers.error((error as any).stack);
       return {
         success: false,

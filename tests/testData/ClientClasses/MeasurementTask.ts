@@ -3,18 +3,18 @@ import {
   TaskStatus,
   MongoId,
   MeasuringMachine,
-} from "@/backend/types";
+} from "./enums.js";
 import {
   classRef,
   classProp,
   populatedRef,
-} from "@prestizni-software/client-dem/dist/CommonTypes";
+} from "../../../CommonTypes.js";
 
-import { Subordinate } from "./Subordinate";
-import { Attachment } from "./Attachment";
-import { Comments } from "./Comments";
-import { ProtocolTask } from "./ProtocolTask";
-import { AutoUpdatedClientObject } from "@prestizni-software/client-dem/dist/AutoUpdatedClientObjectClass";
+import { Subordinate } from "./Subordinate.js";
+import { Attachment } from "./Attachment.js";
+import { Comments } from "./Comments.js";
+import { ProtocolTask } from "./ProtocolTask.js";
+import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.js";
 
 type MeasuringApparatus = MeasuringMachine;
 
@@ -76,3 +76,5 @@ export class MeasurementTask extends AutoUpdatedClientObject<any> {
   @classProp
   lastUpdate: number = Date.now();
 }
+
+

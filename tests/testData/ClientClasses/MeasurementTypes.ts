@@ -1,6 +1,6 @@
-import { MongoId } from "@/backend/types";
-import { AutoUpdatedClientObject } from "@prestizni-software/client-dem/dist/AutoUpdatedClientObjectClass";
-import { classProp } from "@prestizni-software/client-dem/dist/CommonTypes";
+import { MongoId } from "./enums.js";
+import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.js";
+import { classProp } from "../../../CommonTypes.js";
 
 export class MeasurementType extends AutoUpdatedClientObject<any> {
   @classProp
@@ -9,3 +9,5 @@ export class MeasurementType extends AutoUpdatedClientObject<any> {
   @classProp
   name: string;
 }
+
+

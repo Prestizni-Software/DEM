@@ -2,8 +2,8 @@ import { modelOptions, prop, Severity } from "@typegoose/typegoose";
 import { Attachment, Comments, ConstructionObject, Section, MeasurementType, Subordinate } from "./dbTypes.js";
 import { AssignmentType, MeasuringApparatus, Priority, ProtocolStatus, TaskStatus } from "./enums.js";
 import { Types } from "mongoose";
-import { classProp, classRef, populatedRef } from "@prestizni-software/server-dem/dist/CommonTypes.js";
-import { AutoUpdatedServerObject } from "@prestizni-software/server-dem/dist/AutoUpdatedServerObjectClass.js";
+import { classProp, classRef, populatedRef } from "../../../CommonTypes.js";
+import { AutoUpdatedServerObject } from "../../../AutoUpdatedServerObjectClass.js";
 
 export enum ApprovementStatus {
     TO_BE_DETERMINED = -1,

@@ -1,15 +1,15 @@
-import { MongoId, AssignmentType, Section } from "@/backend/types";
+import { MongoId, AssignmentType, Section } from "./enums.js";
 import {
   classProp,
   classRef,
-} from "@prestizni-software/client-dem/dist/CommonTypes";
-import { ConstructionObject } from "./ConstructionObject";
-import { MeasurementType } from "./MeasurementTypes";
-import { Protocol } from "./Protocol";
-import { Subordinate } from "./Subordinate";
-import { MeasurementTask } from "./MeasurementTask";
-import { Attachment } from "./Attachment";
-import { AutoUpdatedClientObject } from "@prestizni-software/client-dem/dist/AutoUpdatedClientObjectClass";
+} from "../../../CommonTypes.js";
+import { ConstructionObject } from "./ConstructionObject.js";
+import { MeasurementType } from "./MeasurementTypes.js";
+import { Protocol } from "./Protocol.js";
+import { Subordinate } from "./Subordinate.js";
+import { MeasurementTask } from "./MeasurementTask.js";
+import { Attachment } from "./Attachment.js";
+import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.js";
 
 export class ProtocolTask extends AutoUpdatedClientObject<any> {
   @classProp
@@ -80,3 +80,5 @@ export class ProtocolTask extends AutoUpdatedClientObject<any> {
   @classRef()
   measurements: MeasurementTask[];
 }
+
+

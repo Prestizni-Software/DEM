@@ -1,13 +1,13 @@
-import { MongoId } from "@/backend/types";
+import { MongoId } from "./enums.js";
 import {
   classProp,
   classRef,
   populatedRef,
-} from "@prestizni-software/client-dem/dist/CommonTypes";
-import { Subordinate } from "./Subordinate";
-import { MeasurementTask } from "./MeasurementTask";
-import { Protocol } from "./Protocol";
-import { AutoUpdatedClientObject } from "@prestizni-software/client-dem/dist/AutoUpdatedClientObjectClass";
+} from "../../../CommonTypes.js";
+import { Subordinate } from "./Subordinate.js";
+import { MeasurementTask } from "./MeasurementTask.js";
+import { Protocol } from "./Protocol.js";
+import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.js";
 
 export class Comments extends AutoUpdatedClientObject<any> {
   @classProp
@@ -45,3 +45,5 @@ export class Comments extends AutoUpdatedClientObject<any> {
   @populatedRef("MeasurementTask:comments")
   public nodeTaskParent?: MeasurementTask;
 }
+
+

@@ -1,11 +1,10 @@
 import { prop, modelOptions, pre, Severity } from "@typegoose/typegoose";
 import "reflect-metadata";
 import { ObjectId } from "mongodb";
-import { classProp, classRef, populatedRef } from "@prestizni-software/server-dem/dist/CommonTypes.js";
-import { SubordinateType } from "./enums.js";
+import { classProp, classRef, populatedRef } from "../../../CommonTypes.js";
+import { SubordinateType, FileType } from "./enums.js";
 import { MeasurementTask, Protocol, ProtocolTask } from "./taskDBTypes.js";
-import { FileType } from "../../file_API/fileAPI_types.js";
-import { AutoUpdatedServerObject } from "@prestizni-software/server-dem/dist/AutoUpdatedServerObjectClass.js";
+import { AutoUpdatedServerObject } from "../../../AutoUpdatedServerObjectClass.js";
 
 @modelOptions({
     schemaOptions: {

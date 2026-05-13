@@ -1,6 +1,6 @@
-import { AutoUpdatedClientObject } from "@prestizni-software/client-dem/dist/AutoUpdatedClientObjectClass";
-import { MongoId } from "../../types";
-import { classProp } from "@prestizni-software/client-dem/dist/CommonTypes";
+import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.js";
+import { MongoId } from "./enums.js";
+import { classProp } from "../../../CommonTypes.js";
 
 export class Company extends AutoUpdatedClientObject<any> {
   @classProp
@@ -12,3 +12,5 @@ export class Company extends AutoUpdatedClientObject<any> {
   @classProp
   public abbr: string;
 }
+
+

@@ -1,14 +1,14 @@
-import { ApprovementStatus, MongoId, ProtocolStatus } from "@/backend/types";
+import { ApprovementStatus, MongoId, ProtocolStatus } from "./enums.js";
 import {
   classProp,
   classRef,
   populatedRef,
-} from "@prestizni-software/client-dem/dist/CommonTypes";
-import { Attachment } from "./Attachment";
-import { Comments } from "./Comments";
-import { ProtocolTask } from "./ProtocolTask";
-import { Subordinate } from "./Subordinate";
-import { AutoUpdatedClientObject } from "@prestizni-software/client-dem/dist/AutoUpdatedClientObjectClass";
+} from "../../../CommonTypes.js";
+import { Attachment } from "./Attachment.js";
+import { Comments } from "./Comments.js";
+import { ProtocolTask } from "./ProtocolTask.js";
+import { Subordinate } from "./Subordinate.js";
+import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.js";
 
 export class Protocol extends AutoUpdatedClientObject<any> {
   @classProp
@@ -71,3 +71,5 @@ export class Protocol extends AutoUpdatedClientObject<any> {
   @classProp
   lastUpdate: number = Date.now();
 }
+
+

@@ -1,11 +1,11 @@
-import { MongoId, SubordinateType } from "../../types";
+import { MongoId, SubordinateType } from "./enums.js";
 import {
   classProp,
   classRef,
-} from "@prestizni-software/client-dem/dist/CommonTypes";
-import { Company } from "./Company";
-import { Construction } from "./Construction";
-import { AutoUpdatedClientObject } from "@prestizni-software/client-dem/dist/AutoUpdatedClientObjectClass";
+} from "../../../CommonTypes.js";
+import { Company } from "./Company.js";
+import { Construction } from "./Construction.js";
+import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.js";
 
 export class Subordinate extends AutoUpdatedClientObject<any> {
   @classProp
@@ -33,3 +33,5 @@ export class Subordinate extends AutoUpdatedClientObject<any> {
   @classRef()
   public onSite: Construction;
 }
+
+

@@ -142,10 +142,10 @@ export abstract class AutoUpdatedClientObject<T> {
     this.callbacks = callback as any;
     
     this.loggers = {
-       debug: (s: string) => loggers.debug(`[DEM - ${this.className}: ${this.data?._id ?? "not loaded"}] ${s}`),
-       info: (s: string) => loggers.info(`[DEM - ${this.className}: ${this.data?._id ?? "not loaded"}] ${s}`),
-       warn: (s: string) => loggers.warn(`[DEM - ${this.className}: ${this.data?._id ?? "not loaded"}] ${s}`),
-       error: (s: string) => loggers.error(`[DEM - ${this.className}: ${this.data?._id ?? "not loaded"}] ${s}`),
+       debug: (s: string) => loggers.debug(`[DEM - ${this.className}: ${this.data?._id ?? (this as any)._id ?? "not loaded"}] ${s}`),
+       info: (s: string) => loggers.info(`[DEM - ${this.className}: ${this.data?._id ?? (this as any)._id ?? "not loaded"}] ${s}`),
+       warn: (s: string) => loggers.warn(`[DEM - ${this.className}: ${this.data?._id ?? (this as any)._id ?? "not loaded"}] ${s}`),
+       error: (s: string) => loggers.error(`[DEM - ${this.className}: ${this.data?._id ?? (this as any)._id ?? "not loaded"}] ${s}`),
     };
 
     if (typeof data === "string") {
@@ -253,7 +253,8 @@ export abstract class AutoUpdatedClientObject<T> {
   }
 
   private openSockets() {
-    const event = EVENT_UPDATE + this.className + this.data._id.toString();
+    const id = this.data?._id ?? (this as any)._id;
+    const event = EVENT_UPDATE + this.className + id.toString();
     this.socket.on(
       event,
       async (update: ServerUpdateRequest<T>, ack: (res: ServerResponse<undefined>) => void) => {
@@ -423,9 +424,10 @@ export abstract class AutoUpdatedClientObject<T> {
   ): Promise<{ success: boolean; msg: string }> {
     if (silent) return { success: true, msg: "Silent" };
     return new Promise((resolve) => {
+      const id = this.data?._id ?? (this as any)._id;
       this.socket.emit(
-        EVENT_UPDATE + this.className + this.data._id,
-        { _id: this.data._id.toString(), key, value },
+        EVENT_UPDATE + this.className + id,
+        { _id: id.toString(), key, value },
         (res: ServerResponse<never>) => {
           resolve({ success: res.success, msg: res.message ?? (res.success ? "Success" : "Error") });
         }
@@ -434,7 +436,12 @@ export abstract class AutoUpdatedClientObject<T> {
   }
 
   protected makeUpdate(key: string, value: any): ServerUpdateRequest<T> {
-    return { _id: this.data._id.toString(), key, value } as any;
+    const id = this.data?._id ?? (this as any)._id;
+    if (!id) {
+      this.loggers.error(`Probably missing the identifier ['_id'] again: ${key} = ${value}`);
+      throw new Error(`Cannot make update for ${this.className} because _id is missing.`);
+    }
+    return { _id: id.toString(), key, value } as any;
   }
 
   protected async resolveReference(id: string): Promise<AutoUpdatedClientObject<any> | null> {
@@ -464,7 +471,8 @@ export abstract class AutoUpdatedClientObject<T> {
 
   protected async wipeSelf() {
     if ((this.data as any).Wiped) return;
-    const _id = this.data._id.toString();
+    const id = this.data?._id ?? (this as any)._id;
+    const _id = id ? id.toString() : "unknown";
     for (const key of Object.keys(this.data)) {
       delete (this.data as any)[key];
     }

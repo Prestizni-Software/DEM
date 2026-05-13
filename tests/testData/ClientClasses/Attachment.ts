@@ -2,13 +2,13 @@ import {
   classProp,
   classRef,
   populatedRef,
-} from "@prestizni-software/client-dem/dist/CommonTypes";
-import { Subordinate } from "./Subordinate";
-import { GeoAttachmentType, MongoId } from "@/backend/types";
-import { Protocol } from "./Protocol";
-import { MeasurementTask } from "./MeasurementTask";
-import { ProtocolTask } from "./ProtocolTask";
-import { AutoUpdatedClientObject } from "@prestizni-software/client-dem/dist/AutoUpdatedClientObjectClass";
+} from "../../../CommonTypes.js";
+import { Subordinate } from "./Subordinate.js";
+import { GeoAttachmentType, MongoId } from "./enums.js";
+import { Protocol } from "./Protocol.js";
+import { MeasurementTask } from "./MeasurementTask.js";
+import { ProtocolTask } from "./ProtocolTask.js";
+import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.js";
 
 type FileType = GeoAttachmentType;
 export class Attachment extends AutoUpdatedClientObject<any> {
@@ -53,3 +53,5 @@ export class Attachment extends AutoUpdatedClientObject<any> {
   @populatedRef("ProtocolTask:attachments")
   protocolTaskParent?: ProtocolTask;
 }
+
+

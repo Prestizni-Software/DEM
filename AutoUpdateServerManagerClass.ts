@@ -643,7 +643,7 @@ export class AutoUpdateServerManager<
   ) {
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
-    (data as any)._id = undefined;
+    delete (data as any)._id;
     const object = await createAutoUpdatedClass<T>(
       this.classParam as any,
       this.className,

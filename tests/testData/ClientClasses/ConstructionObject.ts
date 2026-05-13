@@ -1,13 +1,13 @@
-import { MongoId } from "../../types";
+import { MongoId } from "./enums.js";
 import {
   classProp,
   classRef,
   populatedRef,
-} from "@prestizni-software/client-dem/dist/CommonTypes";
-import { Construction } from "./Construction";
-import { AutoUpdatedClientObject } from "@prestizni-software/client-dem/dist/AutoUpdatedClientObjectClass";
-import { Company } from "./Company";
-import { Subordinate } from "./Subordinate";
+} from "../../../CommonTypes.js";
+import { Construction } from "./Construction.js";
+import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.js";
+import { Company } from "./Company.js";
+import { Subordinate } from "./Subordinate.js";
 
 export class ConstructionObject extends AutoUpdatedClientObject<any> {
   @classProp
@@ -33,3 +33,5 @@ export class ConstructionObject extends AutoUpdatedClientObject<any> {
   @classProp
   public path: string;
 }
+
+

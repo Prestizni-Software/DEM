@@ -103,3 +103,68 @@ export const initClientManagers = async (id: string) => {
   );
   return managers;
 };
+
+import * as ServerClasses from "./tests/testData/ServerClasses/index.js";
+import * as ClientClasses from "./tests/testData/ClientClasses/index.js";
+
+export const initFullServerManagers = async (port: number = 3002) => {
+  const server = new Server();
+  server.listen(port);
+  const io = new SocketServer(server, { cors: { origin: "*" } });
+
+  io.use(async (socket, next) => {
+    next();
+  });
+
+  await mongoose.connect("mongodb://localhost:27017/GeoDB_Full", {
+    timeoutMS: 5000,
+  });
+  
+  const defs: any = {};
+  for (const [name, cls] of Object.entries(ServerClasses)) {
+    if (typeof cls === 'function' && cls.prototype instanceof ServerClasses.AutoUpdatedServerObject) {
+       defs[name] = { class: cls };
+    }
+  }
+
+  const managers = await AUSManagerFactory(
+    defs,
+    {
+      info: (s: string) => {},
+      warn: (s: string) => {},
+      error: (s: string) => console.error("SERVER " + s),
+      debug: (s: string) => {},
+    },
+    io,
+    true
+  );
+  return { managers, io, server };
+};
+
+export const initFullClientManagers = async (port: number = 3002) => {
+  const socket = io(`http://localhost:${port}`, {
+    auth: {
+      token: "FullClient",
+    },
+  });
+
+  const defs: any = {};
+  for (const [name, cls] of Object.entries(ClientClasses)) {
+    if (typeof cls === 'function' && cls.prototype instanceof ClientClasses.AutoUpdatedClientObject) {
+       defs[name] = cls;
+    }
+  }
+
+  const managers = await AUCManagerFactory(
+    defs,
+    {
+      debug: (msg: string) => {},
+      error: (msg: string) => console.error("CLIENT " + msg),
+      info: (msg: string) => {},
+      warn: (msg: string) => {},
+    },
+    socket,
+  );
+  return { managers, socket };
+};
+
