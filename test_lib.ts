@@ -30,6 +30,9 @@ export const initServerManagers = async () => {
       Company: {
         class: ServerClasses.Company,
       },
+      Construction: {
+        class: ServerClasses.Construction,
+      },
       Subordinate: {
         class: ServerClasses.Subordinate,
         options: {

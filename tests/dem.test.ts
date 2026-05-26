@@ -133,14 +133,14 @@ describe("DEM Library Tests with New Data Structure", () => {
     const c2o1 = getClient2Sub(testServerObject1._id);
     const res = await c2o1.destroy();
     expect(res.success).toBe(false);
-    expect(serverManagers.Subordinate.getObject(testServerObject1._id.toString())).toBeDefined();
+    expect(serverManagers.Subordinate.getObject(testServerObject1._id?.toString())).toBeDefined();
   });
 
   test("Allowed deletion from client (Client1)", async () => {
     const c1o2 = getClient1Sub(testServerObject2._id);
     const res = await c1o2.destroy();
     expect(res.success).toBe(true);
-    expect(serverManagers.Subordinate.getObject(testServerObject2._id.toString())).toBeUndefined();
+    expect(serverManagers.Subordinate.getObject(testServerObject2._id?.toString())).toBeUndefined();
     
     while (getClient2Sub(testServerObject2._id)) {
         await new Promise(r => setTimeout(r, 10));
@@ -172,7 +172,7 @@ describe("DEM Library Tests with New Data Structure", () => {
         abbr: "TC",
     });
     
-    await testServerObject1.setValue("onSite", null); // Reset
+    await testServerObject1.setValue("onSite", undefined); // Reset
     // Actually onSite is Construction ref in Subordinate.ts, let's use company array or add construction
     // Wait, Subordinate.ts has `onSite: Construction` and `company: Company[]`.
     

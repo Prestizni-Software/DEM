@@ -23,16 +23,23 @@ import { Socket } from "socket.io-client";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 import { stringSimilarity } from "string-similarity-js";
 
-export type DEMClientCallbacks<T> = {
+export type DEMClientCallbacks<T extends AutoUpdatedClientObject<T>> = {
   new: (obj: T) => Promise<void> | void;
   update: (obj: T, key: string) => Promise<void> | void;
   delete: (obj: T) => Promise<void> | void;
   progress: (percent: number) => void;
+  onUpdate?: (
+    obj: T,
+    set: <K extends Paths<T, AutoUpdatedClientObject<T>>>(
+      key: K,
+      val: PathValueOf<IsData<T>, K>,
+    ) => Promise<{ success: boolean; msg: string }>,
+  ) => Promise<void>;
 };
 
 type SocketType = Socket<any, any>;
 
-export abstract class AutoUpdatedClientObject<T> {
+export abstract class AutoUpdatedClientObject<T extends AutoUpdatedClientObject<T>> {
   protected entry: any;
   public preLoad: any;
   public registerSocket: any;
@@ -55,7 +62,7 @@ export abstract class AutoUpdatedClientObject<T> {
   >)[];
   public readonly classParam: Constructor<T>;
   public readonly className: string;
-  public parentManager: AutoUpdateManager<AutoUpdatedClientObject<T>>;
+  public parentManager: AutoUpdateManager<T>;
   private readonly EmitterID = new ObjectId().toHexString();
   protected readonly toChangeOnParents: { key: string; value: any }[] = [];
   public callbacks: DEMClientCallbacks<T>;
@@ -132,20 +139,21 @@ export abstract class AutoUpdatedClientObject<T> {
     this.className = className;
     
     const allProps = new Set<string>();
-    let proto_ = classParam.prototype;
-    while (proto_ && proto_ !== Object.prototype) {
-        const props = Reflect.getOwnMetadata("props", proto_) || [];
+    let proto = classParam.prototype;
+    while (proto && proto !== Object.prototype) {
+        const props = Reflect.getOwnMetadata("props", proto) || [];
         for (const p of props) allProps.add(p);
-        proto_ = Object.getPrototypeOf(proto_);
+        proto = Object.getPrototypeOf(proto);
     }
     this.properties = Array.from(allProps) as any;
+
     this.callbacks = callback as any;
-    
+
     this.loggers = {
-       debug: (s: string) => loggers.debug(`[DEM - ${this.className}: ${this.data?._id ?? (this as any)._id ?? "not loaded"}] ${s}`),
-       info: (s: string) => loggers.info(`[DEM - ${this.className}: ${this.data?._id ?? (this as any)._id ?? "not loaded"}] ${s}`),
-       warn: (s: string) => loggers.warn(`[DEM - ${this.className}: ${this.data?._id ?? (this as any)._id ?? "not loaded"}] ${s}`),
-       error: (s: string) => loggers.error(`[DEM - ${this.className}: ${this.data?._id ?? (this as any)._id ?? "not loaded"}] ${s}`),
+       debug: (s: string) => loggers.debug(`[${this.className}: ${this.data?._id ?? (this as any)._id ?? "not loaded"}] ${s}`),
+       info: (s: string) => loggers.info(`[${this.className}: ${this.data?._id ?? (this as any)._id ?? "not loaded"}] ${s}`),
+       warn: (s: string) => loggers.warn(`[${this.className}: ${this.data?._id ?? (this as any)._id ?? "not loaded"}] ${s}`),
+       error: (s: string) => loggers.error(`[${this.className}: ${this.data?._id ?? (this as any)._id ?? "not loaded"}] ${s}`),
     };
 
     if (typeof data === "string") {
@@ -158,7 +166,7 @@ export abstract class AutoUpdatedClientObject<T> {
       this.socket.emit(
         EVENT_GET + this.className + data,
         null,
-        (res: ServerResponse<T>) => {
+        async (res: ServerResponse<T>) => {
           if (!res.success) {
             this.isLoading = false;
             this.loggers.error("Could not load data from server: " + res.message);
@@ -168,6 +176,7 @@ export abstract class AutoUpdatedClientObject<T> {
           this.data = res.data as IsData<T>;
           this.generateSettersAndGetters();
           this.isLoading = false;
+          await this.onUpdate();
           this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
           this.openSockets();
         },
@@ -192,17 +201,19 @@ export abstract class AutoUpdatedClientObject<T> {
         this.handleNewObject(data);
       } else {
         this.isLoading = false;
-        if (!this.isServer) this.openSockets();
+        if (!this.isServer) {
+            this.openSockets();
+            this.onUpdate(); // Client load/creation trigger
+        }
       }
     }
-    
+
     this.generateSettersAndGetters();
     // Re-apply getters in a microtask to override any shadowing from subclass field initializers.
     Promise.resolve().then(() => {
         this.generateSettersAndGetters();
     });
-  }
-
+    }
   public async waitForPreloaded() {
     if (this.isLoaded) return;
     await new Promise<void>((resolve, reject) => {
@@ -283,26 +294,21 @@ export abstract class AutoUpdatedClientObject<T> {
       if (typeof key !== "string") continue;
       const isRef = getMetadataRecursive("isRef", this, key);
 
-      // CRITICAL: Delete any existing property on the instance to ensure our getter is used.
-      delete (this as any)[key];
-
       Object.defineProperty(this, key, {
         get: () => {
-          if (!this.data) return undefined;
-          let val = (this.data as any)[key];
-          if (val === null) val = undefined; // Fix for server-side MongoDB nulls
-          
+          let val = this.data[key];
+        
           if (isRef && val) {
             if (Array.isArray(val)) {
               return val.map((id: string) => this.findReference(id, key)).filter(Boolean);
             } else {
-              return this.findReference(val, key);
+              return this.findReference(val as any, key);
             }
           }
           return val;
         },
         set: (v) => {
-           if (this.data) (this.data as any)[key] = v;
+          throw new Error("Cannot set value of a reference pointer directly.");
         },
         enumerable: true,
         configurable: true,
@@ -310,7 +316,7 @@ export abstract class AutoUpdatedClientObject<T> {
     }
   }
 
-  public getValue(key_: Paths<T, AutoUpdatedClientObject<unknown>>) {
+  public getValue(key_: Paths<T, AutoUpdatedClientObject<any>>) {
     const key = key_ as string;
     const parts = key.split(".");
     let value: any = this;
@@ -524,7 +530,10 @@ export abstract class AutoUpdatedClientObject<T> {
   }
 
   public async onUpdate(noUpdate: boolean = false) {
-    return;
+    if (noUpdate) return;
+    await this.callbacks?.onUpdate?.(this as any, (key: any, val: any) => {
+        return this.setValue__(key, val, false, true, true);
+    });
   }
 
   protected async createdWithParent(pointer: string[], parent: T | string) {
@@ -602,6 +611,7 @@ export abstract class AutoUpdatedClientObject<T> {
         }
       }
     }
+    this.generateSettersAndGetters();
   }
 }
 

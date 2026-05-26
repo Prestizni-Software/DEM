@@ -53,7 +53,10 @@ export type IsData<T> = {
   [K in keyof T]: AllowStringForRefs<T[K]>;
 } & { _id: any };
 
-export type ExtractedData<T, Base = AutoUpdatedClientObject<T>> = {
+export type ExtractedData<
+  T extends AutoUpdatedClientObject<T>,
+  Base = AutoUpdatedClientObject<T>,
+> = {
   [K in keyof FixPure<T, Base>]: OnlyStringForRefs<T[K]>;
 };
 type FixPure<T, Base> = Omit<T, keyof Omit<Base, "_id">>;
@@ -173,7 +176,7 @@ export type PathValueOf<
     ? NonNullable<T>[P]
     : never;
 
-export type Pure<T, Base = AutoUpdatedClientObject<T>> = FixPure<T, Base>;
+export type Pure<T extends AutoUpdatedClientObject<T>, Base = AutoUpdatedClientObject<T>> = FixPure<T, Base>;
 
 // Internal client events
 export const EVENT_INTERNAL_PRE_LOADED = "pre-loaded";

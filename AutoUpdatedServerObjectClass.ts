@@ -34,6 +34,7 @@ export async function createAutoUpdatedClass<
   loggers: LoggersType,
   parentManager: AutoUpdateServerManager<any>,
   emitter: EventEmitter3,
+  document?: DocumentType<C>,
 ): Promise<C> {
   const instance = new classParam(
     classParam,
@@ -44,19 +45,21 @@ export async function createAutoUpdatedClass<
     parentManager,
     emitter,
   );
-  await instance.loadFromDB();
+  if (document) {
+    await instance.loadFromDocument(document);
+  } else {
+    await instance.loadFromDB();
+  }
   return instance;
 }
 
 // ---------------------- Class ----------------------
 export abstract class AutoUpdatedServerObject<
-  T,
+  T extends AutoUpdatedServerObject<T>,
 > extends AutoUpdatedClientObject<T> {
   protected override readonly isServer: boolean = true;
   protected entry: DocumentType<T>;
-  declare public parentManager: AutoUpdateServerManager<
-    AutoUpdatedServerObject<T>
-  >;
+  declare public parentManager: AutoUpdateServerManager<T>;
 
   constructor();
   constructor(
@@ -133,6 +136,16 @@ export abstract class AutoUpdatedServerObject<
     this.entry = null as any;
   }
 
+  public async loadFromDocument(document: DocumentType<T>) {
+    this.entry = document;
+    this.data = { ...this.data, ...this.entry.toObject() } as any;
+    if (!this.data._id && (this.entry as any)._id) {
+      this.data._id = (this.entry as any)._id;
+    }
+    this.generateSettersAndGetters();
+    await this.onUpdate();
+  }
+
   public async loadFromDB() {
     try {
       this.entry = (await this.parentManager.managers[
@@ -150,6 +163,11 @@ export abstract class AutoUpdatedServerObject<
         this.data._id = (this.entry as any)._id;
       }
       this.generateSettersAndGetters();
+      // Ensure onUpdate only runs when data is fully present
+      if (this.data) {
+        await Promise.resolve();
+        await this.onUpdate();
+      }
     } catch (error: any) {
       this.loggers.error(
         "Error loading object from database: " + error.message,
@@ -237,7 +255,7 @@ export abstract class AutoUpdatedServerObject<
 
   public override async onUpdate(noUpdate: boolean = false) {
     if (noUpdate) return;
-    await this.parentManager.options?.onUpdate?.(this, (a: any, b: any) => {
+    await this.parentManager.options?.onUpdate?.(this as unknown as T, (a: any, b: any) => {
       return this.setValue__(a, b, false, true, true);
     });
   }

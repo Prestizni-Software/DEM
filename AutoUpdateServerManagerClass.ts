@@ -293,38 +293,33 @@ export async function AUSManagerFactory<
     next();
   });
   const managers: { [K in keyof T]: AutoUpdateServerManager<T[K]> } = {} as any;
-  let i = 0;
+  
   for (const key in defs) {
     loggers.debug(`Creating manager for ${key}`);
-    const def = defs[key];
+    const def = defs[key as keyof T];
     const model = getModelForClass(def.class);
     try {
       const c = new AutoUpdateServerManager(
         def.class,
-        key,
+        key as string,
         loggers,
         socket,
         model,
-        managers as any,
+        managers as Record<string, AutoUpdateServerManager<any>>,
         emitter,
         def.options as any,
       ) as any;
-      managers[key] = c;
+      managers[key as keyof T] = c;
+      
+      loggers.debug("Loading DB for manager: " + key);
+      await managers[key as keyof T].preLoad();
     } catch (error: any) {
-      loggers.error("Error creating manager: " + key);
-      loggers.error(error.message);
-      loggers.error(error.stack);
-      continue;
-    }
-    loggers.debug("Loading DB for manager: " + key);
-    try {
-      await managers[key].preLoad();
-    } catch (error: any) {
-      loggers.error("Error loading DB for manager: " + key);
+      loggers.error("Error creating/loading manager: " + key);
       loggers.error(error.message);
       loggers.error(error.stack);
     }
   }
+
   for (const manager of Object.values(managers)) {
     try {
       manager.loadReferences();
@@ -359,7 +354,7 @@ export async function AUSManagerFactory<
 }
 
 export class AutoUpdateServerManager<
-  T extends AutoUpdatedServerObject<any>,
+  T extends AutoUpdatedServerObject<T>,
 > extends AutoUpdateManager<T> {
   public readonly model: ReturnModelType<Constructor<T>, BeAnObject>;
   private readonly clientSockets: Set<Socket> = new Set<Socket>();
@@ -367,7 +362,7 @@ export class AutoUpdateServerManager<
   protected override objects_: { [_id: string]: T } = {};
   public readonly managers: Record<
     string,
-    AutoUpdateServerManager<AutoUpdatedServerObject<any>>
+    AutoUpdateServerManager<any>
   >;
   constructor(
     classParam: Constructor<T>,
@@ -377,7 +372,7 @@ export class AutoUpdateServerManager<
     model: ReturnModelType<Constructor<T>, BeAnObject>,
     managers: Record<
       string,
-      AutoUpdateServerManager<AutoUpdatedServerObject<any>>
+      AutoUpdateServerManager<any>
     >,
     emitter: EventEmitter3,
     options?: AUSOption<T, any>,
@@ -391,36 +386,54 @@ export class AutoUpdateServerManager<
   public async preLoad() {
     this.loggers.debug("Loading manager DB " + this.className);
     const docs = await this.model.find({});
-    let i = 0;
-    for (const doc of docs.map((d) => (d._id as any).toString() as string)) {
-      if (!doc) {
-        this.loggers.debug(
-          "Invalid document, no _id: " + JSON.stringify(docs[i]),
-        );
-        continue;
+    const dbIds = new Set(docs.map((d) => (d._id as any).toString() as string));
+
+    // Remove stale objects not in DB
+    for (const id in this.objects_) {
+      if (!dbIds.has(id)) {
+        this.socket.emit("delete" + this.className, id);
+        delete globalCache.objects[id];
+        delete this.objects_[id];
       }
-      i++;
-      this.objects_[doc] =
-        this.objects_[doc] ??
+    }
+
+    const creationPromises = docs.map(async (d) => {
+      const docId = (d._id as any).toString() as string;
+      if (!docId) {
+        this.loggers.debug(
+          "Invalid document, no _id: " + JSON.stringify(d),
+        );
+        return;
+      }
+      
+      this.objects_[docId] =
+        this.objects_[docId] ??
         (await createAutoUpdatedClass<T>(
           this.classParam as any,
           this.className,
           this.socket,
-          doc as any,
+          docId as any,
           this.loggers,
           this,
           this.emitter,
+          d as any,
         ));
-      globalCache.objects[doc] = {
+      globalCache.objects[docId] = {
         className: this.className,
-        object: this.objects_[doc],
+        object: this.objects_[docId],
       };
-    }
-    for (const object of this.objectsAsArray) {
+    });
+
+    await Promise.all(creationPromises);
+
+    const initializationPromises = Object.values(this.objects_).map(async (object) => {
       await object.isPreLoadedAsync();
       await object.contactChildren();
       await object.loadMissingReferences();
-    }
+    });
+
+    await Promise.all(initializationPromises);
+
     this.loggers.debug(
       "Loaded manager DB " +
         this.className +
@@ -507,7 +520,7 @@ export class AutoUpdateServerManager<
     socket.on(
       EVENT_NEW + this.className,
       async (
-        data: Omit<IsData<Pure<T>>, "_id">,
+        data: Omit<IsData<Pure<T, AutoUpdatedServerObject<any>>>, "_id">,
         ack: (res: ServerResponse<T>) => void,
       ) => {
         this.loggers.debug(
@@ -579,6 +592,11 @@ export class AutoUpdateServerManager<
           try {
             const id = event.replace(EVENT_GET + this.className, "");
             let obj = this.objects_[id];
+            if (!obj) {
+                this.loggers.warn(`Client requested non-existent object ${id} from manager ${this.className}`);
+                ack({ success: false, message: "Object not found" });
+                return;
+            }
             ack({
               data: obj.extractedData as any,
               success: true,
@@ -658,9 +676,9 @@ export class AutoUpdateServerManager<
     globalCache.objects[object._id] = { className: this.className, object };
     await object.isPreLoadedAsync();
     await object.loadMissingReferences();
-    await object.onUpdate();
     await object.contactChildren();
-    for (const socket of this.clientSockets) {
+    
+    const notificationPromises = Array.from(this.clientSockets).map(async (socket) => {
       try {
         const theTruth =
           (await this.options?.accessDefinitions?.startupMiddleware?.(
@@ -675,17 +693,19 @@ export class AutoUpdateServerManager<
           socket.emit("new" + this.className, object._id);
         }
       } catch (error: any) {
-        const _ = error;
         this.loggers.error(
           "Error when emitting new object to client: " + error.name,
         );
         this.loggers.error(error.message);
         this.loggers.error(error.stack);
       }
-      if (!object._id)
-        throw new Error(`Never... failed to get object somehow: ${object}`);
-      this.loggers.debug("Emitting new object " + object._id);
-    }
+    });
+
+    await Promise.all(notificationPromises);
+
+    if (!object._id)
+      throw new Error(`Never... failed to get object somehow: ${object}`);
+    
     return object;
   }
 }

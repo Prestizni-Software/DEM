@@ -34,11 +34,12 @@ export async function AUCManagerFactory<
     } & Partial<DEMClientCallbacks<any>>
   > = {},
 ): Promise<WrappedInstances<T>> {
-  const defaultCallbacks: DEMClientCallbacks<AutoUpdatedClientObject<any>> = {
+  const defaultCallbacks: DEMClientCallbacks<any> = {
     new: callbacks.new ?? ((x: any) => {}),
     update: callbacks.update ?? ((x: any, y: any) => {}),
     delete: callbacks.delete ?? ((x: any) => {}),
     progress: callbacks.progress ?? ((x: any) => {}),
+    onUpdate: callbacks.onUpdate ?? ((x: any, set: any):any => {}),
   };
   if (!doDebug) {
     loggers.debug = (_) => {};
@@ -67,12 +68,12 @@ export async function AUCManagerFactory<
         managers as any,
         emitter,
         {
-          ...defaultCallbacks,
+          ...defaultCallbacks as any,
           ...callbacks[key],
           progress: innerProgressUpdater,
         },
       );
-      managers[key] = c;
+      managers[key] = c as any;
     } catch (error: any) {
       if (
         error.message.includes(
@@ -220,6 +221,15 @@ export async function AUCManagerFactory<
             return;
           }
           const data = res.data;
+
+          const serverIds = new Set(data.ids);
+          for (const id in this.objects_) {
+            if (!serverIds.has(id)) {
+              delete globalCache.objects[id];
+              delete this.objects_[id];
+            }
+          }
+
           let extraProperties: string[] = [];
           for (const property of this.properties) {
             if (typeof property !== "string")
@@ -284,6 +294,7 @@ export async function AUCManagerFactory<
           const objectPromises = Object.keys(this.objects_).map(async (id) => {
             const obj = this.objects_[id];
             try {
+              (obj as any).generateSettersAndGetters();
               await obj.isPreLoadedAsync();
               await obj.loadMissingReferences();
               this.loadedObjects += 1;

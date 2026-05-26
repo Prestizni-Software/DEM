@@ -2,20 +2,20 @@ import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
 import { Constructor, EventEmitter3, LoggersType, Cache, globalCache } from "./CommonTypes.js";
 import "reflect-metadata";
 export abstract class AutoUpdateManager<
-  T extends AutoUpdatedClientObject<any>,
+  T extends AutoUpdatedClientObject<T>,
 > {
   protected abstract objects_: { [_id: string]: T };
   protected isLoaded_ = false;
   public readonly socket: any;
   protected classParam: Constructor<T>;
-  protected properties: (keyof T)[];
+  protected properties: (keyof T)[] = [];
   public readonly className: string;
   public readonly cache:Cache<any> = {
     references:{}
   };
   public readonly managers: Record<
     string,
-    AutoUpdateManager<AutoUpdatedClientObject<any>>
+    AutoUpdateManager<any>
   >;
   protected preloaded = false;
   protected waitingToResolveReferences: { [_id: string]: string } = {};
@@ -31,7 +31,7 @@ export abstract class AutoUpdateManager<
     className: string,
     socket: any,
     loggers: LoggersType,
-    managers: Record<string, AutoUpdateManager<AutoUpdatedClientObject<any>>>,
+    managers: Record<string, AutoUpdateManager<any>>,
     emitter: EventEmitter3,
   ) {
     this.className = className;
@@ -64,9 +64,7 @@ export abstract class AutoUpdateManager<
   }
 
   public async loadReferences(): Promise<void> {
-    for (const obj of this.objectsAsArray) {
-      await obj.loadMissingReferences();
-    }
+    await Promise.all(this.objectsAsArray.map(obj => obj.loadMissingReferences()));
     this.isLoaded_ = true;
   }
 

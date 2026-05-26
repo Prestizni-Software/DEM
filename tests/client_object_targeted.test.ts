@@ -60,7 +60,7 @@ describe("AutoUpdatedClientObjectClass Comprehensive Tests with Subordinate", ()
     });
 
     const res = await obj.setValue("name", "NewName");
-    expect(res).toBe(true);
+    expect(res.success).toBe(true);
     expect(obj.name).toBe("NewName");
   });
 
