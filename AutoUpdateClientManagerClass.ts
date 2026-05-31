@@ -60,10 +60,12 @@ export async function AUCManagerFactory<
 
   return new Promise((resolve) => {
       let resolved = false;
-      const done = () => {
+      const done = (force = false) => {
           if (resolved) return;
-          resolved = true;
-          resolve(managers);
+          if (force || Object.values(managers).every(m => m.isLoaded)) {
+              resolved = true;
+              resolve(managers);
+          }
       };
 
       const individualStartup = Promise.all(Object.entries(managers).map(([key, manager]) => {
@@ -88,8 +90,8 @@ export async function AUCManagerFactory<
           socket.on(EVENT_STARTUP, async (data: Record<string, any[]>) => {
               if (data) {
                   const promises = Object.entries(managers).map(async ([key, manager]) => {
-                      if (!(manager).isLoaded) {
-                          await (manager).preLoad(data[key] || []);
+                      if (!(manager).isLoaded && data[key]) {
+                          await (manager).preLoad(data[key]);
                       }
                   });
                   await Promise.all(promises);
@@ -98,11 +100,11 @@ export async function AUCManagerFactory<
           });
       }
 
-      const fallbackTimer = setTimeout(done, 5000);
+      const fallbackTimer = setTimeout(() => done(true), 5000);
 
       const finish = () => {
           clearTimeout(fallbackTimer);
-          done();
+          done(true);
       };
 
       individualStartup.then(() => {

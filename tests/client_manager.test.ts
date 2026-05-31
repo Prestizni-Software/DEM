@@ -74,6 +74,105 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
       expect(loggers.error).toHaveBeenCalled();
   });
 
+  test("AUCManagerFactory should only resolve after ALL managers are preloaded", async () => {
+    let fastPreloaded = false;
+    let slowPreloaded = false;
+
+    mockSocket.emit.mockImplementation((event: string, data: any, cb: any) => {
+        if (event === "startupFast") {
+            setTimeout(() => {
+                cb({ success: true, data: { ids: ["1"] } });
+            }, 50);
+        }
+        if (event === "startupSlow") {
+            setTimeout(() => {
+                cb({ success: true, data: { ids: ["2"] } });
+            }, 500);
+        }
+    });
+
+    const CustomMockClass = class extends MockClass {
+        constructor(cp: any, s: any, data: any, l: any, cn: any, pm: any, cb: any, e: any) {
+            super(cp, s, data, l, cn, pm, cb, e);
+        }
+        waitForPreloaded = jest.fn(async () => {
+            if (this.className === "Fast") {
+                fastPreloaded = true;
+            } else {
+                await new Promise(resolve => setTimeout(resolve, 300));
+                slowPreloaded = true;
+            }
+        });
+    };
+
+    const factoryPromise = AUCManagerFactory(
+        { Fast: CustomMockClass as any, Slow: CustomMockClass as any },
+        loggers,
+        mockSocket,
+        false,
+        emitter
+    );
+
+    let resolved = false;
+    factoryPromise.then(() => { resolved = true; });
+
+    await new Promise(resolve => setTimeout(resolve, 200));
+    expect(resolved).toBe(false);
+    expect(fastPreloaded).toBe(true);
+    expect(slowPreloaded).toBe(false);
+
+    const managers = await factoryPromise;
+    expect(resolved).toBe(true);
+    expect(slowPreloaded).toBe(true);
+    expect(managers.Fast.isLoaded).toBe(true);
+    expect(managers.Slow.isLoaded).toBe(true);
+  });
+
+  test("AUCManagerFactory should not resolve if generic EVENT_STARTUP only preloads some managers", async () => {
+    let slowPreloaded = false;
+    mockSocket.emit.mockImplementation((event: string, data: any, cb: any) => {
+        if (event === "startupSlow") {
+            setTimeout(() => {
+                cb({ success: true, data: { ids: ["2"] } });
+            }, 500);
+        }
+    });
+
+    const CustomMockClass = class extends MockClass {
+        constructor(cp: any, s: any, data: any, l: any, cn: any, pm: any, cb: any, e: any) {
+            super(cp, s, data, l, cn, pm, cb, e);
+        }
+        waitForPreloaded = jest.fn(async () => {
+            if (this.className === "Slow") {
+                await new Promise(resolve => setTimeout(resolve, 300));
+                slowPreloaded = true;
+            }
+        });
+    };
+
+    const factoryPromise = AUCManagerFactory(
+        { Fast: CustomMockClass as any, Slow: CustomMockClass as any },
+        loggers,
+        mockSocket,
+        false,
+        emitter
+    );
+
+    const startupListener = mockSocket.on.mock.calls.find(call => call[0] === "startup")[1];
+    
+    // Trigger generic startup with ONLY Fast data
+    await startupListener({ Fast: ["1"] });
+
+    let resolved = false;
+    factoryPromise.then(() => { resolved = true; });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    expect(resolved).toBe(false);
+
+    await factoryPromise;
+    expect(slowPreloaded).toBe(true);
+  });
+
   test("AutoUpdateClientManager socket listeners", async () => {
     const manager = new AutoUpdateClientManager(
         MockClass as any, "Test", mockSocket, loggers, {}, emitter, callbacks
