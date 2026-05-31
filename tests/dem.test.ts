@@ -233,4 +233,23 @@ describe("DEM Library Tests with New Data Structure", () => {
     }
     expect(getClient1Sub(testServerObject1._id).onSite?._id.toString()).toBe(construction._id.toString());
   });
+
+  test("AUCManagerFactory should only resolve after ALL managers are fully initialized with real data", async () => {
+    const c3 = await initClientManagers("Client3");
+    const managers = c3.managers;
+    const socket = c3.socket;
+
+    try {
+        // Since Subordinates are created in beforeAll, they should be loaded immediately
+        expect(managers.Subordinate.isLoaded).toBe(true);
+        expect(managers.Subordinate.objectsAsArray.length).toBeGreaterThan(0);
+        
+        // Verify another manager that should be empty but loaded
+        expect(managers.Company.isLoaded).toBe(true);
+        expect(managers.Company.objectsAsArray.length).toBeGreaterThan(0);
+    } finally {
+        for (const manager of Object.values(managers)) (manager as any).close();
+        socket.close();
+    }
+  });
 });

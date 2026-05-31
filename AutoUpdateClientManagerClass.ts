@@ -60,9 +60,16 @@ export async function AUCManagerFactory<
 
   return new Promise((resolve) => {
       let resolved = false;
+      const individualFinished = new Set<string>();
+
       const done = (force = false) => {
           if (resolved) return;
-          if (force || Object.values(managers).every(m => m.isLoaded)) {
+          
+          const allReady = Object.entries(managers).every(([key, m]) => 
+              m.isLoaded || individualFinished.has(key)
+          );
+
+          if (force || allReady) {
               resolved = true;
               resolve(managers);
           }
@@ -75,12 +82,14 @@ export async function AUCManagerFactory<
               const timer = setTimeout(res, 3000);
               socket.emit(EVENT_STARTUP + key, null, async (response: ServerResponse<any>) => {
                   clearTimeout(timer);
+                  individualFinished.add(key);
                   if (response.success && response.data) {
                       const data = response.data.ids || (Array.isArray(response.data) ? response.data : []);
                       await (manager).preLoad(data);
                   } else if (!response.success) {
                       loggers?.error?.("Error starting up " + key + ": " + response.message);
                   }
+                  done();
                   res();
               });
           });
@@ -91,6 +100,7 @@ export async function AUCManagerFactory<
               if (data) {
                   const promises = Object.entries(managers).map(async ([key, manager]) => {
                       if (!(manager).isLoaded && data[key]) {
+                          individualFinished.add(key);
                           await (manager).preLoad(data[key]);
                       }
                   });
@@ -104,7 +114,7 @@ export async function AUCManagerFactory<
 
       const finish = () => {
           clearTimeout(fallbackTimer);
-          done(true);
+          done();
       };
 
       individualStartup.then(() => {
