@@ -2,7 +2,7 @@ import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.j
 import type { MongoId } from "./enums.js";
 import { classProp } from "../../../CommonTypes.js";
 
-export class Company extends AutoUpdatedClientObject<any> {
+export class Company extends AutoUpdatedClientObject<Company> {
   @classProp
   public _id!: MongoId;
 

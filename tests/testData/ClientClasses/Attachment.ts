@@ -11,7 +11,7 @@ import { ProtocolTask } from "./ProtocolTask.js";
 import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.js";
 
 type FileType = GeoAttachmentType;
-export class Attachment extends AutoUpdatedClientObject<any> {
+export class Attachment extends AutoUpdatedClientObject<Attachment> {
   @classProp
   public _id!: MongoId;
 

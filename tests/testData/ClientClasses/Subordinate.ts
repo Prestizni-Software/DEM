@@ -7,7 +7,7 @@ import { Company } from "./Company.js";
 import { Construction } from "./Construction.js";
 import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.js";
 
-export class Subordinate extends AutoUpdatedClientObject<any> {
+export class Subordinate extends AutoUpdatedClientObject<Subordinate> {
   @classProp
   public _id!: MongoId;
 

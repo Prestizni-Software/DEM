@@ -9,7 +9,7 @@ import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.j
 import { Company } from "./Company.js";
 import { Subordinate } from "./Subordinate.js";
 
-export class ConstructionObject extends AutoUpdatedClientObject<any> {
+export class ConstructionObject extends AutoUpdatedClientObject<ConstructionObject> {
   @classProp
   public _id!: MongoId;
 

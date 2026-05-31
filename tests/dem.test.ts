@@ -6,68 +6,107 @@ import { SubordinateType } from "./testData/types.js";
 import { AUCManagerFactory } from "../AutoUpdateClientManagerClass.js";
 import { classProp, classRef } from "../CommonTypes.js";
 import { io } from "socket.io-client";
-import '@jest/globals'
+import { jest } from '@jest/globals'
 import { AutoUpdatedClientObject } from "../AutoUpdatedClientObjectClass.js";
 
-// Connect to DB
-await mongoose.connect("mongodb://localhost:27017/GeoDB", {
-  timeoutMS: 5000,
+// Increase Jest timeout for this file
+jest.setTimeout(60000);
+
+let serverManagers: any;
+let serverIo: any;
+let server: any;
+let clientManagers1: any;
+let socket1: any;
+let clientManagers2: any;
+let socket2: any;
+
+let testServerObject1: any;
+let testServerObject2: any;
+let testServerObject3: any;
+
+beforeAll(async () => {
+    // Connect to DB if needed
+    if (mongoose.connection.readyState === 0) {
+        await mongoose.connect("mongodb://localhost:27017/GeoDB", {
+          serverSelectionTimeoutMS: 5000,
+        });
+    }
+
+    // Clear DB
+    const classesToClear = [
+        ServerClasses.Subordinate,
+        ServerClasses.Company,
+        ServerClasses.Construction,
+        ServerClasses.Comments,
+        ServerClasses.MeasurementTask,
+        ServerClasses.Protocol,
+        ServerClasses.ProtocolTask,
+        ServerClasses.MeasurementType
+    ];
+
+    for (const cls of classesToClear) {
+        try {
+            await getModelForClass(cls as any).deleteMany({});
+        } catch (e) {}
+    }
+
+    const init = await initServerManagers();
+    serverManagers = init.managers;
+    serverIo = init.io;
+    server = init.server;
+
+    // Create some data
+    testServerObject1 = await serverManagers.Subordinate.createObject({
+      name: "Sub1",
+      login: "sub1_login",
+      phone: "123",
+      type: SubordinateType.GEODET,
+      company: [],
+      onSite: null,
+    });
+
+    testServerObject2 = await serverManagers.Subordinate.createObject({
+      name: "Sub2",
+      login: "sub2_login",
+      phone: "456",
+      type: SubordinateType.OFFICE_RAT,
+      company: [],
+      onSite: null,
+    });
+
+    // Secret object to test redacted loading
+    testServerObject3 = await serverManagers.Subordinate.createObject({
+      name: "Secret",
+      login: "secret_login",
+      phone: "000",
+      type: SubordinateType.ADMIN,
+      company: [],
+      onSite: null,
+    });
+
+    const c1 = await initClientManagers("Client1");
+    clientManagers1 = c1.managers;
+    socket1 = c1.socket;
+
+    const c2 = await initClientManagers("Client2");
+    clientManagers2 = c2.managers;
+    socket2 = c2.socket;
 });
 
-// Clear DB
-await getModelForClass(ServerClasses.Subordinate).deleteMany({});
-await getModelForClass(ServerClasses.Company).deleteMany({});
-
-const { managers: serverManagers, io: serverIo, server } = await initServerManagers();
-
 afterAll(async () => {
+  if (clientManagers1) for (const manager of Object.values(clientManagers1)) (manager as any).close();
+  if (clientManagers2) for (const manager of Object.values(clientManagers2)) (manager as any).close();
+  if (socket1) socket1.close();
+  if (socket2) socket2.close();
+
+  if (serverManagers) for (const manager of Object.values(serverManagers)) (manager as any).close();
+  if (serverIo) serverIo.close();
+  if (server) server.close();
   await mongoose.disconnect();
-  for (const manager of Object.values(serverManagers)) (manager as any).close();
-  serverIo.close();
-  server.close();
 });
 
-// Create some data
-const testServerObject1 = await serverManagers.Subordinate.createObject({
-  name: "Sub1",
-  login: "sub1_login",
-  phone: "123",
-  type: SubordinateType.GEODET,
-  company: [],
-  onSite: null,
-});
-
-const testServerObject2 = await serverManagers.Subordinate.createObject({
-  name: "Sub2",
-  login: "sub2_login",
-  phone: "456",
-  type: SubordinateType.OFFICE_RAT,
-  company: [],
-  onSite: null,
-});
-
-// Secret object to test redacted loading
-const testServerObject3 = await serverManagers.Subordinate.createObject({
-  name: "Secret",
-  login: "secret_login",
-  phone: "000",
-  type: SubordinateType.ADMIN,
-  company: [],
-  onSite: null,
-});
-
-const { managers: clientManagers1, socket: socket1 } = await initClientManagers("Client1");
-const { managers: clientManagers2, socket: socket2 } = await initClientManagers("Client2");
-
-afterAll(async () => {
-  for (const manager of Object.values(clientManagers1)) (manager as any).close();
-  for (const manager of Object.values(clientManagers2)) (manager as any).close();
-  socket1.close();
-  socket2.close();
-});
-
-const getClient1Sub = (id: any) => clientManagers1.Subordinate.objects[id.toString()];
-const getClient2Sub = (id: any) => clientManagers2.Subordinate.objects[id.toString()];
+const getClient1Sub = (id: any) => clientManagers1?.Subordinate.objects[id.toString()];
+const getClient2Sub = (id: any) => clientManagers2?.Subordinate.objects[id.toString()];
 
 describe("DEM Library Tests with New Data Structure", () => {
   test("Managers created", async () => {
@@ -110,9 +149,10 @@ describe("DEM Library Tests with New Data Structure", () => {
   test("Setting shallow value from server", async () => {
     await testServerObject1.setValue("phone", "999");
     expect(testServerObject1.phone).toBe("999");
-    
+
     // Wait for sync
-    while (getClient1Sub(testServerObject1._id).phone !== "999") {
+    const start = Date.now();
+    while (getClient1Sub(testServerObject1._id).phone !== "999" && Date.now() - start < 5000) {
         await new Promise(r => setTimeout(r, 10));
     }
     expect(getClient1Sub(testServerObject1._id).phone).toBe("999");
@@ -123,7 +163,8 @@ describe("DEM Library Tests with New Data Structure", () => {
     await c1o2.setValue("phone", "888");
     expect(testServerObject2.phone).toBe("888");
 
-    while (getClient2Sub(testServerObject2._id).phone !== "888") {
+    const start = Date.now();
+    while (getClient2Sub(testServerObject2._id).phone !== "888" && Date.now() - start < 5000) {
         await new Promise(r => setTimeout(r, 10));
     }
     expect(getClient2Sub(testServerObject2._id).phone).toBe("888");
@@ -137,15 +178,17 @@ describe("DEM Library Tests with New Data Structure", () => {
   });
 
   test("Allowed deletion from client (Client1)", async () => {
+    const id = testServerObject2._id.toString();
     const c1o2 = getClient1Sub(testServerObject2._id);
     const res = await c1o2.destroy();
     expect(res.success).toBe(true);
-    expect(serverManagers.Subordinate.getObject(testServerObject2._id?.toString())).toBeUndefined();
+    expect(serverManagers.Subordinate.getObject(id)).toBeUndefined();
     
-    while (getClient2Sub(testServerObject2._id)) {
+    const start = Date.now();
+    while (getClient2Sub(id) && Date.now() - start < 5000) {
         await new Promise(r => setTimeout(r, 10));
     }
-    expect(getClient2Sub(testServerObject2._id)).toBeUndefined();
+    expect(getClient2Sub(id)).toBeUndefined();
   });
 
   test("Creation of new object from client", async () => {
@@ -160,7 +203,8 @@ describe("DEM Library Tests with New Data Structure", () => {
     expect(newObj._id).toBeDefined();
     expect(serverManagers.Subordinate.getObject(newObj._id.toString())).toBeDefined();
     
-    while (!getClient2Sub(newObj._id)) {
+    const start = Date.now();
+    while (!getClient2Sub(newObj._id) && Date.now() - start < 5000) {
         await new Promise(r => setTimeout(r, 10));
     }
     expect(getClient2Sub(newObj._id).name).toBe("NewSub");
@@ -173,8 +217,6 @@ describe("DEM Library Tests with New Data Structure", () => {
     });
     
     await testServerObject1.setValue("onSite", undefined); // Reset
-    // Actually onSite is Construction ref in Subordinate.ts, let's use company array or add construction
-    // Wait, Subordinate.ts has `onSite: Construction` and `company: Company[]`.
     
     // Let's create a Construction too
     const construction = await serverManagers.Construction.createObject({
@@ -185,7 +227,8 @@ describe("DEM Library Tests with New Data Structure", () => {
     await testServerObject1.setValue("onSite", construction._id);
     expect(testServerObject1.onSite?._id.toString()).toBe(construction._id.toString());
     
-    while (!getClient1Sub(testServerObject1._id).onSite) {
+    const start = Date.now();
+    while (!getClient1Sub(testServerObject1._id).onSite && Date.now() - start < 5000) {
         await new Promise(r => setTimeout(r, 10));
     }
     expect(getClient1Sub(testServerObject1._id).onSite?._id.toString()).toBe(construction._id.toString());

@@ -49,7 +49,7 @@ describe("AutoUpdatedClientObjectClass Comprehensive Tests with Subordinate", ()
     expect((obj as any).isLoadingReferences).toBe(false);
   });
 
-  test("setValue__ from client success", async () => {
+  test("setValue from client success", async () => {
     const data = { _id: "id1", name: "OldName" };
     const obj = new (Subordinate as any)(
         Subordinate, mockSocket, data, loggers, "Subordinate", mockManager, mockCallback, mockEmitter

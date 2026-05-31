@@ -20,7 +20,7 @@ import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.j
 
 type MeasuringApparatus = MeasuringMachine;
 
-export class MeasurementTask extends AutoUpdatedClientObject<any> {
+export class MeasurementTask extends AutoUpdatedClientObject<MeasurementTask> {
   @populatedRef("ProtocolTask:measurements")
   @classProp
   parent!: ProtocolTask;

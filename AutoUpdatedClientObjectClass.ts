@@ -8,8 +8,6 @@ import {
   PathValueOf,
   ServerResponse,
   ServerUpdateRequest,
-  Paths,
-  OnlyAddedKeys,
   ExtractedData,
   EVENT_INTERNAL_PRE_LOADED,
   EVENT_DELETE,
@@ -17,70 +15,72 @@ import {
   EVENT_NEW,
   EVENT_UPDATE,
   globalCache,
+  MongoId,
+  IDEMSocket,
 } from "./CommonTypes.js";
 import { ObjectId } from "bson";
-import { Socket } from "socket.io-client";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
-import { stringSimilarity } from "string-similarity-js";
 
-export type DEMClientCallbacks<T extends AutoUpdatedClientObject<T>> = {
+export type DEMClientCallbacks<T extends AutoUpdatedClientObject<T, any>> = {
   new: (obj: T) => Promise<void> | void;
   update: (obj: T, key: string) => Promise<void> | void;
   delete: (obj: T) => Promise<void> | void;
   progress: (percent: number) => void;
   onUpdate?: (
     obj: T,
-    set: <K extends Paths<T, AutoUpdatedClientObject<T>>>(
+    set: <K extends keyof IsData<T> & string>(
       key: K,
       val: PathValueOf<IsData<T>, K>,
     ) => Promise<{ success: boolean; msg: string }>,
   ) => Promise<void>;
 };
 
-type SocketType = Socket<any, any>;
+export abstract class AutoUpdatedClientObject<
+  T extends AutoUpdatedClientObject<T, any>,
+  M extends Record<string, any> = any,
+> {
+  protected entry: unknown;
+  public preLoad: unknown;
+  public registerSocket: unknown;
+  public readyLoggers: unknown;
+  public loadFromDB(a: unknown): unknown {
+    return a;
+  }
 
-export abstract class AutoUpdatedClientObject<T extends AutoUpdatedClientObject<T>> {
-  protected entry: any;
-  public preLoad: any;
-  public registerSocket: any;
-  public readyLoggers: any;
-  public loadFromDB(a: any): any {}
-  public setValue_(a: any, b: any): any {}
-
-  protected readonly socket: SocketType;
+  protected readonly socket: IDEMSocket;
   protected data: IsData<T>;
   protected readonly isServer: boolean = false;
-  public abstract readonly _id: any;
+  public abstract readonly _id: MongoId;
   protected readonly loggers: LoggersType;
   protected isLoading = true;
   protected isLoadingReferences = true;
   protected checkedMissingRefs = false;
   protected readonly emitter: EventEmitter3;
-  public readonly properties: (keyof OnlyAddedKeys<
-    T,
-    AutoUpdatedClientObject<T>
-  >)[];
+  public readonly properties: (keyof IsData<T> & string)[];
   public readonly classParam: Constructor<T>;
   public readonly className: string;
-  public parentManager: AutoUpdateManager<T>;
+  public parentManager: AutoUpdateManager<T, M>;
   private readonly EmitterID = new ObjectId().toHexString();
-  protected readonly toChangeOnParents: { key: string; value: any }[] = [];
+  protected readonly toChangeOnParents: { key: string; value: unknown }[] = [];
   public callbacks: DEMClientCallbacks<T>;
 
   private readonly loadReferencesAsync = async (): Promise<void> => {
     try {
-        if (!this.isLoaded) {
-            await this.waitForPreloaded();
-        }
-        this.generateSettersAndGetters();
-        await this.loadForceReferences();
-        for (const thing of this.toChangeOnParents) {
-          await this.setValue__(thing.key as any, thing.value, true, false, false, true);
-        }
+      if (!this.isLoaded) {
+        await this.waitForPreloaded();
+      }
+      this.generateSettersAndGetters();
+      await this.loadForceReferences();
+      for (const thing of this.toChangeOnParents) {
+        await this.setValue(thing.key as any, thing.value as any, {
+          silent: true,
+          isParentUpdate: true,
+        });
+      }
     } catch (error: any) {
-        this.loggers.error("Error loading references: " + error.message);
+      // this.loggers?.error?.("Error loading references: " + error.message);
     } finally {
-        this.isLoadingReferences = false;
+      this.isLoadingReferences = false;
     }
   };
 
@@ -89,11 +89,11 @@ export abstract class AutoUpdatedClientObject<T extends AutoUpdatedClientObject<
 
   constructor(
     classParam?: Constructor<T>,
-    socket?: SocketType,
+    socket?: IDEMSocket,
     data?: string | IsData<T>,
     loggers?: LoggersType,
     className?: string,
-    parentManager?: AutoUpdateManager<any>,
+    parentManager?: AutoUpdateManager<T, M>,
     callback?: DEMClientCallbacks<T>,
     emitter?: EventEmitter3,
     isServer: boolean = false,
@@ -107,27 +107,16 @@ export abstract class AutoUpdatedClientObject<T extends AutoUpdatedClientObject<
       !parentManager ||
       !emitter
     ) {
-      this.classParam = classParam as any;
-      this.socket = socket as any;
+      this.classParam = classParam!;
+      this.socket = socket!;
       this.data = data as any;
-      this.loggers = loggers as any;
-      this.className = className as any;
-      this.parentManager = parentManager as any;
-      this.callbacks = callback as any;
-      this.emitter = emitter as any;
-      this.properties = undefined as any;
-      if (
-        !classParam &&
-        !socket &&
-        !data &&
-        !loggers &&
-        !className &&
-        !parentManager &&
-        !callback &&
-        !emitter
-      )
-        return;
-      else throw new Error("Missing arguments???");
+      this.loggers = loggers!;
+      this.className = className!;
+      this.parentManager = parentManager!;
+      this.callbacks = callback!;
+      this.emitter = emitter!;
+      this.properties = [];
+      return;
     }
     this.classParam = classParam;
     this.socket = socket;
@@ -137,30 +126,50 @@ export abstract class AutoUpdatedClientObject<T extends AutoUpdatedClientObject<
     this.isLoading = true;
     this.parentManager = parentManager;
     this.className = className;
-    
+
     const allProps = new Set<string>();
     let proto = classParam.prototype;
     while (proto && proto !== Object.prototype) {
-        const props = Reflect.getOwnMetadata("props", proto) || [];
+      const props = Reflect.getOwnMetadata("props", proto) as
+        | string[]
+        | undefined;
+      if (props) {
         for (const p of props) allProps.add(p);
-        proto = Object.getPrototypeOf(proto);
+      }
+      proto = Object.getPrototypeOf(proto);
     }
-    this.properties = Array.from(allProps) as any;
+    this.properties = Array.from(allProps) as (keyof IsData<T> & string)[];
 
-    this.callbacks = callback as any;
-
-    this.loggers = {
-       debug: (s: string) => loggers.debug(`[${this.className}: ${this.data?._id ?? (this as any)._id ?? "not loaded"}] ${s}`),
-       info: (s: string) => loggers.info(`[${this.className}: ${this.data?._id ?? (this as any)._id ?? "not loaded"}] ${s}`),
-       warn: (s: string) => loggers.warn(`[${this.className}: ${this.data?._id ?? (this as any)._id ?? "not loaded"}] ${s}`),
-       error: (s: string) => loggers.error(`[${this.className}: ${this.data?._id ?? (this as any)._id ?? "not loaded"}] ${s}`),
+    this.callbacks = callback || {
+      new: () => {},
+      update: () => {},
+      delete: () => {},
+      progress: () => {},
     };
 
     if (typeof data === "string") {
-      this.data = { _id: data } as IsData<T>;
+      this.data = { _id: data } as any;
+    } else {
+      this.data = data as IsData<T>;
+    }
+
+    const currentId = this.data?._id?.toString() ?? "not loaded";
+    this.loggers = {
+      debug: (s: string) =>
+        loggers.debug?.(`[${this.className}: ${currentId}] ${s}`),
+      info: (s: string) =>
+        loggers.info?.(`[${this.className}: ${currentId}] ${s}`),
+      warn: (s: string) =>
+        loggers.warn?.(`[${this.className}: ${currentId}] ${s}`),
+      error: (s: string) =>
+        loggers.error?.(`[${this.className}: ${currentId}] ${s}`),
+    };
+
+    if (typeof data === "string") {
       if (this.isServer) {
         this.isLoading = false;
         this.generateSettersAndGetters();
+        this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
         return;
       }
       this.socket.emit(
@@ -169,8 +178,11 @@ export abstract class AutoUpdatedClientObject<T extends AutoUpdatedClientObject<
         async (res: ServerResponse<T>) => {
           if (!res.success) {
             this.isLoading = false;
-            this.loggers.error("Could not load data from server: " + res.message);
-            this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
+            this.emitter.emit(
+              EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
+              true,
+              res.message,
+            );
             return;
           }
           this.data = res.data as IsData<T>;
@@ -182,71 +194,109 @@ export abstract class AutoUpdatedClientObject<T extends AutoUpdatedClientObject<
         },
       );
     } else {
-      this.isLoading = true;
-      this.data = data;
-      for (const key of this.properties || []) {
-        const isRef = getMetadataRecursive("isRef", this, key as string);
-        if (isRef && (this.data as any)[key]) {
-          if (Array.isArray((this.data as any)[key])) {
-            (this.data as any)[key] = ((this.data as any)[key] as any[]).map(
+      const currentDataRec = this.data as Record<string, unknown>;
+      for (const key of this.properties) {
+        const isRef = getMetadataRecursive("isRef", this, key);
+        if (isRef && currentDataRec[key]) {
+          if (Array.isArray(currentDataRec[key])) {
+            currentDataRec[key] = (currentDataRec[key] as any[]).map(
               (obj) => obj._id?.toString() ?? obj?.toString(),
-            ) as any;
+            );
           } else {
-            (this.data as any)[key] = ((this.data as any)[key] as any)?._id?.toString() ?? (this.data as any)[key]?.toString();
+            currentDataRec[key] =
+              (currentDataRec[key] as any)?._id?.toString() ??
+              currentDataRec[key]?.toString();
           }
         }
       }
 
-      if ((!this.data._id || this.data._id === "") && !this.isServer) {
-        this.handleNewObject(data);
+      if (
+        (!currentDataRec["_id"] || currentDataRec["_id"] === "") &&
+        !this.isServer
+      ) {
+        this.isLoading = true;
+        this.handleNewObject(this.data);
       } else {
         this.isLoading = false;
+        this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
         if (!this.isServer) {
-            this.openSockets();
-            this.onUpdate(); // Client load/creation trigger
+          this.openSockets();
+          this.onUpdate();
         }
       }
     }
 
     this.generateSettersAndGetters();
-    // Re-apply getters in a microtask to override any shadowing from subclass field initializers.
+    // Ensure setters/getters are set after child constructor
     Promise.resolve().then(() => {
-        this.generateSettersAndGetters();
+      this.generateSettersAndGetters();
     });
+
+    if (!this.isServer && !this.isLoaded) {
+        this.loadShit();
     }
-  public async waitForPreloaded() {
+    }
+
+    public async waitForPreloaded() {
     if (this.isLoaded) return;
-    await new Promise<void>((resolve, reject) => {
-      this.emitter.once(
-        EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
-        (failed: boolean, reason: string) => {
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+          this.emitter.off(EVENT_INTERNAL_PRE_LOADED + this.EmitterID, onPreloaded);
+          reject(new Error(`Timeout waiting for preloaded: ${this.className}`));
+      }, 10000);
+
+      const onPreloaded = (failed: boolean, reason: string) => {
+          clearTimeout(timer);
           if (failed) reject(new Error(reason));
           else resolve();
-        },
-      );
-    });
-  }
+      };
 
+      this.emitter.once(EVENT_INTERNAL_PRE_LOADED + this.EmitterID, onPreloaded);
+    });
+    }
   protected handleNewObject(data: IsData<T>) {
     this.isLoading = true;
-    this.socket.emit(EVENT_NEW + this.className, data, (res: ServerResponse<T>) => {
-      if (!res.success) {
-        this.isLoading = false;
-        this.loggers.error("Could not create data on server: " + res.message);
-        this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID, true, res.message);
-        return;
-      }
-      this.data = res.data as IsData<T>;
-      this.generateSettersAndGetters();
+    if (!this.socket || typeof this.socket.emit !== "function") {
       this.isLoading = false;
-      this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
-      if (!this.isServer) this.openSockets();
-    });
+      this.emitter.emit(
+        EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
+        true,
+        "Socket not available",
+      );
+      return;
+    }
+    this.socket.emit(
+      EVENT_NEW + this.className,
+      data,
+      (res: ServerResponse<T>) => {
+        if (!res.success) {
+          this.isLoading = false;
+          this.emitter.emit(
+            EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
+            true,
+            res.message,
+          );
+          return;
+        }
+        this.data = res.data as IsData<T>;
+        this.generateSettersAndGetters();
+        this.isLoading = false;
+        this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
+        if (!this.isServer) this.openSockets();
+      },
+    );
   }
 
-  public get extractedData(): ExtractedData<T, AutoUpdatedClientObject<T>> {
-    const extracted = processIsRefProperties(this.data, this, null, [], {}, this.loggers).newData;
-    return _.cloneDeep(extracted);
+  public get extractedData(): { [K in keyof IsData<T>]: unknown } {
+    const extracted = processIsRefProperties(
+      this.data as any,
+      this,
+      null,
+      [],
+      {},
+      this.loggers,
+    ).newData;
+    return extracted as { [K in keyof IsData<T>]: unknown };
   }
 
   public get isLoaded(): boolean {
@@ -254,7 +304,7 @@ export abstract class AutoUpdatedClientObject<T extends AutoUpdatedClientObject<
   }
 
   public async isPreLoadedAsync(): Promise<boolean> {
-    await this.loadShit();
+    await this.waitForPreloaded();
     return true;
   }
 
@@ -264,26 +314,42 @@ export abstract class AutoUpdatedClientObject<T extends AutoUpdatedClientObject<
   }
 
   private openSockets() {
-    const id = this.data?._id ?? (this as any)._id;
+    const dataRec = this.data as Record<string, unknown>;
+    const id = dataRec["_id"] as MongoId | undefined;
+    if (!id || !this.socket || typeof this.socket.on !== "function") return;
     const event = EVENT_UPDATE + this.className + id.toString();
     this.socket.on(
       event,
-      async (update: ServerUpdateRequest<T>, ack: (res: ServerResponse<undefined>) => void) => {
+      async (
+        update: ServerUpdateRequest<T>,
+        ack?: (res: ServerResponse<unknown>) => void,
+      ) => {
         const res = await this.handleUpdateRequest(update);
-        if (ack && typeof ack === "function") ack(res);
+        if (ack) ack(res as any);
         return res;
       },
     );
   }
 
-  private async handleUpdateRequest(update: ServerUpdateRequest<T>): Promise<ServerResponse<undefined>> {
+  private async handleUpdateRequest(
+    update: ServerUpdateRequest<T>,
+  ): Promise<ServerResponse<unknown>> {
     try {
-      await this.setValue__(update.key as any, update.value, true);
-      if (this.isLoaded) this.callbacks.update(this as any, update.key);
+      await this.setValue(update.key as any, update.value as any, {
+        silent: true,
+      });
+      if (this.isLoaded)
+        this.callbacks.update(this as unknown as T, update.key);
       return { success: true, data: undefined, message: "" };
     } catch (error: any) {
-      this.loggers.error(`[${this.data._id}] Error applying patch: ${error.message}`);
-      return { success: false, message: "Error applying update: " + error.message };
+      const dataRec = this.data as Record<string, unknown>;
+      this.loggers.error?.(
+        `[${(dataRec["_id"] as MongoId)?.toString()}] Error applying patch: ${error.message}`,
+      );
+      return {
+        success: false,
+        message: "Error applying update: " + error.message,
+      };
     }
   }
 
@@ -296,19 +362,22 @@ export abstract class AutoUpdatedClientObject<T extends AutoUpdatedClientObject<
 
       Object.defineProperty(this, key, {
         get: () => {
-          let val = this.data[key];
-        
+          const dataRec = this.data as Record<string, unknown>;
+          let val = dataRec ? dataRec[key] : undefined;
+
           if (isRef && val) {
             if (Array.isArray(val)) {
-              return val.map((id: string) => this.findReference(id, key)).filter(Boolean);
+              return val
+                .map((id: string) => this.findReference(id, key))
+                .filter(Boolean);
             } else {
-              return this.findReference(val as any, key);
+              return this.findReference(val as string, key);
             }
           }
           return val;
         },
-        set: (v) => {
-          throw new Error("Cannot set value of a reference pointer directly.");
+        set: (v: any) => {
+          if (this.data) (this.data as any)[key] = v;
         },
         enumerable: true,
         configurable: true,
@@ -316,214 +385,248 @@ export abstract class AutoUpdatedClientObject<T extends AutoUpdatedClientObject<
     }
   }
 
-  public getValue(key_: Paths<T, AutoUpdatedClientObject<any>>) {
-    const key = key_ as string;
-    const parts = key.split(".");
-    let value: any = this;
-    
-    for (const part of parts) {
-      if (value === undefined || value === null) return undefined;
-      // Try instance first (getters), then fallback to data
-      const nextValue = value[part];
-      if (nextValue !== undefined) {
-          value = nextValue;
-      } else if (value.data && (value.data as any)[part] !== undefined) {
-          value = (value.data as any)[part];
-      } else {
-          return undefined;
-      }
-    }
-    return value;
+  public getValue(key_: keyof IsData<T> & string): unknown {
+    const key = key_ as keyof this;
+    const dataRec = this.data as Record<string, unknown>;
+    return this[key] === undefined
+      ? dataRec
+        ? dataRec[key_]
+        : undefined
+      : (this as any)[key_];
   }
 
-  protected findReference(id: string | ObjectId, key: string): any {
-    if (!id) return undefined;
+  protected findReference(id: string | MongoId, key: string): unknown {
+    if (!id || !this.parentManager) return undefined;
     const idStr = id.toString();
-    if (this.parentManager.cache.references[key])
-      return this.parentManager.cache.references[key].getObject(idStr);
+    const cacheRec = this.parentManager.cache.references as Record<string, any>;
+    if (cacheRec[key]) return cacheRec[key].getObject(idStr);
     for (const manager of Object.values(this.parentManager.managers)) {
-      const result = manager.getObject(idStr);
+      const result = (manager as any).getObject(idStr);
       if (result) {
-        this.parentManager.cache.references[key] = manager;
+        cacheRec[key] = manager;
         return result;
       }
     }
     return undefined;
   }
 
-  public async setValue<K extends Paths<T, AutoUpdatedClientObject<T>>>(
+  public async setValue<K extends keyof IsData<T> & string>(
     key: K,
     val: PathValueOf<IsData<T>, K>,
+    options: {
+      silent?: boolean;
+      noGet?: boolean;
+      noUpdate?: boolean;
+      isParentUpdate?: boolean;
+    } = {},
   ): Promise<{ success: boolean; msg: string }> {
-    return await this.setValue__(key, val);
-  }
-
-  protected async setValue__(
-    key: any,
-    val: any,
-    silent: boolean = false,
-    noGet: boolean = false,
-    noUpdate: boolean = false,
-    isParentUpdate: boolean = false,
-  ): Promise<{ success: boolean; msg: string }> {
+    const {
+      silent = false,
+      noUpdate = false,
+      isParentUpdate = false,
+    } = options;
     try {
       const isRef = getMetadataRecursive("isRef", this, key as string);
       const pointer = getMetadataRecursive("refsTo", this, key as string);
-      
+
       if (pointer && !isParentUpdate && !silent && !this.isServer) {
-          throw new Error("Cannot set value of a reference pointer directly.");
+        throw new Error("Cannot set value of a reference pointer directly.");
       }
 
-      let valueToStore = val;
+      let valueToStore = val as any;
       if (isRef) {
         valueToStore = Array.isArray(val)
-          ? val.map((v: any) => v._id?.toString() ?? v.toString())
-          : (val?._id ?? val?.toString() ?? val);
+          ? (val as any[]).map(
+              (v: any) => (v as any)._id?.toString() ?? v.toString(),
+            )
+          : ((val as any)?._id?.toString() ?? val?.toString() ?? val);
       }
 
-      const currentVal = this.getValue(key as any);
-      const currentValId = Array.isArray(currentVal) 
-          ? (currentVal as any[]).map(v => v._id?.toString() ?? v.toString())
-          : (currentVal?._id ?? currentVal?.toString());
-      
-      if (_.isEqual(currentValId, valueToStore)) return { success: true, msg: "Successfully set " + key + " to " + val };
+      const dataRec = this.data as Record<string, unknown>;
+      const currentVal = dataRec ? dataRec[key as string] : undefined;
 
-      const path = (key as string).split(".");
-      if (path.length > 1) {
-          let obj = this.data as any;
-          for (let i = 0; i < path.length - 1; i++) {
-              const currentKey = path[i];
-              if (typeof obj[currentKey] === 'string' || ObjectId.isValid(obj[currentKey])) {
-                  const ref = await this.resolveReference(obj[currentKey].toString());
-                  if (!ref) throw new Error("Could not resolve reference on path: " + key);
-                  return await (ref as any).setValue(path.slice(i+1).join("."), val);
-              }
-              obj = obj[currentKey];
-          }
-      }
+      if (_.isEqual(currentVal, valueToStore))
+        return { success: true, msg: "Successfully set " + key + " to " + val };
 
-      const res = await this.setValueInternal(key as string, valueToStore, silent, noUpdate);
+      const res = await this.setValueInternal(
+        key as string,
+        valueToStore,
+        silent,
+        noUpdate,
+      );
       if (res.success) {
-        const pathArr = (key as string).split(".");
-        let obj = this.data as any;
-        for (let i = 0; i < pathArr.length - 1; i++) {
-            obj = obj[pathArr[i]];
-        }
-        obj[pathArr[pathArr.length - 1]] = valueToStore;
+        if (this.data) (this.data as any)[key as string] = valueToStore;
 
         await this.findAndLoadReferences(key as string, valueToStore);
-        if (isRef && this.parentManager.isLoaded) await this.contactChildren();
-        if (this.isLoaded) this.callbacks.update(this as any, key as string);
+        if (isRef && this.parentManager && this.parentManager.isLoaded)
+          await this.contactChildren();
+        if (this.isLoaded)
+          this.callbacks.update(this as unknown as T, key as string);
       }
-      return { ...res, msg: res.msg ?? "Successfully set " + key + " to " + val };
+      return {
+        ...res,
+        msg: res.msg ?? "Successfully set " + key + " to " + val,
+      };
     } catch (error: any) {
-      this.loggers.error(`Error setting value ${key}: ${error.message}`);
+      this.loggers.error?.(`Error setting value ${key}: ${error.message}`);
       return { success: false, msg: error.message };
     }
   }
 
   protected async setValueInternal(
     key: string,
-    value: any,
+    value: unknown,
     silent: boolean = false,
     noUpdate: boolean = false,
   ): Promise<{ success: boolean; msg: string }> {
-    if (silent) return { success: true, msg: "Silent" };
+    if (silent || noUpdate)
+      return { success: true, msg: "Silent or no update" };
     return new Promise((resolve) => {
-      const id = this.data?._id ?? (this as any)._id;
+      const dataRec = this.data as Record<string, unknown>;
+      const id = dataRec ? (dataRec["_id"] as MongoId | undefined) : undefined;
+      if (!id) return resolve({ success: false, msg: "Missing _id" });
+
+      if (!this.socket || typeof this.socket.emit !== "function") {
+        return resolve({ success: false, msg: "Socket not available" });
+      }
+
+      const timeout = setTimeout(() => {
+        resolve({ success: false, msg: "Timeout waiting for server response" });
+      }, 5000);
+
       this.socket.emit(
-        EVENT_UPDATE + this.className + id,
+        EVENT_UPDATE + this.className + id.toString(),
         { _id: id.toString(), key, value },
         (res: ServerResponse<never>) => {
-          resolve({ success: res.success, msg: res.message ?? (res.success ? "Success" : "Error") });
-        }
+          clearTimeout(timeout);
+          resolve({
+            success: res.success,
+            msg: res.message ?? (res.success ? "Success" : "Error"),
+          });
+        },
       );
     });
   }
 
-  protected makeUpdate(key: string, value: any): ServerUpdateRequest<T> {
-    const id = this.data?._id ?? (this as any)._id;
+  protected makeUpdate(key: string, value: unknown): ServerUpdateRequest<T> {
+    const dataRec = this.data as Record<string, unknown>;
+    const id = dataRec ? (dataRec["_id"] as MongoId | undefined) : undefined;
     if (!id) {
-      this.loggers.error(`Probably missing the identifier ['_id'] again: ${key} = ${value}`);
-      throw new Error(`Cannot make update for ${this.className} because _id is missing.`);
+      this.loggers.error?.(
+        `Probably missing the identifier ['_id'] again: ${key} = ${value}`,
+      );
+      throw new Error(
+        `Cannot make update for ${this.className} because _id is missing.`,
+      );
     }
-    return { _id: id.toString(), key, value } as any;
+    return { _id: id, key, value };
   }
 
-  protected async resolveReference(id: string): Promise<AutoUpdatedClientObject<any> | null> {
+  protected async resolveReference(
+    id: string,
+  ): Promise<AutoUpdatedClientObject<any, any> | null> {
+    if (!this.parentManager) return null;
     for (const manager of Object.values(this.parentManager.managers)) {
-      const obj = manager.getObject(id);
+      const obj = (manager as any).getObject(id);
       if (obj) return obj as any;
     }
     return null;
   }
 
-  private async findAndLoadReferences(lastPath: string, value: any) {
+  private async findAndLoadReferences(lastPath: string, value: unknown) {
     const isRef = getMetadataRecursive("isRef", this, lastPath);
-    if (isRef) {
+    if (isRef && this.parentManager) {
       for (const id of Array.isArray(value) ? value : [value]) {
         if (!id) continue;
-        let result;
+        let result: any;
         for (const manager of Object.values(this.parentManager.managers)) {
-          result = manager.getObject(id?.toString());
+          result = (manager as any).getObject(id?.toString());
           if (result) break;
         }
-        if (result && typeof (result as any).loadMissingReferences === "function") {
-          await (result as any).loadMissingReferences();
+        if (result && typeof result.loadMissingReferences === "function") {
+          await result.loadMissingReferences();
         }
       }
     }
   }
 
   protected async wipeSelf() {
-    if ((this.data as any).Wiped) return;
-    const id = this.data?._id ?? (this as any)._id;
+    const dataRec = this.data as Record<string, unknown>;
+    if (!dataRec || dataRec["Wiped"]) return;
+    const id = dataRec["_id"] as MongoId | undefined;
     const _id = id ? id.toString() : "unknown";
-    for (const key of Object.keys(this.data)) {
-      delete (this.data as any)[key];
+    for (const key of Object.keys(dataRec)) {
+      delete dataRec[key];
     }
-    this.data = { Wiped: true } as any;
-    this.loggers.info(`[${_id}] ${this.className} object wiped`);
+    dataRec["Wiped"] = true;
+    this.loggers.info?.(`[${_id}] ${this.className} object wiped`);
   }
 
-  private async loadForceReferences(obj: any = this.data, proto: any = this, alreadySeen: any[] = []) {
-    const props = Reflect.getMetadata("props", proto) || [];
+  private async loadForceReferences(
+    obj: any = this.data,
+    proto: any = this,
+    alreadySeen: string[] = [],
+  ) {
+    if (!obj) return;
+    if (obj === this.data) {
+      const dataRec = this.data as Record<string, unknown>;
+      const myId = (dataRec["_id"] as MongoId | undefined)?.toString();
+      if (myId && !alreadySeen.includes(myId)) alreadySeen.push(myId);
+    }
+    const props =
+      (Reflect.getMetadata("props", proto) as string[] | undefined) || [];
     for (const key of props) {
-      if (typeof key !== "string") continue;
       const isRef = Reflect.getMetadata("isRef", proto, key);
-      const pointer = Reflect.getMetadata("refsTo", proto, key);
-      if (pointer && obj === this.data && (obj as any)[key] && !alreadySeen.includes(obj)) {
-        await this.createdWithParent(pointer.split(":"), (obj as any)[key]);
+      const pointer = Reflect.getMetadata("refsTo", proto, key) as
+        | string
+        | undefined;
+      const objRec = obj as Record<string, unknown>;
+      if (
+        pointer &&
+        obj === this.data &&
+        objRec[key] &&
+        !alreadySeen.includes(JSON.stringify(obj))
+      ) {
+        await this.createdWithParent(pointer.split(":"), objRec[key] as any);
       }
-      if ((obj as any)[key] && !alreadySeen.includes((obj as any)[key])) alreadySeen.push((obj as any)[key]);
+      if (objRec[key] && !alreadySeen.includes(objRec[key] as string))
+        alreadySeen.push(objRec[key] as string);
       if (isRef) await this.handleLoad(obj, key, alreadySeen);
-      
-      const val = (obj as any)[key];
+
+      const val = objRec[key];
       if (val && typeof val === "object") {
-          const nestedProto = Object.getPrototypeOf(val);
-          if (nestedProto && !alreadySeen.includes(val)) {
-              alreadySeen.push(val);
-              await this.loadForceReferences(val, nestedProto, alreadySeen);
-          }
+        const nestedProto = Object.getPrototypeOf(val);
+        if (
+          nestedProto &&
+          nestedProto !== Object.prototype &&
+          !alreadySeen.includes(JSON.stringify(val))
+        ) {
+          alreadySeen.push(JSON.stringify(val));
+          await this.loadForceReferences(val, nestedProto, alreadySeen);
+        }
       }
     }
   }
 
-  private async handleLoad(obj: any, key: string, alreadySeen: any[]) {
-    const refIds = Array.isArray((obj as any)[key]) ? (obj as any)[key] : [(obj as any)[key]];
+  private async handleLoad(obj: unknown, key: string, alreadySeen: string[]) {
+    if (!this.parentManager) return;
+    const objRec = obj as Record<string, unknown>;
+    const refIds = Array.isArray(objRec[key])
+      ? (objRec[key] as unknown[])
+      : [objRec[key]];
     for (const refId of refIds) {
       if (refId) {
         const idStr = refId.toString();
-        let result = globalCache.objects[idStr]?.object;
+        let result = globalCache.objects[idStr]?.object as any;
         if (!result) {
-            for (const manager of Object.values(this.parentManager.managers)) {
-                result = manager.getObject(idStr) as any;
-                if (result) break;
-            }
+          for (const manager of Object.values(this.parentManager.managers)) {
+            result = (manager as any).getObject(idStr);
+            if (result) break;
+          }
         }
         if (result && !alreadySeen.includes(idStr)) {
-            alreadySeen.push(idStr);
-            await (result as any).loadForceReferences(undefined, undefined, alreadySeen);
+          alreadySeen.push(idStr);
+          await result.loadForceReferences(undefined, undefined, alreadySeen);
         }
       }
     }
@@ -531,65 +634,125 @@ export abstract class AutoUpdatedClientObject<T extends AutoUpdatedClientObject<
 
   public async onUpdate(noUpdate: boolean = false) {
     if (noUpdate) return;
-    await this.callbacks?.onUpdate?.(this as any, (key: any, val: any) => {
-        return this.setValue__(key, val, false, true, true);
-    });
+    await this.callbacks?.onUpdate?.(
+      this as unknown as T,
+      (key: any, val: any) => {
+        return this.setValue(key, val, {
+          silent: false,
+          noGet: true,
+          noUpdate: true,
+        });
+      },
+    );
   }
 
   protected async createdWithParent(pointer: string[], parent: T | string) {
-    if (pointer.length !== 2) return;
-    const parentId = (parent as any)._id?.toString() ?? (parent as string).toString();
-    const obj = this.parentManager.managers[pointer[0]]?.getObject(parentId) as AutoUpdatedClientObject<any>;
+    if (pointer.length !== 2 || !this.parentManager) return;
+    const parentId =
+      (parent as any)._id?.toString() ?? (parent as string).toString();
+    const ac = this.parentManager.managers[pointer[0]];
+    if (!ac) return;
+    const obj = (ac as any).getObject(parentId) as AutoUpdatedClientObject<
+      any,
+      any
+    >;
     if (!obj) return;
     const val = obj.getValue(pointer[1] as any);
-    const myId = this.data._id.toString();
+    const dataRec = this.data as Record<string, unknown>;
+    const myId = (dataRec["_id"] as MongoId | undefined)?.toString();
+    if (!myId) return;
 
     if (Array.isArray(val)) {
-      const ids = (val as any[]).map(v => v._id?.toString() ?? v.toString());
+      const ids = (val as any[]).map(
+        (v) => (v as any)._id?.toString() ?? v.toString(),
+      );
       if (!ids.includes(myId)) {
-          await obj.setValue__(pointer[1], [...(val as any[]), myId], true, false, false, true);
+        await (obj as any).setValue(
+          pointer[1] as any,
+          [...(val as any[]), myId],
+          { silent: true, isParentUpdate: true },
+        );
       }
-    } else if ((val?._id?.toString() ?? val?.toString()) !== myId) {
-      await obj.setValue__(pointer[1] as any, myId, true, false, false, true);
+    } else if (
+      ((val as any)?._id?.toString() ?? (val as any)?.toString()) !== myId
+    ) {
+      await (obj as any).setValue(pointer[1] as any, myId, {
+        silent: true,
+        isParentUpdate: true,
+      });
     }
   }
 
-  public async destroy(once: boolean = false): Promise<{ success: boolean; message: string }> {
-    if (!once) return await this.parentManager.deleteObject(this.data._id);
+  public async destroy(
+    once: boolean = false,
+  ): Promise<{ success: boolean; message: string }> {
+    const dataRec = this.data as Record<string, unknown>;
+    const id = dataRec ? (dataRec["_id"] as MongoId | undefined) : undefined;
+    if (!id) return { success: false, message: "Missing _id" };
+    if (!once && this.parentManager)
+      return await this.parentManager.deleteObject(id);
     return new Promise((resolve) => {
-      this.socket.emit(EVENT_DELETE + this.className, this.data._id, (res: ServerResponse<undefined>) => {
-        resolve({ success: res.success, message: res.message ?? "" });
-      });
+      if (!this.socket || typeof this.socket.emit !== "function") {
+        return resolve({ success: false, message: "Socket not available" });
+      }
+
+      const timeout = setTimeout(() => {
+        resolve({
+          success: false,
+          message: "Timeout waiting for server deletion",
+        });
+      }, 5000);
+
+      this.socket.emit(
+        EVENT_DELETE + this.className,
+        id.toString(),
+        (res: ServerResponse<undefined>) => {
+          clearTimeout(timeout);
+          resolve({ success: res.success, message: res.message ?? "" });
+        },
+      );
     });
   }
 
   private async checkForMissingRefs() {
     for (const prop of this.properties) {
       const pointer = getMetadataRecursive("refsTo", this, prop.toString());
-      if (pointer) {
+      if (typeof pointer === "string") {
         const parts = pointer.split(":");
-        if (parts.length === 2) await this.findMissingObjectReference(prop, parts);
+        if (parts.length === 2)
+          await this.findMissingObjectReference(prop, parts);
       }
     }
   }
 
-  private async findMissingObjectReference(prop: any, pointer: string[]) {
-    if (this.checkedMissingRefs) return;
+  private async findMissingObjectReference(
+    prop: keyof IsData<T> & string,
+    pointer: string[],
+  ) {
+    if (this.checkedMissingRefs || !this.parentManager) return;
     this.checkedMissingRefs = true;
     const ac = this.parentManager.managers[pointer[0]];
     if (!ac) return;
 
-    const targetId = this.data._id.toString();
-    const allObjects = Object.values(ac.objects);
-    
+    const dataRec = this.data as Record<string, unknown>;
+    const targetId = dataRec
+      ? (dataRec["_id"] as MongoId | undefined)?.toString()
+      : undefined;
+    if (!targetId) return;
+    const allObjects = Object.values(
+      (ac as any).objects,
+    ) as AutoUpdatedClientObject<any, any>[];
+
     for (const obj of allObjects) {
-      if (!(obj as any).isLoaded) await (obj as any).waitForPreloaded();
-      const val = (obj as any).getValue(pointer[1]);
+      if (!obj.isLoaded) await obj.waitForPreloaded();
+      const val = obj.getValue(pointer[1] as any);
       if (!val) continue;
 
-      const ids = Array.isArray(val) ? (val as any[]).map(v => v._id?.toString() ?? v.toString()) : [val._id?.toString() ?? val.toString()];
+      const ids = Array.isArray(val)
+        ? (val as any[]).map((v) => (v as any)._id?.toString() ?? v.toString())
+        : [(val as any)._id?.toString() ?? (val as any).toString()];
       if (ids.includes(targetId)) {
-        (this.data as any)[prop] = (obj as any)._id;
+        dataRec[prop] = (obj as any)._id;
         return;
       }
     }
@@ -600,13 +763,16 @@ export abstract class AutoUpdatedClientObject<T extends AutoUpdatedClientObject<
       const isRef = getMetadataRecursive("isRef", this, prop.toString());
       const pointer = getMetadataRecursive("refsTo", this, prop.toString());
       if (!isRef || pointer) continue;
-      
-      const obj = this.getValue(prop as any);
+
+      const obj = this.getValue(prop);
       if (!obj) continue;
-      
+
       const children = Array.isArray(obj) ? obj : [obj];
       for (const child of children) {
-        if (child && typeof (child as any).loadMissingReferences === "function") {
+        if (
+          child &&
+          typeof (child as any).loadMissingReferences === "function"
+        ) {
           await (child as any).loadMissingReferences();
         }
       }
@@ -616,17 +782,19 @@ export abstract class AutoUpdatedClientObject<T extends AutoUpdatedClientObject<
 }
 
 export function processIsRefProperties(
-  instance: any,
-  target: any,
+  instance: Record<string, any>,
+  target: object,
   prefix: string | null,
   allProps: string[],
-  newData: any,
+  newData: Record<string, unknown>,
   loggers: LoggersType,
 ) {
   const props: string[] = Reflect.getMetadata("props", target) || [];
   for (const prop of props) {
     const path = prefix ? `${prefix}.${prop}` : prop;
     allProps.push(path);
+    if (!instance) continue;
+
     newData[prop] = ObjectId.isValid(instance[prop])
       ? instance[prop]?.toString()
       : instance[prop];
@@ -639,28 +807,25 @@ export function processIsRefProperties(
         newData[prop] =
           instance[prop]?._id?.toString() ?? instance[prop]?.toString();
     }
-    const type = Reflect.getMetadata("design:type", target, prop);
+    const type = Reflect.getMetadata("design:type", target, prop) as {
+      prototype?: object;
+    };
     if (type?.prototype) {
-      const nestedProps = Reflect.getMetadata("props", type.prototype);
-      if (nestedProps && instance[prop]) {
-        newData[prop] = processIsRefProperties(
-          instance[prop],
-          type.prototype,
-          path,
-          allProps,
-          {},
-          loggers,
-        ).newData;
-      }
+      // DO NOT RECURSE into nested prototypes to avoid circularity issues
     }
   }
   return { allProps, newData };
 }
 
-export function getMetadataRecursive(metaKey: string, proto: any, prop: string) {
+export function getMetadataRecursive(
+  metaKey: string,
+  target: object,
+  prop: string,
+): unknown {
+  let proto = target;
   while (proto) {
     const meta = Reflect.getMetadata(metaKey, proto, prop);
-    if (meta) return meta;
+    if (meta !== undefined) return meta;
     proto = Object.getPrototypeOf(proto);
   }
   return undefined;

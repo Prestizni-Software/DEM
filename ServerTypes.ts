@@ -24,7 +24,7 @@ export class Test extends AutoUpdatedServerObject<Test> {
   @classRef()
   public ref!: Test | null;
 
-  @prop({ required: true, default: [] })
+  @prop({ required: true, default: [], ref: () => Test })
   @classProp
   @classRef()
   public refarr!: Test[];

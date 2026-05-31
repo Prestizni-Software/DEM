@@ -9,7 +9,7 @@ import { MeasurementTask } from "./MeasurementTask.js";
 import { Protocol } from "./Protocol.js";
 import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.js";
 
-export class Comments extends AutoUpdatedClientObject<any> {
+export class Comments extends AutoUpdatedClientObject<Comments> {
   @classProp
   _id!: MongoId;
 

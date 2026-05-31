@@ -2,7 +2,7 @@ import type { MongoId } from "./enums.js";
 import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.js";
 import { classProp } from "../../../CommonTypes.js";
 
-export class MeasurementType extends AutoUpdatedClientObject<any> {
+export class MeasurementType extends AutoUpdatedClientObject<MeasurementType> {
   @classProp
   _id!: MongoId;
 

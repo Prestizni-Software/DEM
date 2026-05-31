@@ -12,7 +12,7 @@ import { MeasurementTask } from "./MeasurementTask.js";
 import { Attachment } from "./Attachment.js";
 import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.js";
 
-export class ProtocolTask extends AutoUpdatedClientObject<any> {
+export class ProtocolTask extends AutoUpdatedClientObject<ProtocolTask> {
   @classProp
   public _id!: MongoId;
 

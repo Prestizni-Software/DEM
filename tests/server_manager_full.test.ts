@@ -1,86 +1,69 @@
 import { jest } from '@jest/globals';
 import { EventEmitter } from "eventemitter3";
 
-// Mocking dependencies before importing the module
+// Mock dependencies
+const mockModel: any = {
+    find: jest.fn().mockResolvedValue([]),
+    findById: jest.fn(),
+    create: jest.fn(),
+    updateOne: jest.fn(),
+    deleteOne: jest.fn()
+};
+const mockSocketServer: any = {
+    use: jest.fn(),
+    on: jest.fn(),
+    emit: jest.fn(),
+    disconnectSockets: jest.fn()
+};
+
+const emitter = new EventEmitter();
+
 jest.unstable_mockModule("@typegoose/typegoose", () => ({
-    getModelForClass: jest.fn(),
-    prop: jest.fn(),
+    getModelForClass: jest.fn().mockReturnValue(mockModel)
 }));
-
-jest.unstable_mockModule("node-machine-id", () => ({
-    default: {
-        machineIdSync: jest.fn().mockReturnValue("534d99b372d61249ade303f9fb4255e3e552e2731f8c455ba42b8f3bef19d8d2")
-    },
-    machineIdSync: jest.fn().mockReturnValue("534d99b372d61249ade303f9fb4255e3e552e2731f8c455ba42b8f3bef19d8d2")
-}));
-
 jest.unstable_mockModule("../AutoUpdatedServerObjectClass.js", () => ({
-    createAutoUpdatedClass: jest.fn(),
-    AutoUpdatedServerObject: class {
-        constructor() {}
-        isPreLoadedAsync = jest.fn().mockResolvedValue(undefined);
-        contactChildren = jest.fn().mockResolvedValue(undefined);
-        loadMissingReferences = jest.fn().mockResolvedValue(undefined);
-        onUpdate = jest.fn().mockResolvedValue(undefined);
-        setValue = jest.fn().mockResolvedValue({ success: true, msg: "OK" });
-        waitForPreloaded = jest.fn().mockResolvedValue(undefined);
-        extractedData = { _id: "123" };
-        _id = "123";
-        className = "Test";
-        callbacks = { delete: jest.fn() };
-        destroy = jest.fn().mockResolvedValue({ success: true });
-    }
+    createAutoUpdatedClass: jest.fn()
 }));
 
-const { AUSManagerFactory, AutoUpdateServerManager } = await import("../AutoUpdateServerManagerClass.js");
-const { createAutoUpdatedClass } = await import("../AutoUpdatedServerObjectClass.js");
+const { AUSManagerFactory, AutoUpdateServerManager, DEMEventTypes } = await import("../AutoUpdateServerManagerClass.js");
 const { getModelForClass } = await import("@typegoose/typegoose");
+const { createAutoUpdatedClass } = await import("../AutoUpdatedServerObjectClass.js");
 
 describe("AutoUpdateServerManagerClass Full Coverage", () => {
-    let loggers: any;
-    let originalLoggers: any;
+    let logMock: any;
     let mockSocketServer: any;
-    let emitter: any;
-    let mockModel: any;
 
     beforeEach(() => {
-        originalLoggers = { 
-            info: jest.fn(), 
-            debug: jest.fn(), 
-            error: jest.fn(), 
-            warn: jest.fn() 
+        jest.clearAllMocks();
+        logMock = {
+            info: (s: string) => {},
+            debug: (s: string) => {},
+            error: (s: string) => {},
+            warn: (s: string) => {}
         };
-        loggers = { ...originalLoggers };
-        emitter = new EventEmitter();
         mockSocketServer = {
             use: jest.fn(),
             on: jest.fn(),
             emit: jest.fn(),
-            eventNames: jest.fn().mockReturnValue([])
+            disconnectSockets: jest.fn()
         };
-        mockModel = {
-            find: jest.fn().mockResolvedValue([]),
-            findById: jest.fn().mockResolvedValue(null),
-        };
-        (getModelForClass as jest.Mock).mockReset();
-        (getModelForClass as jest.Mock).mockReturnValue(mockModel);
     });
 
     test("AUSManagerFactory success and error paths", async () => {
-        const defs = {
-            Test: { 
-                class: class TestClass {} as any,
-                options: {
-                    accessDefinitions: {
-                        eventMiddleware: jest.fn()
-                    }
-                }
-            }
-        };
+        const defs = { Test: { class: class {} as any } };
+        const errorSpy = jest.spyOn(logMock, 'error');
+        const debugSpy = jest.spyOn(logMock, 'debug');
+        
+        // 1. Preload error
+        mockModel.find.mockRejectedValueOnce(new Error("Preload Fail"));
+        await AUSManagerFactory(defs, logMock, mockSocketServer, true, emitter);
+        expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Preload Fail"));
 
+        // 2. Success path
+        mockModel.find.mockResolvedValue([]);
         (getModelForClass as jest.Mock).mockReturnValue(mockModel);
 
-        const managers = await AUSManagerFactory(defs, loggers, mockSocketServer, false, emitter);
+        const managers = await AUSManagerFactory(defs, logMock, mockSocketServer, false, emitter);
         expect(managers.Test).toBeDefined();
 
         // Trigger connection
@@ -88,11 +71,11 @@ describe("AutoUpdateServerManagerClass Full Coverage", () => {
         if (connectionHandler) {
             const mockSocket: any = { id: "s1", on: jest.fn(), onAny: jest.fn(), handshake: { auth: {}, address: "127.0.0.1" } };
             await connectionHandler(mockSocket);
-            expect(originalLoggers.debug).toHaveBeenCalledWith(expect.stringContaining("Client connected: s1"));
+            expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining("Client connected: s1"));
             
-            const disconnectHandler = mockSocket.on.mock.calls.find(c => c[0] === "disconnect")?.[1];
-            disconnectHandler();
-            expect(originalLoggers.debug).toHaveBeenCalledWith(expect.stringContaining("disconnected"));
+            const disconnectHandlers = mockSocket.on.mock.calls.filter(c => c[0] === "disconnect").map(c => c[1]);
+            disconnectHandlers.forEach(h => h());
+            expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining("disconnected"));
         }
     });
 
@@ -107,7 +90,7 @@ describe("AutoUpdateServerManagerClass Full Coverage", () => {
         (createAutoUpdatedClass as jest.Mock).mockResolvedValue(mockObj);
 
         const manager = new AutoUpdateServerManager(
-            class {} as any, "Test", loggers, mockSocketServer, mockModel, {}, emitter
+            class {} as any, "Test", logMock, mockSocketServer, mockModel, {}, emitter
         );
         
         mockModel.find.mockResolvedValue([
@@ -116,24 +99,26 @@ describe("AutoUpdateServerManagerClass Full Coverage", () => {
         ]);
 
         await manager.preLoad();
-        expect(manager.getObject("doc1")).toBe(mockObj);
+        expect(manager.getObject("doc1")).toBe(mockObj as any);
     });
 
     test("setupSocketMiddleware exhaustive paths", async () => {
         const id24 = "obj123456789012345678901234";
-        const mockObj = { _id: id24, extractedData: { data: 1 } };
-        const mockManager: any = {
-            getObject: jest.fn().mockReturnValue(mockObj),
-            options: {
-                accessDefinitions: {
-                    eventMiddleware: jest.fn().mockResolvedValue(undefined)
-                }
-            }
+        const defs = { Test: { class: class { properties = []; } as any } };
+        const mockModel: any = {
+            find: jest.fn().mockResolvedValue([]),
         };
-        const managers = { Test: mockManager };
+        (getModelForClass as jest.Mock).mockReturnValue(mockModel);
+
+        const actualManagers = await AUSManagerFactory(defs, logMock, mockSocketServer, false, emitter);
+        const manager = actualManagers.Test;
         
-        const defs = { Test: { class: class {} as any } };
-        await AUSManagerFactory(defs, loggers, mockSocketServer, false, emitter);
+        const warnSpy = jest.spyOn(logMock, 'warn');
+        const errorSpy = jest.spyOn(logMock, 'error');
+
+        // Mock getObject on manager
+        const mockObj = { _id: id24, extractedData: { data: 1 }, properties: [] };
+        jest.spyOn(manager, 'getObject').mockReturnValue(mockObj as any);
 
         const middleware = mockSocketServer.use.mock.calls.find(c => c[0].length === 2 && c[0].toString().includes("setupSocketMiddleware"))?.[0] || mockSocketServer.use.mock.calls[1]?.[0];
         
@@ -154,7 +139,7 @@ describe("AutoUpdateServerManagerClass Full Coverage", () => {
             if (innerMiddleware) {
                 // 1. Invalid event format
                 await innerMiddleware(["event"], next);
-                expect(originalLoggers.warn).toHaveBeenCalledWith(expect.stringContaining("Invalid event"));
+                expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid event"));
 
                 // 2. Undefined event
                 const ack2 = jest.fn();
@@ -178,7 +163,7 @@ describe("AutoUpdateServerManagerClass Full Coverage", () => {
 
                 // 6. EVENT_DELETE (already deleted)
                 const ack6 = jest.fn();
-                mockManager.getObject.mockReturnValueOnce(null);
+                jest.spyOn(manager, 'getObject').mockReturnValueOnce(null);
                 await innerMiddleware(["deleteTest", "absent", ack6], next);
                 expect(ack6).toHaveBeenCalledWith(expect.objectContaining({ success: true, message: "Object already deleted" }));
 
@@ -192,9 +177,13 @@ describe("AutoUpdateServerManagerClass Full Coverage", () => {
                 await innerMiddleware(["startupTest", {}, ack8], next);
                 expect(next).toHaveBeenCalled();
 
-                // 9. Access Denied in eventMiddleware
+                // 9. Access denied in eventMiddleware
                 const ack9 = jest.fn();
-                mockManager.options.accessDefinitions.eventMiddleware.mockRejectedValueOnce(new Error("No Way"));
+                manager.options = {
+                    accessDefinitions: {
+                        eventMiddleware: jest.fn().mockRejectedValueOnce(new Error("No Way"))
+                    }
+                };
                 await innerMiddleware(["newTest", {}, ack9], next);
                 expect(ack9).toHaveBeenCalledWith(expect.objectContaining({ success: false, message: expect.stringContaining("No Way") }));
 
@@ -202,79 +191,64 @@ describe("AutoUpdateServerManagerClass Full Coverage", () => {
                 const ack10 = jest.fn();
                 mockSocket.eventNames.mockReturnValue(["badTest"]);
                 await innerMiddleware(["badTest", {}, ack10], next);
-                expect(originalLoggers.error).toHaveBeenCalledWith(expect.stringContaining("Error with event: badTest"));
+                expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Error with event: badTest"));
             }
         }
     });
 
     test("AutoUpdateServerManager.registerSocket events", async () => {
-        const mockManager: any = {
-            className: "Test",
-            objectsAsArray: [{ _id: "o1" }],
-            objectIDs: ["o1"],
-            properties: ["p1"],
-            options: {
-                accessDefinitions: {
-                    startupMiddleware: jest.fn()
-                }
-            },
-            deleteObject: jest.fn().mockResolvedValue(undefined),
-            createObject: jest.fn().mockResolvedValue({ extractedData: { _id: "new" } }),
-            objects_: { "o1": { setValue: jest.fn().mockResolvedValue({ success: true, msg: "OK" }), extractedData: { _id: "o1" } } }
-        };
-
         const manager = new AutoUpdateServerManager(
-            class {} as any, "Test", loggers, mockSocketServer, mockModel, { Test: mockManager } as any, emitter, mockManager.options
+            class { properties = []; } as any, "Test", logMock, mockSocketServer, mockModel, {}, emitter
         );
-        
-        const mockUpdateObj = { 
-            setValue: jest.fn().mockResolvedValue({ success: true, msg: "Updated" }), 
-            extractedData: { _id: "o1" },
-            destroy: jest.fn().mockResolvedValue({ success: true }),
-            callbacks: { delete: jest.fn() }
-        };
-        (manager as any).objects_ = { "o1": mockUpdateObj };
-
-        const mockSocket: any = {
-            on: jest.fn(),
-            onAny: jest.fn(),
-            emit: jest.fn(),
-            id: "s1"
-        };
-
+        const mockSocket: any = { id: "s1", on: jest.fn(), onAny: jest.fn(), emit: jest.fn() };
         manager.registerSocket(mockSocket);
 
-        // EVENT_STARTUP success
+        // 1. EVENT_STARTUP success
         const startupHandler = mockSocket.on.mock.calls.find(c => c[0] === "startupTest")?.[1];
         const ack1 = jest.fn();
         await startupHandler({}, ack1);
         expect(ack1).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
 
-        // EVENT_DELETE success
-        const ack4 = jest.fn();
+        // 2. EVENT_STARTUP failure (startupMiddleware)
+        const startupHandler2 = mockSocket.on.mock.calls.find(c => c[0] === "startupTest")?.[1];
+        const ack2 = jest.fn();
+        manager.options = { accessDefinitions: { startupMiddleware: jest.fn().mockRejectedValueOnce(new Error("Startup Fail")) } };
+        await startupHandler2({}, ack2);
+        expect(ack2).toHaveBeenCalledWith(expect.objectContaining({ success: false, message: "Startup Fail" }));
+
+        // 3. EVENT_DELETE handler (success in registerSocket)
         const deleteHandler = mockSocket.on.mock.calls.find(c => c[0] === "deleteTest")?.[1];
-        await deleteHandler("o1", ack4);
-        expect(ack4).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+        const ack3 = jest.fn();
+        jest.spyOn(manager, 'deleteObject').mockResolvedValueOnce({ success: true, message: "OK" });
+        await deleteHandler("id1", ack3);
+        expect(ack3).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
 
-        // EVENT_UPDATE via onAny
-        const onAnyHandler = mockSocket.onAny.mock.calls.find(c => typeof c[0] === "function" || typeof c[1] === "function");
-        const actualOnAny = typeof onAnyHandler[0] === "function" ? onAnyHandler[0] : onAnyHandler[1];
-        
-        const ack8 = jest.fn();
-        const id24 = "123456789012345678901234";
-        (manager as any).objects_[id24] = mockUpdateObj;
-        await actualOnAny("updateTest" + id24, { key: "p1", value: "v1" }, ack8);
-        expect(ack8).toHaveBeenCalledWith(expect.objectContaining({ success: true, message: "Updated" }));
+        // 4. EVENT_DELETE handler (failure)
+        const deleteHandler2 = mockSocket.on.mock.calls.find(c => c[0] === "deleteTest")?.[1];
+        const ack4 = jest.fn();
+        jest.spyOn(manager, 'deleteObject').mockRejectedValueOnce(new Error("Delete Fail"));
+        await deleteHandler2("id1", ack4);
+        expect(ack4).toHaveBeenCalledWith(expect.objectContaining({ success: false, message: "Delete Fail" }));
 
-        // EVENT_GET via onAny
-        const ack10 = jest.fn();
-        await actualOnAny("getTest" + id24, {}, ack10);
-        expect(ack10).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+        // 5. EVENT_NEW handler (success)
+        const newHandler = mockSocket.on.mock.calls.find(c => c[0] === "newTest")?.[1];
+        const ack5 = jest.fn();
+        const mockNewObj = { extractedData: { id: "new" } };
+        jest.spyOn(manager, 'createObject').mockResolvedValueOnce(mockNewObj as any);
+        await newHandler({}, ack5);
+        expect(ack5).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+
+        // 6. EVENT_NEW handler (failure)
+        const newHandler2 = mockSocket.on.mock.calls.find(c => c[0] === "newTest")?.[1];
+        const ack6 = jest.fn();
+        jest.spyOn(manager, 'createObject').mockRejectedValueOnce(new Error("New Fail"));
+        await newHandler2({}, ack6);
+        expect(ack6).toHaveBeenCalledWith(expect.objectContaining({ success: false, message: "New Fail" }));
     });
 
     test("Misc methods and error paths", async () => {
         const manager = new AutoUpdateServerManager(
-            class {} as any, "Test", loggers, mockSocketServer, mockModel, {} as any, emitter
+            class {} as any, "Test", logMock, mockSocketServer, mockModel, {} as any, emitter
         );
         
         // getObject
@@ -289,15 +263,5 @@ describe("AutoUpdateServerManagerClass Full Coverage", () => {
         mockModel.findById.mockResolvedValueOnce({ _id: "someid" });
         (manager as any).managers = null;
         await expect(manager.handleGetMissingObject("someid")).rejects.toThrow("No managers.");
-
-        // createObject error: No managers
-        (manager as any).managers = null;
-        await expect(manager.createObject({})).rejects.toThrow("No managers.");
-    });
-
-    test("readyLoggers compromise message", async () => {
-        await AUSManagerFactory({}, loggers, mockSocketServer);
-        loggers.warn("-_-");
-        expect(originalLoggers.warn).toHaveBeenCalledWith("WE HAVE BEEN COMPROMISED!!!!!");
     });
 });

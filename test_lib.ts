@@ -7,10 +7,19 @@ import { Server } from "node:http";
 import mongoose from "mongoose";
 import { io } from "socket.io-client";
 import { AUCManagerFactory } from "./AutoUpdateClientManagerClass.js";
-import { logger } from "@typegoose/typegoose/lib/logSettings.js";
+import {
+  AutoUpdatedClientObject,
+} from "./AutoUpdatedClientObjectClass.js";
+import {
+  Constructor,
+} from "./CommonTypes.js";
 import * as ServerClasses from "./tests/testData/ServerClasses/index.js";
 import * as ClientClasses from "./tests/testData/ClientClasses/index.js";
-import { SubordinateType } from "./tests/testData/types.js";
+
+import * as ServerTypes from "./ServerTypes.js";
+import * as ClientTypes from "./ClientTypes.js";
+
+mongoose.set('debug', true);
 
 export const initServerManagers = async () => {
   const server = new Server();
@@ -22,11 +31,17 @@ export const initServerManagers = async () => {
     next();
   });
 
-  await mongoose.connect("mongodb://localhost:27017/GeoDB", {
-    timeoutMS: 5000,
-  });
+  if (mongoose.connection.readyState === 0) {
+      await mongoose.connect("mongodb://localhost:27017/GeoDB", {
+        serverSelectionTimeoutMS: 5000,
+      });
+  }
+
   const managers = await AUSManagerFactory(
     {
+      Test: {
+        class: ServerTypes.Test,
+      },
       Company: {
         class: ServerClasses.Company,
       },
@@ -76,12 +91,15 @@ export const initClientManagers = async (id: string) => {
     auth: {
       token: id,
     },
+    reconnection: false,
   });
 
   const managers = await AUCManagerFactory(
     {
+      Test: ClientTypes.Test,
       Subordinate: ClientClasses.Subordinate,
       Company: ClientClasses.Company,
+      Construction: ClientClasses.Construction,
     },
     {
       debug: (msg: string) => console.log("CLIENT " + msg),
@@ -103,14 +121,16 @@ export const initFullServerManagers = async (port: number = 3002) => {
     next();
   });
 
-  await mongoose.connect("mongodb://localhost:27017/GeoDB_Full", {
-    timeoutMS: 5000,
-  });
+  if (mongoose.connection.readyState === 0) {
+      await mongoose.connect("mongodb://localhost:27017/GeoDB_Full", {
+        serverSelectionTimeoutMS: 5000,
+      });
+  }
   
   const defs: any = {};
   for (const [name, cls] of Object.entries(ServerClasses)) {
-    if (typeof cls === 'function' && cls.prototype instanceof ServerClasses.AutoUpdatedServerObject) {
-       defs[name] = { class: cls };
+    if (typeof cls === 'function' && cls.prototype instanceof (ServerClasses as any).AutoUpdatedServerObject) {
+       defs[name] = { class: cls as any };
     }
   }
 
@@ -133,12 +153,13 @@ export const initFullClientManagers = async (port: number = 3002) => {
     auth: {
       token: "FullClient",
     },
+    reconnection: false,
   });
 
-  const defs: any = {};
+  const defs: Record<string, Constructor<AutoUpdatedClientObject<any>>> = {};
   for (const [name, cls] of Object.entries(ClientClasses)) {
-    if (typeof cls === 'function' && cls.prototype instanceof ClientClasses.AutoUpdatedClientObject) {
-       defs[name] = cls;
+    if (typeof cls === 'function' && cls.prototype instanceof (ClientClasses as any).AutoUpdatedClientObject) {
+       defs[name] = cls as Constructor<AutoUpdatedClientObject<any>>;
     }
   }
 
@@ -154,4 +175,3 @@ export const initFullClientManagers = async (port: number = 3002) => {
   );
   return { managers, socket };
 };
-

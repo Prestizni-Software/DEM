@@ -11,7 +11,7 @@ import { ProtocolTask } from "./ProtocolTask.js";
 import { Subordinate } from "./Subordinate.js";
 import { AutoUpdatedClientObject } from "../../../AutoUpdatedClientObjectClass.js";
 
-export class Protocol extends AutoUpdatedClientObject<any> {
+export class Protocol extends AutoUpdatedClientObject<Protocol> {
   @classProp
   public _id!: MongoId;
 
