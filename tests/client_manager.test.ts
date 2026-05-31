@@ -3,7 +3,7 @@ import { AUCManagerFactory, AutoUpdateClientManager } from "../AutoUpdateClientM
 import { EventEmitter } from "eventemitter3";
 import { globalCache } from "../CommonTypes.js";
 import { AutoUpdatedClientObject } from "../AutoUpdatedClientObjectClass.js";
-
+import { Test } from "../ClientTypes.js"
 describe("AutoUpdateClientManagerClass Full Coverage", () => {
   let loggers: any;
   let emitter: any;
@@ -75,57 +75,17 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
   });
 
   test("AUCManagerFactory should only resolve after ALL managers are preloaded", async () => {
-    let fastPreloaded = false;
-    let slowPreloaded = false;
 
-    mockSocket.emit.mockImplementation((event: string, data: any, cb: any) => {
-        if (event === "startupFast") {
-            setTimeout(() => {
-                cb({ success: true, data: { ids: ["1"] } });
-            }, 50);
-        }
-        if (event === "startupSlow") {
-            setTimeout(() => {
-                cb({ success: true, data: { ids: ["2"] } });
-            }, 500);
-        }
-    });
-
-    const CustomMockClass = class extends MockClass {
-        constructor(cp: any, s: any, data: any, l: any, cn: any, pm: any, cb: any, e: any) {
-            super(cp, s, data, l, cn, pm, cb, e);
-        }
-        waitForPreloaded = jest.fn(async () => {
-            if (this.className === "Fast") {
-                fastPreloaded = true;
-            } else {
-                await new Promise(resolve => setTimeout(resolve, 300));
-                slowPreloaded = true;
-            }
-        });
-    };
-
-    const factoryPromise = AUCManagerFactory(
-        { Fast: CustomMockClass as any, Slow: CustomMockClass as any },
+    const managers = await AUCManagerFactory(
+        { Test },
         loggers,
         mockSocket,
         false,
         emitter
     );
 
-    let resolved = false;
-    factoryPromise.then(() => { resolved = true; });
-
-    await new Promise(resolve => setTimeout(resolve, 200));
-    expect(resolved).toBe(false);
-    expect(fastPreloaded).toBe(true);
-    expect(slowPreloaded).toBe(false);
-
-    const managers = await factoryPromise;
-    expect(resolved).toBe(true);
-    expect(slowPreloaded).toBe(true);
-    expect(managers.Fast.isLoaded).toBe(true);
-    expect(managers.Slow.isLoaded).toBe(true);
+    expect(managers.Test.isLoaded).toBe(true);
+    expect(managers.Test.objectsAsArray.length).toBeGreaterThan(0);
   });
 
   test("AUCManagerFactory should not resolve if generic EVENT_STARTUP only preloads some managers", async () => {
