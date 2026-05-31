@@ -55,6 +55,7 @@ export abstract class AutoUpdatedClientObject<
   protected isLoading = true;
   protected isLoadingReferences = true;
   protected checkedMissingRefs = false;
+  protected isDestroyed = false;
   protected readonly emitter: EventEmitter3;
   public readonly properties: (keyof IsData<T> & string)[];
   public readonly classParam: Constructor<T>;
@@ -63,6 +64,7 @@ export abstract class AutoUpdatedClientObject<
   private readonly EmitterID = new ObjectId().toHexString();
   protected readonly toChangeOnParents: { key: string; value: unknown }[] = [];
   public callbacks: DEMClientCallbacks<T>;
+  private readonly preloadTimers = new Set<NodeJS.Timeout>();
 
   private readonly loadReferencesAsync = async (): Promise<void> => {
     try {
@@ -147,93 +149,99 @@ export abstract class AutoUpdatedClientObject<
       progress: () => {},
     };
 
-    if (typeof data === "string") {
-      this.data = { _id: data } as any;
-    } else {
-      this.data = data as IsData<T>;
-    }
-
-    const currentId = this.data?._id?.toString() ?? "not loaded";
-    this.loggers = {
-      debug: (s: string) =>
-        loggers.debug?.(`[${this.className}: ${currentId}] ${s}`),
-      info: (s: string) =>
-        loggers.info?.(`[${this.className}: ${currentId}] ${s}`),
-      warn: (s: string) =>
-        loggers.warn?.(`[${this.className}: ${currentId}] ${s}`),
-      error: (s: string) =>
-        loggers.error?.(`[${this.className}: ${currentId}] ${s}`),
-    };
-
-    if (typeof data === "string") {
-      if (this.isServer) {
-        this.isLoading = false;
-        this.generateSettersAndGetters();
-        this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
-        return;
-      }
-      this.socket.emit(
-        EVENT_GET + this.className + data,
-        null,
-        async (res: ServerResponse<T>) => {
-          if (!res.success) {
-            this.isLoading = false;
-            this.emitter.emit(
-              EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
-              true,
-              res.message,
-            );
-            return;
-          }
-          this.data = res.data as IsData<T>;
-          this.generateSettersAndGetters();
-          this.isLoading = false;
-          await this.onUpdate();
-          this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
-          this.openSockets();
-        },
-      );
-    } else {
-      const currentDataRec = this.data as Record<string, unknown>;
-      for (const key of this.properties) {
-        const isRef = getMetadataRecursive("isRef", this, key);
-        if (isRef && currentDataRec[key]) {
-          if (Array.isArray(currentDataRec[key])) {
-            currentDataRec[key] = (currentDataRec[key] as any[]).map(
-              (obj) => obj._id?.toString() ?? obj?.toString(),
-            );
-          } else {
-            currentDataRec[key] =
-              (currentDataRec[key] as any)?._id?.toString() ??
-              currentDataRec[key]?.toString();
-          }
-        }
-      }
-
-      if (
-        (!currentDataRec["_id"] || currentDataRec["_id"] === "") &&
-        !this.isServer
-      ) {
-        this.isLoading = true;
-        this.handleNewObject(this.data);
+    try {
+      if (typeof data === "string") {
+        this.data = { _id: data } as any;
       } else {
-        this.isLoading = false;
-        this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
-        if (!this.isServer) {
-          this.openSockets();
-          this.onUpdate();
+        this.data = data as IsData<T>;
+      }
+
+      const currentId = this.data?._id?.toString() ?? "not loaded";
+      this.loggers = {
+        debug: (s: string) =>
+          loggers.debug?.(`[${this.className}: ${currentId}] ${s}`),
+        info: (s: string) =>
+          loggers.info?.(`[${this.className}: ${currentId}] ${s}`),
+        warn: (s: string) =>
+          loggers.warn?.(`[${this.className}: ${currentId}] ${s}`),
+        error: (s: string) =>
+          loggers.error?.(`[${this.className}: ${currentId}] ${s}`),
+      };
+
+      if (typeof data === "string") {
+        if (this.isServer) {
+          this.isLoading = false;
+          this.generateSettersAndGetters();
+          this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
+          return;
+        }
+        this.socket.emit(
+          EVENT_GET + this.className + data,
+          null,
+          async (res: ServerResponse<T>) => {
+            if (this.isDestroyed) return;
+            if (!res.success) {
+              this.isLoading = false;
+              this.emitter.emit(
+                EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
+                true,
+                res.message,
+              );
+              return;
+            }
+            this.data = res.data as IsData<T>;
+            this.generateSettersAndGetters();
+            this.isLoading = false;
+            await this.onUpdate();
+            this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
+            this.openSockets();
+          },
+        );
+      } else {
+        const currentDataRec = this.data as Record<string, unknown>;
+        for (const key of this.properties) {
+          const isRef = getMetadataRecursive("isRef", this, key);
+          if (isRef && currentDataRec[key]) {
+            if (Array.isArray(currentDataRec[key])) {
+              currentDataRec[key] = (currentDataRec[key] as any[]).map(
+                (obj) => obj._id?.toString() ?? obj?.toString(),
+              );
+            } else {
+              currentDataRec[key] =
+                (currentDataRec[key] as any)?._id?.toString() ??
+                currentDataRec[key]?.toString();
+            }
+          }
+        }
+
+        if (
+          (!currentDataRec["_id"] || currentDataRec["_id"] === "") &&
+          !this.isServer
+        ) {
+          this.isLoading = true;
+          this.handleNewObject(this.data);
+        } else {
+          this.isLoading = false;
+          this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
+          if (!this.isServer) {
+            this.openSockets();
+            this.onUpdate();
+          }
         }
       }
-    }
 
-    this.generateSettersAndGetters();
-    // Ensure setters/getters are set after child constructor
-    Promise.resolve().then(() => {
       this.generateSettersAndGetters();
-    });
+      // Ensure setters/getters are set after child constructor
+      Promise.resolve().then(() => {
+        if (!this.isDestroyed) this.generateSettersAndGetters();
+      });
 
-    if (!this.isServer && !this.isLoaded) {
-        this.loadShit();
+      if (!this.isServer && !this.isLoaded) {
+          this.loadShit();
+      }
+    } catch (e) {
+      this.destroyImmediate();
+      throw e;
     }
     }
 
@@ -241,12 +249,15 @@ export abstract class AutoUpdatedClientObject<
     if (this.isLoaded) return;
     return new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
+          this.preloadTimers.delete(timer);
           this.emitter.off(EVENT_INTERNAL_PRE_LOADED + this.EmitterID, onPreloaded);
           reject(new Error(`Timeout waiting for preloaded: ${this.className}`));
       }, 10000);
+      this.preloadTimers.add(timer);
 
       const onPreloaded = (failed: boolean, reason: string) => {
           clearTimeout(timer);
+          this.preloadTimers.delete(timer);
           if (failed) reject(new Error(reason));
           else resolve();
       };
@@ -686,6 +697,11 @@ export abstract class AutoUpdatedClientObject<
   public async destroy(
     once: boolean = false,
   ): Promise<{ success: boolean; message: string }> {
+    for (const timer of this.preloadTimers) {
+        clearTimeout(timer);
+    }
+    this.preloadTimers.clear();
+
     const dataRec = this.data as Record<string, unknown>;
     const id = dataRec ? (dataRec["_id"] as MongoId | undefined) : undefined;
     if (!id) return { success: false, message: "Missing _id" };
@@ -712,6 +728,15 @@ export abstract class AutoUpdatedClientObject<
         },
       );
     });
+  }
+
+  public destroyImmediate() {
+    this.isDestroyed = true;
+    for (const timer of this.preloadTimers) {
+        clearTimeout(timer);
+    }
+    this.preloadTimers.clear();
+    this.isLoading = false;
   }
 
   private async checkForMissingRefs() {

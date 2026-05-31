@@ -58,69 +58,37 @@ export async function AUCManagerFactory<
     manager.startSocketListeners();
   }
 
-  return new Promise((resolve) => {
-      let resolved = false;
-      const individualFinished = new Set<string>();
+  const individualStartup = Promise.all(Object.entries(managers).map(([key, manager]) => {
+      return new Promise<void>((res) => {
+          if (!socket || typeof socket.emit !== 'function') return res();
 
-      const done = (force = false) => {
-          if (resolved) return;
-          
-          const allReady = Object.entries(managers).every(([key, m]) => 
-              m.isLoaded || individualFinished.has(key)
-          );
-
-          if (force || allReady) {
-              resolved = true;
-              resolve(managers);
-          }
-      };
-
-      const individualStartup = Promise.all(Object.entries(managers).map(([key, manager]) => {
-          return new Promise<void>((res) => {
-              if (!socket || typeof socket.emit !== 'function') return res();
-
-              const timer = setTimeout(res, 3000);
-              socket.emit(EVENT_STARTUP + key, null, async (response: ServerResponse<any>) => {
-                  clearTimeout(timer);
-                  individualFinished.add(key);
-                  if (response.success && response.data) {
-                      const data = response.data.ids || (Array.isArray(response.data) ? response.data : []);
-                      await (manager).preLoad(data);
-                  } else if (!response.success) {
-                      loggers?.error?.("Error starting up " + key + ": " + response.message);
-                  }
-                  done();
-                  res();
-              });
-          });
-      }));
-
-      if (socket && typeof socket.on === 'function') {
-          socket.on(EVENT_STARTUP, async (data: Record<string, any[]>) => {
-              if (data) {
-                  const promises = Object.entries(managers).map(async ([key, manager]) => {
-                      if (!(manager).isLoaded && data[key]) {
-                          individualFinished.add(key);
-                          await (manager).preLoad(data[key]);
-                      }
-                  });
-                  await Promise.all(promises);
+          socket.emit(EVENT_STARTUP + key, null, async (response: ServerResponse<any>) => {
+              if (response.success && response.data) {
+                  const data = response.data.ids || (Array.isArray(response.data) ? response.data : []);
+                  await (manager).preLoad(data);
+              } else if (!response.success) {
+                  loggers?.error?.("Error starting up " + key + ": " + response.message);
               }
-              done();
+              res();
           });
-      }
-
-      const fallbackTimer = setTimeout(() => done(true), 5000);
-
-      const finish = () => {
-          clearTimeout(fallbackTimer);
-          done();
-      };
-
-      individualStartup.then(() => {
-          setTimeout(finish, 100);
       });
-  });
+  }));
+
+  if (socket && typeof socket.on === 'function') {
+      socket.on(EVENT_STARTUP, async (data: Record<string, any[]>) => {
+          if (data) {
+              const promises = Object.entries(managers).map(async ([key, manager]) => {
+                  if (!(manager).isLoaded && data[key]) {
+                      await (manager).preLoad(data[key]);
+                  }
+              });
+              await Promise.all(promises);
+          }
+      });
+  }
+
+  await individualStartup;
+  return managers;
 }
 
 export class AutoUpdateClientManager<
@@ -226,8 +194,9 @@ export class AutoUpdateClientManager<
   }
 
   public async createObject(data: Omit<IsData<T>, "_id">): Promise<T> {
+    let obj: T | undefined;
     try {
-        const obj = new this.classParam(
+        obj = new this.classParam(
           this.classParam,
           this.socket,
           data,
@@ -248,6 +217,7 @@ export class AutoUpdateClientManager<
         await this.callbacks.new(obj);
         return obj;
     } catch (error: any) {
+        if (obj) (obj as any).destroyImmediate?.();
         this.loggers?.error?.("Error creating object: " + error.message);
         throw error;
     }
@@ -304,5 +274,10 @@ export class AutoUpdateClientManager<
   public async loadFromServer() {
       this.loggers?.error?.("loadFromServer property mismatch");
       throw new Error("Property mismatch or not implemented");
+  }
+
+  public async close() {
+      Object.values(this.objects_).forEach(obj => obj.destroyImmediate());
+      this.objects_ = {};
   }
 }

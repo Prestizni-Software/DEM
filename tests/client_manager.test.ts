@@ -10,8 +10,10 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
   let mockSocket: any;
   let MockClass: any;
   let callbacks: any;
+  let managersToClose: any[] = [];
 
   beforeEach(() => {
+    managersToClose = [];
     loggers = { info: jest.fn(), debug: jest.fn(), error: jest.fn(), warn: jest.fn() };
     emitter = new EventEmitter();
     mockSocket = {
@@ -37,6 +39,13 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
     Reflect.defineMetadata("props", ["_id"], MockClass.prototype);
   });
 
+  afterEach(async () => {
+    for (const m of managersToClose) {
+        if (typeof m.close === 'function') await m.close();
+    }
+    for (const key in globalCache.objects) delete globalCache.objects[key];
+  });
+
   test("AUCManagerFactory success", async () => {
     mockSocket.emit.mockImplementation((event: string, data: any, cb: any) => {
       if (event === "startupTest") {
@@ -51,12 +60,14 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
       false,
       emitter
     );
+    Object.values(managers).forEach(m => managersToClose.push(m));
 
     expect(managers.Test).toBeDefined();
   });
 
   test("AUCManagerFactory with disableDEMDebugMessages", async () => {
-    await AUCManagerFactory({}, loggers, mockSocket, true);
+    const managers = await AUCManagerFactory({}, loggers, mockSocket, true);
+    Object.values(managers).forEach(m => managersToClose.push(m));
   });
 
   test("AUCManagerFactory load error", async () => {
@@ -66,11 +77,12 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
         }
       });
   
-      await AUCManagerFactory(
+      const managers = await AUCManagerFactory(
         { Test: MockClass as any },
         loggers,
         mockSocket
       );
+      Object.values(managers).forEach(m => managersToClose.push(m));
       expect(loggers.error).toHaveBeenCalled();
   });
 
@@ -78,6 +90,7 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
     const manager = new AutoUpdateClientManager(
         MockClass as any, "Test", mockSocket, loggers, {}, emitter, callbacks
     );
+    managersToClose.push(manager);
     (manager as any).startSocketListeners();
     
     expect(mockSocket.on).toHaveBeenCalledWith("newTest", expect.any(Function));
@@ -100,6 +113,7 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
     const manager = new AutoUpdateClientManager(
         MockClass as any, "Test", mockSocket, loggers, {}, emitter, callbacks
     );
+    managersToClose.push(manager);
 
     await expect(manager.loadFromServer()).rejects.toThrow();
     expect(loggers.error).toHaveBeenCalled();
@@ -109,6 +123,7 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
     const manager = new AutoUpdateClientManager(
         MockClass as any, "Test", mockSocket, loggers, {}, emitter, callbacks
     );
+    managersToClose.push(manager);
     
     mockSocket.emit.mockImplementation((event: string, data: any, cb: any) => {
         if (event === "getTest123") {
@@ -125,6 +140,7 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
     const manager = new AutoUpdateClientManager(
         MockClass as any, "Test", mockSocket, loggers, {}, emitter, callbacks
     );
+    managersToClose.push(manager);
     
     mockSocket.emit.mockImplementation((event: string, data: any, cb: any) => {
         if (event === "getTest999") {
@@ -139,6 +155,7 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
     const manager = new AutoUpdateClientManager(
         MockClass as any, "Test", mockSocket, loggers, {}, emitter, callbacks
     );
+    managersToClose.push(manager);
     
     const obj = await manager.createObject({ _id: "123" } as any);
     expect(obj).toBeDefined();
@@ -146,17 +163,21 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
   });
 
   test("createObject failure", async () => {
+    let failedObj: any;
     const BadClass = class extends MockClass {
         constructor(cp: any, s: any, data: any, l: any, cn: any, pm: any, cb: any, e: any) {
             super(cp, s, data, l, cn, pm, cb, e);
+            failedObj = this;
             throw new Error("Fail");
         }
     };
     const badManager = new AutoUpdateClientManager(
         BadClass as any, "Test", mockSocket, loggers, {}, emitter, callbacks
     );
+    managersToClose.push(badManager);
 
     await expect(badManager.createObject({} as any)).rejects.toThrow();
+    if (failedObj) failedObj.destroyImmediate();
     expect(loggers.error).toHaveBeenCalled();
   });
 
@@ -164,6 +185,7 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
     const manager = new AutoUpdateClientManager(
         MockClass as any, "Test", mockSocket, loggers, {}, emitter, callbacks
     );
+    managersToClose.push(manager);
     const obj = new MockClass(MockClass, mockSocket, "1", loggers, "Test", manager, callbacks, emitter);
     (manager as any).objects_["1"] = obj;
     
