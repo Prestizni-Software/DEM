@@ -58,8 +58,6 @@ export abstract class AutoUpdateManager<
       loggers?.error?.("[DEM - " + className + " MANAGER] " + s);
     this.loggers.warn = (s: string) =>
       loggers?.warn?.("[DEM - " + className + " MANAGER] " + s);
-
-    this.loggers.info("Created manager");
   }
 
   public get isLoaded() {
@@ -76,9 +74,15 @@ export abstract class AutoUpdateManager<
   }
 
   public async loadReferences(): Promise<void> {
-    await Promise.all(
-      this.objectsAsArray.map((obj) => obj.loadMissingReferences()),
-    );
+    const objects = this.objectsAsArray;
+    // Sequential resolution to avoid race conditions during batch load
+    for (const obj of objects) {
+      if (typeof (obj as any).resolveReferences === "function") {
+        await (obj as any).resolveReferences();
+      } else {
+        await obj.loadMissingReferences();
+      }
+    }
     this.isLoaded_ = true;
   }
 

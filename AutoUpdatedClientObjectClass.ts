@@ -248,16 +248,8 @@ export abstract class AutoUpdatedClientObject<
     public async waitForPreloaded() {
     if (this.isLoaded) return;
     return new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-          this.preloadTimers.delete(timer);
-          this.emitter.off(EVENT_INTERNAL_PRE_LOADED + this.EmitterID, onPreloaded);
-          reject(new Error(`Timeout waiting for preloaded: ${this.className}`));
-      }, 10000);
-      this.preloadTimers.add(timer);
 
       const onPreloaded = (failed: boolean, reason: string) => {
-          clearTimeout(timer);
-          this.preloadTimers.delete(timer);
           if (failed) reject(new Error(reason));
           else resolve();
       };
@@ -320,6 +312,7 @@ export abstract class AutoUpdatedClientObject<
   }
 
   public async loadMissingReferences(): Promise<void> {
+    this.loggers.debug?.(`loadMissingReferences for ${this.className}:${this._id}`);
     await this.checkForMissingRefs();
     this.generateSettersAndGetters();
   }
@@ -410,14 +403,20 @@ export abstract class AutoUpdatedClientObject<
     if (!id || !this.parentManager) return undefined;
     const idStr = id.toString();
     const cacheRec = this.parentManager.cache.references as Record<string, any>;
-    if (cacheRec[key]) return cacheRec[key].getObject(idStr);
+    if (cacheRec[key]) {
+        const obj = cacheRec[key].getObject(idStr);
+        if (obj) return obj;
+    }
+    
     for (const manager of Object.values(this.parentManager.managers)) {
       const result = (manager as any).getObject(idStr);
       if (result) {
+        this.loggers.debug?.(`findReference: Resolved ${idStr} for ${key} in manager ${manager.className}`);
         cacheRec[key] = manager;
         return result;
       }
     }
+    this.loggers.warn?.(`findReference: Could NOT resolve ${idStr} for property ${key} in any manager.`);
     return undefined;
   }
 
@@ -501,15 +500,11 @@ export abstract class AutoUpdatedClientObject<
         return resolve({ success: false, msg: "Socket not available" });
       }
 
-      const timeout = setTimeout(() => {
-        resolve({ success: false, msg: "Timeout waiting for server response" });
-      }, 5000);
 
       this.socket.emit(
         EVENT_UPDATE + this.className + id.toString(),
         { _id: id.toString(), key, value },
         (res: ServerResponse<never>) => {
-          clearTimeout(timeout);
           resolve({
             success: res.success,
             msg: res.message ?? (res.success ? "Success" : "Error"),
@@ -645,6 +640,7 @@ export abstract class AutoUpdatedClientObject<
 
   public async onUpdate(noUpdate: boolean = false) {
     if (noUpdate) return;
+    try {
     await this.callbacks?.onUpdate?.(
       this as unknown as T,
       (key: any, val: any) => {
@@ -655,6 +651,9 @@ export abstract class AutoUpdatedClientObject<
         });
       },
     );
+    } catch (error) {
+      this.loggers.error(`[onUpdate] ${error}`);
+    }
   }
 
   protected async createdWithParent(pointer: string[], parent: T | string) {
@@ -712,18 +711,10 @@ export abstract class AutoUpdatedClientObject<
         return resolve({ success: false, message: "Socket not available" });
       }
 
-      const timeout = setTimeout(() => {
-        resolve({
-          success: false,
-          message: "Timeout waiting for server deletion",
-        });
-      }, 5000);
-
       this.socket.emit(
         EVENT_DELETE + this.className,
         id.toString(),
         (res: ServerResponse<undefined>) => {
-          clearTimeout(timeout);
           resolve({ success: res.success, message: res.message ?? "" });
         },
       );
@@ -757,7 +748,10 @@ export abstract class AutoUpdatedClientObject<
     if (this.checkedMissingRefs || !this.parentManager) return;
     this.checkedMissingRefs = true;
     const ac = this.parentManager.managers[pointer[0]];
-    if (!ac) return;
+    if (!ac) {
+        this.loggers.warn?.(`findMissingObjectReference: Manager ${pointer[0]} not found for pointer ${pointer.join(":")}`);
+        return;
+    }
 
     const dataRec = this.data as Record<string, unknown>;
     const targetId = dataRec
@@ -768,6 +762,7 @@ export abstract class AutoUpdatedClientObject<
       (ac as any).objects,
     ) as AutoUpdatedClientObject<any, any>[];
 
+    this.loggers.debug?.(`findMissingObjectReference: Checking ${allObjects.length} objects in ${pointer[0]} for child link on ${pointer[1]}`);
     for (const obj of allObjects) {
       if (!obj.isLoaded) await obj.waitForPreloaded();
       const val = obj.getValue(pointer[1] as any);
@@ -777,28 +772,53 @@ export abstract class AutoUpdatedClientObject<
         ? (val as any[]).map((v) => (v as any)._id?.toString() ?? v.toString())
         : [(val as any)._id?.toString() ?? (val as any).toString()];
       if (ids.includes(targetId)) {
+        this.loggers.info?.(`findMissingObjectReference: Found parent ${obj.className}:${obj._id} for property ${prop}`);
         dataRec[prop] = (obj as any)._id;
         return;
       }
     }
+    this.loggers.debug?.(`findMissingObjectReference: Finished checking ${pointer[0]} for ${targetId}, no parent found yet.`);
+  }
+
+  public async resolveReferences() {
+    this.loggers.debug?.(`Starting resolveReferences for ${this.className}:${this._id}`);
+    await this.loadMissingReferences();
+    await this.contactChildren();
+    this.loggers.debug?.(`Finished resolveReferences for ${this.className}:${this._id}`);
   }
 
   public async contactChildren() {
+    if (!this.parentManager) return;
+    this.loggers.debug?.(`contactChildren for ${this.className}:${this._id}`);
     for (const prop of this.properties) {
       const isRef = getMetadataRecursive("isRef", this, prop.toString());
       const pointer = getMetadataRecursive("refsTo", this, prop.toString());
       if (!isRef || pointer) continue;
 
-      const obj = this.getValue(prop);
-      if (!obj) continue;
+      const val = this.getValue(prop as any);
+      if (!val) continue;
 
-      const children = Array.isArray(obj) ? obj : [obj];
-      for (const child of children) {
+      const idsOrObjs = Array.isArray(val) ? val : [val];
+      for (const item of idsOrObjs) {
+        if (!item) continue;
+        let childObj: any = item;
+        if (typeof item === "string" || item instanceof ObjectId) {
+            const idStr = item.toString();
+            this.loggers.debug?.(`contactChildren searching for child ${idStr} (prop: ${prop})`);
+            for (const manager of Object.values(this.parentManager.managers)) {
+                childObj = (manager as any).getObject(idStr);
+                if (childObj) break;
+            }
+        }
+        
         if (
-          child &&
-          typeof (child as any).loadMissingReferences === "function"
+          childObj &&
+          typeof (childObj as any).loadMissingReferences === "function"
         ) {
-          await (child as any).loadMissingReferences();
+          this.loggers.debug?.(`contactChildren triggering resolution for child ${childObj.className}:${childObj._id}`);
+          await (childObj as any).loadMissingReferences();
+        } else if (!childObj) {
+            this.loggers.warn?.(`contactChildren could NOT find child ${item} for property ${prop}`);
         }
       }
     }

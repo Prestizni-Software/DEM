@@ -36,14 +36,14 @@ export interface IAutoUpdateServerManager<
   T extends AutoUpdatedServerObject<T, any> = any,
   M extends Record<string, any> = any,
 > {
-    readonly className: string;
-    getObject(id?: string): T | null | undefined;
-    readonly objectsAsArray: T[];
-    readonly managers: M;
-    readonly model: any;
-    options?: AUSOption<T, M>;
-    createObject(data: Omit<IsData<T>, "_id">): Promise<T>;
-    deleteObject(id: MongoId): Promise<{ success: boolean; message: string }>;
+  readonly className: string;
+  getObject(id?: string): T | null | undefined;
+  readonly objectsAsArray: T[];
+  readonly managers: M;
+  readonly model: any;
+  options?: AUSOption<T, M>;
+  createObject(data: Omit<IsData<T>, "_id">): Promise<T>;
+  deleteObject(id: MongoId): Promise<{ success: boolean; message: string }>;
 }
 
 /**
@@ -57,10 +57,7 @@ export type BaseManagers = Record<string, IAutoUpdateServerManager>;
 export type ManagersRecord<
   T extends Record<string, Constructor<AutoUpdatedServerObject<any, any>>>,
 > = {
-  [K in keyof T]: AutoUpdateServerManager<
-    InstanceOf<T[K]>,
-    ManagersRecord<T>
-  >;
+  [K in keyof T]: AutoUpdateServerManager<InstanceOf<T[K]>, ManagersRecord<T>>;
 };
 
 export type WrappedInstances<
@@ -76,20 +73,12 @@ export type AUSDefinitions<
 export type EventMiddlewareFunction<
   M extends BaseManagers,
   C extends AutoUpdatedServerObject<any, M>,
-> = (
-  event: DEMEvent<C, M>,
-  managers: M,
-  socket: Socket,
-) => Promise<void>;
+> = (event: DEMEvent<C, M>, managers: M, socket: Socket) => Promise<void>;
 
 export type StartupMiddlewareFunction<
   C extends AutoUpdatedServerObject<any, any>,
   M extends BaseManagers,
-> = (
-  objects: C[],
-  managers: M,
-  socket: Socket,
-) => Promise<C[]>;
+> = (objects: C[], managers: M, socket: Socket) => Promise<C[]>;
 
 export type AccessMiddleware<
   C extends AutoUpdatedServerObject<any, any>,
@@ -169,9 +158,9 @@ export async function AUSManagerFactory<
 >(
   defs: {
     [K in keyof T]: {
-        class: T[K];
-        options?: AUSOption<InstanceOf<T[K]>, ManagersRecord<T>>;
-    }
+      class: T[K];
+      options?: AUSOption<InstanceOf<T[K]>, ManagersRecord<T>>;
+    };
   },
   loggers: LoggersType,
   socket: Server,
@@ -180,7 +169,7 @@ export async function AUSManagerFactory<
   models?: any,
 ): Promise<ManagersRecord<T>> {
   readyLoggers(loggers);
-  
+
   type M = ManagersRecord<T>;
   const managers = {} as M;
 
@@ -197,14 +186,19 @@ export async function AUSManagerFactory<
       emitter,
       def.options as any,
     );
-    (managers as any)[key] = manager;
+    managers[key] = manager as any;
   }
 
   for (const manager of Object.values(managers)) {
     try {
-        await (manager as any).preLoad();
+      await manager.preLoad();
     } catch (error: any) {
-        loggers?.error?.("Error preloading manager: " + (manager as any).className + " - " + error.message);
+      loggers?.error?.(
+        "Error preloading manager: " +
+          manager.className +
+          " - " +
+          error.message,
+      );
     }
   }
 
@@ -212,27 +206,13 @@ export async function AUSManagerFactory<
     loggers?.debug?.(`Client connected: ${clientSocket.id}`);
     const startupData: Record<string, any[]> = {};
 
-    for (const [key, manager] of Object.entries(managers)) {
-        let objects = (manager as any).objectsAsArray;
-        const options = (manager as any).options as AUSOption<any, M>;
-        if (options?.accessDefinitions?.startupMiddleware) {
-            try {
-                objects = await options.accessDefinitions.startupMiddleware(
-                    objects,
-                    managers as M,
-                    clientSocket
-                );
-            } catch (error: any) {
-                loggers?.error?.(`Error in startupMiddleware for ${key}: ${error.message}`);
-                objects = [];
-            }
-        }
-        startupData[key] = objects.map((obj: any) => obj.extractedData);
-        (manager as any).registerSocket(clientSocket);
+    for (const manager of Object.values(managers)) {
+      await manager.loadReferences();
+      manager.registerSocket(clientSocket);
     }
 
-    if (typeof clientSocket.emit === 'function') {
-        clientSocket.emit(EVENT_STARTUP, startupData);
+    if (typeof clientSocket.emit === "function") {
+      clientSocket.emit(EVENT_STARTUP, startupData);
     }
 
     clientSocket.on("disconnect", () => {
@@ -263,7 +243,14 @@ export class AutoUpdateServerManager<
     emitter: EventEmitter3,
     options?: AUSOption<T, M>,
   ) {
-    super(classParam, className, socket as unknown as IDEMSocket, loggers, managers, emitter);
+    super(
+      classParam,
+      className,
+      socket as unknown as IDEMSocket,
+      loggers,
+      managers,
+      emitter,
+    );
     this.managers = managers;
     this.model = model;
     this.options = options;
@@ -290,15 +277,22 @@ export class AutoUpdateServerManager<
       };
     }
     this.isLoaded_ = true;
+    this.loggers.info(
+      `Created manager [${Object.keys(this.objects_).length}/${docs.length}]`,
+    );
   }
 
   public registerSocket(socket: Socket) {
     this.clientSockets.add(socket);
 
     const runMiddleware = async (event: DEMEvent<T, M>) => {
-        if (this.options?.accessDefinitions?.eventMiddleware) {
-            await this.options.accessDefinitions.eventMiddleware(event, this.managers as any, socket);
-        }
+      if (this.options?.accessDefinitions?.eventMiddleware) {
+        await this.options.accessDefinitions.eventMiddleware(
+          event,
+          this.managers as any,
+          socket,
+        );
+      }
     };
 
     socket.on(
@@ -310,89 +304,132 @@ export class AutoUpdateServerManager<
         ) => void,
       ) => {
         try {
-          const objects = await (this.options?.accessDefinitions?.startupMiddleware?.(
-            this.objectsAsArray,
-            this.managers as any,
-            socket,
-          ) ?? Promise.resolve(this.objectsAsArray));
-          
+          const objects =
+            await (this.options?.accessDefinitions?.startupMiddleware?.(
+              this.objectsAsArray,
+              this.managers as any,
+              socket,
+            ) ?? Promise.resolve(this.objectsAsArray));
+
           const ids = objects.map((obj) => obj._id.toString());
-          if (typeof ack === 'function') {
-              ack({
-                data: { ids, properties: this.properties },
-                success: true,
-              });
+          if (typeof ack === "function") {
+            ack({
+              data: { ids, properties: this.properties },
+              success: true,
+            });
           }
         } catch (error: any) {
-          if (typeof ack === 'function') {
+          if (typeof ack === "function") {
             ack({ success: false, message: error.message });
           }
         }
       },
     );
 
-    socket.on(EVENT_NEW + this.className, async (data: Omit<IsData<T>, "_id">, ack: (res: ServerResponse<T>) => void) => {
+    socket.on(
+      EVENT_NEW + this.className,
+      async (
+        data: Omit<IsData<T>, "_id">,
+        ack: (res: ServerResponse<T>) => void,
+      ) => {
         try {
           // console.log("SERVER RECEIVED NEW for " + this.className, data);
-          await runMiddleware({ type: DEMEventTypes.new, manager: this, data, object: undefined });
+          await runMiddleware({
+            type: DEMEventTypes.new,
+            manager: this,
+            data,
+            object: undefined,
+          });
           const newObj = await this.createObject(data);
-          if (typeof ack === 'function') {
+          if (typeof ack === "function") {
             ack({ data: (newObj as any).extractedData, success: true });
           }
         } catch (error: any) {
-          if (typeof ack === 'function') {
+          if (typeof ack === "function") {
             ack({ success: false, message: error.message });
           }
         }
-    });
+      },
+    );
 
-    socket.on(EVENT_DELETE + this.className, async (id: string, ack: (res: ServerResponse<undefined>) => void) => {
+    socket.on(
+      EVENT_DELETE + this.className,
+      async (id: string, ack: (res: ServerResponse<undefined>) => void) => {
         try {
           // console.log("SERVER RECEIVED DELETE for " + this.className, id);
           const obj = this.getObject(id);
           if (obj) {
-              await runMiddleware({ type: DEMEventTypes.delete, manager: this, object: obj, data: undefined });
+            await runMiddleware({
+              type: DEMEventTypes.delete,
+              manager: this,
+              object: obj,
+              data: undefined,
+            });
           }
-          
+
           const delRes = await this.deleteObject(id as any);
-          if (typeof ack === 'function') {
-              ack({ success: delRes.success, data: undefined, message: delRes.message });
+          if (typeof ack === "function") {
+            ack({
+              success: delRes.success,
+              data: undefined,
+              message: delRes.message,
+            });
           }
         } catch (error: any) {
-          if (typeof ack === 'function') {
-              ack({ success: false, message: error.message });
+          if (typeof ack === "function") {
+            ack({ success: false, message: error.message });
           }
         }
-    });
+      },
+    );
 
     socket.onAny(async (eventName, ...args) => {
-        if (typeof eventName !== 'string') return;
-        const ack = args[args.length - 1];
-        
-        try {
-            if (eventName.startsWith(EVENT_UPDATE + this.className)) {
-                const id = eventName.replace(EVENT_UPDATE + this.className, "");
-                const data = args[0] as ServerUpdateRequest<T>;
-                if (!data || !data.key) return;
-                const obj = this.getObject(id);
-                if (!obj) return;
-                
-                await runMiddleware({ type: DEMEventTypes.update, manager: this, object: obj, data });
+      if (typeof eventName !== "string") return;
+      const ack = args[args.length - 1];
 
-                const res = await obj.setValue(data.key as any, data.value as any, { silent: false });
-                if (typeof ack === 'function') ack({ data: (obj as any).extractedData, success: res.success, message: res.msg });
-            } else if (eventName.startsWith(EVENT_GET + this.className)) {
-                const id = eventName.replace(EVENT_GET + this.className, "");
-                const obj = this.getObject(id);
-                if (!obj) return;
+      try {
+        if (eventName.startsWith(EVENT_UPDATE + this.className)) {
+          const id = eventName.replace(EVENT_UPDATE + this.className, "");
+          const data = args[0] as ServerUpdateRequest<T>;
+          if (!data || !data.key) return;
+          const obj = this.getObject(id);
+          if (!obj) return;
 
-                await runMiddleware({ type: DEMEventTypes.get, manager: this, object: obj, data: undefined });
+          await runMiddleware({
+            type: DEMEventTypes.update,
+            manager: this,
+            object: obj,
+            data,
+          });
 
-                if (typeof ack === 'function') ack({ data: (obj as any).extractedData, success: true });
-            }
-        } catch (error: any) {
-            if (typeof ack === 'function') ack({ success: false, message: error.message });
+          const res = await obj.setValue(data.key as any, data.value as any, {
+            silent: false,
+          });
+          if (typeof ack === "function")
+            ack({
+              data: (obj as any).extractedData,
+              success: res.success,
+              message: res.msg,
+            });
+        } else if (eventName.startsWith(EVENT_GET + this.className)) {
+          const id = eventName.replace(EVENT_GET + this.className, "");
+          const obj = this.getObject(id);
+          if (!obj) return;
+
+          await runMiddleware({
+            type: DEMEventTypes.get,
+            manager: this,
+            object: obj,
+            data: undefined,
+          });
+
+          if (typeof ack === "function")
+            ack({ data: (obj as any).extractedData, success: true });
         }
+      } catch (error: any) {
+        if (typeof ack === "function")
+          ack({ success: false, message: error.message });
+      }
     });
 
     socket.on("disconnect", () => {
@@ -414,23 +451,23 @@ export class AutoUpdateServerManager<
   }
 
   public async handleGetMissingObject(_id: string): Promise<T> {
-      if (!this.managers) throw new Error("No managers.");
-      if (this.objects_[_id]) return this.objects_[_id];
-      const doc = await this.model.findById(_id);
-      if (!doc) throw new Error(`No document with id ${_id} in DB.`);
-      const obj = await createAutoUpdatedClass<T>(
-        this.classParam,
-        this.className,
-        this.socket as any,
-        _id as any,
-        this.loggers,
-        this as any,
-        this.emitter,
-        doc as any,
-      );
-      this.objects_[_id] = obj;
-      globalCache.objects[_id] = { className: this.className, object: obj };
-      return obj;
+    if (!this.managers) throw new Error("No managers.");
+    if (this.objects_[_id]) return this.objects_[_id];
+    const doc = await this.model.findById(_id);
+    if (!doc) throw new Error(`No document with id ${_id} in DB.`);
+    const obj = await createAutoUpdatedClass<T>(
+      this.classParam,
+      this.className,
+      this.socket as any,
+      _id as any,
+      this.loggers,
+      this as any,
+      this.emitter,
+      doc as any,
+    );
+    this.objects_[_id] = obj;
+    globalCache.objects[_id] = { className: this.className, object: obj };
+    return obj;
   }
 
   public async createObject(data: Omit<IsData<T>, "_id">): Promise<T> {
@@ -450,28 +487,33 @@ export class AutoUpdateServerManager<
     );
     this.objects_[id] = obj;
     globalCache.objects[id] = { className: this.className, object: obj };
-    
-    (this.socket as any).emit(EVENT_NEW + this.className, (obj as any).extractedData);
+
+    (this.socket as any).emit(
+      EVENT_NEW + this.className,
+      (obj as any).extractedData,
+    );
 
     return obj;
   }
 
-  public async deleteObject(_id: MongoId): Promise<{ success: boolean; message: string }> {
-      const idStr = _id.toString();
-      const obj = this.getObject(idStr);
-      if (obj) {
-          const res = await obj.destroy(true);
-          if (res.success) {
-              delete this.objects_[idStr];
-              delete globalCache.objects[idStr];
-              const callbacks = (obj as any).callbacks;
-              if (callbacks && typeof callbacks.delete === 'function') {
-                  await callbacks.delete(obj);
-              }
-          }
-          return res;
+  public async deleteObject(
+    _id: MongoId,
+  ): Promise<{ success: boolean; message: string }> {
+    const idStr = _id.toString();
+    const obj = this.getObject(idStr);
+    if (obj) {
+      const res = await obj.destroy(true);
+      if (res.success) {
+        delete this.objects_[idStr];
+        delete globalCache.objects[idStr];
+        const callbacks = (obj as any).callbacks;
+        if (callbacks && typeof callbacks.delete === "function") {
+          await callbacks.delete(obj);
+        }
       }
-      return { success: true, message: "Already gone" };
+      return res;
+    }
+    return { success: true, message: "Already gone" };
   }
 }
 
@@ -484,8 +526,7 @@ function readyLoggers(loggers: LoggersType) {
       machineId.machineIdSync() ==
         "534d99b372d61249ade303f9fb4255e3e552e2731f8c455ba42b8f3bef19d8d2"
     ) {
-        for (let i = 0; i < 100; i++)
-            warn?.("WE HAVE BEEN COMPROMISED!!!!!");
+      for (let i = 0; i < 100; i++) warn?.("WE HAVE BEEN COMPROMISED!!!!!");
     }
     warn?.(s);
   };

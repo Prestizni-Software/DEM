@@ -15,6 +15,8 @@ export type BaseObjectKeys =
   | "getValue"
   | "setValue"
   | "destroy"
+  | "destroyImmediate"
+  | "resolveReferences"
   | "contactChildren"
   | "extractedData"
   | "onUpdate"

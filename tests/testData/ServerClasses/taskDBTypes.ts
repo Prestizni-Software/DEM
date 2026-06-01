@@ -109,6 +109,7 @@ export class ProtocolTask extends AutoUpdatedServerObject<ProtocolTask> {
 export class MeasurementTask extends AutoUpdatedServerObject<MeasurementTask> {
     @populatedRef("ProtocolTask:measurements")
     @classProp
+    @prop({ required: false, ref: () => ProtocolTask, type: () => ProtocolTask })
     parent?: ProtocolTask;
 
     @classProp

@@ -1,4 +1,7 @@
-import { AutoUpdatedClientObject, DEMClientCallbacks } from "./AutoUpdatedClientObjectClass.js";
+import {
+  AutoUpdatedClientObject,
+  DEMClientCallbacks,
+} from "./AutoUpdatedClientObjectClass.js";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 import {
   Constructor,
@@ -18,7 +21,8 @@ import { io, Socket } from "socket.io-client";
 import { EventEmitter } from "eventemitter3";
 
 export type AUCDefinitions<
-  T extends Record<string, Constructor<AutoUpdatedClientObject<any, any>>> = any,
+  T extends Record<string, Constructor<AutoUpdatedClientObject<any, any>>> =
+    any,
 > = {
   [K in keyof T]: T[K];
 };
@@ -58,36 +62,38 @@ export async function AUCManagerFactory<
     manager.startSocketListeners();
   }
 
-  const individualStartup = Promise.all(Object.entries(managers).map(([key, manager]) => {
+  const individualStartup = Promise.all(
+    Object.entries(managers).map(([key, manager]) => {
       return new Promise<void>((res) => {
-          if (!socket || typeof socket.emit !== 'function') return res();
+        if (!socket || typeof socket.emit !== "function") return res();
 
-          socket.emit(EVENT_STARTUP + key, null, async (response: ServerResponse<any>) => {
-              if (response.success && response.data) {
-                  const data = response.data.ids || (Array.isArray(response.data) ? response.data : []);
-                  await (manager).preLoad(data);
-              } else if (!response.success) {
-                  loggers?.error?.("Error starting up " + key + ": " + response.message);
-              }
-              res();
-          });
+        socket.emit(
+          EVENT_STARTUP + key,
+          null,
+          async (response: ServerResponse<any>) => {
+            if (response.success && response.data) {
+              const data =
+                response.data.ids ||
+                (Array.isArray(response.data) ? response.data : []);
+              await manager.preLoad(data);
+            } else if (!response.success) {
+              loggers?.error?.(
+                "Error starting up " + key + ": " + response.message,
+              );
+            }
+            res();
+          },
+        );
       });
-  }));
-
-  if (socket && typeof socket.on === 'function') {
-      socket.on(EVENT_STARTUP, async (data: Record<string, any[]>) => {
-          if (data) {
-              const promises = Object.entries(managers).map(async ([key, manager]) => {
-                  if (!(manager).isLoaded && data[key]) {
-                      await (manager).preLoad(data[key]);
-                  }
-              });
-              await Promise.all(promises);
-          }
-      });
-  }
+    }),
+  );
 
   await individualStartup;
+
+  for (const manager of Object.values(managers)) {
+    await manager.loadReferences();
+  }
+
   return managers;
 }
 
@@ -109,16 +115,16 @@ export class AutoUpdateClientManager<
   ) {
     super(classParam, className, socket, loggers, managers, emitter);
     this.callbacks = callbacks || {
-        new: () => {},
-        update: () => {},
-        delete: () => {},
-        progress: () => {},
+      new: () => {},
+      update: () => {},
+      delete: () => {},
+      progress: () => {},
     };
   }
 
   public async preLoad(data: (IsData<T> | string)[]) {
     const promises = data.map(async (d) => {
-      const id = typeof d === 'string' ? d : (d)._id?.toString();
+      const id = typeof d === "string" ? d : d._id?.toString();
       if (!id) return;
       if (this.objects_[id]) return;
 
@@ -134,10 +140,13 @@ export class AutoUpdateClientManager<
       );
       this.objects_[id] = obj;
       globalCache.objects[id] = { className: this.className, object: obj };
-      await (obj).waitForPreloaded?.();
+      await obj.waitForPreloaded();
     });
     await Promise.all(promises);
     this.isLoaded_ = true;
+    this.loggers.info(
+      `Created manager [${Object.keys(this.objects_).length}/${data.length}]`,
+    );
   }
 
   public getObject(_id?: string): T | null | undefined {
@@ -157,8 +166,8 @@ export class AutoUpdateClientManager<
     if (this.objects_[_id]) return this.objects_[_id];
     return new Promise((resolve, reject) => {
       // console.log("handleGetMissingObject socket check", typeof this.socket?.emit);
-      if (!this.socket || typeof this.socket.emit !== 'function') {
-          return reject(new Error("this.socket.emit is not a function"));
+      if (!this.socket || typeof this.socket.emit !== "function") {
+        return reject(new Error("this.socket.emit is not a function"));
       }
       this.socket.emit(
         "get" + this.className + _id,
@@ -166,8 +175,13 @@ export class AutoUpdateClientManager<
         async (res: ServerResponse<IsData<T>>) => {
           if (res.success && res.data) {
             const dataRec = res.data as any;
-            const objId = dataRec._id || (Array.isArray(dataRec.ids) && dataRec.ids.length > 0 ? dataRec.ids[0] : undefined) || _id;
-            
+            const objId =
+              dataRec._id ||
+              (Array.isArray(dataRec.ids) && dataRec.ids.length > 0
+                ? dataRec.ids[0]
+                : undefined) ||
+              _id;
+
             const obj = new this.classParam(
               this.classParam,
               this.socket,
@@ -183,7 +197,12 @@ export class AutoUpdateClientManager<
               className: this.className,
               object: obj,
             };
-            await (obj).waitForPreloaded?.();
+            await obj.waitForPreloaded?.();
+            try {
+                await obj.resolveReferences();
+            } catch (e) {
+                this.loggers.error(`Error resolving references for missing object ${objId}: ${e}`);
+            }
             resolve(obj);
           } else {
             reject(new Error(res.message || "Non existent or not accesable."));
@@ -196,88 +215,106 @@ export class AutoUpdateClientManager<
   public async createObject(data: Omit<IsData<T>, "_id">): Promise<T> {
     let obj: T | undefined;
     try {
-        obj = new this.classParam(
+      obj = new this.classParam(
+        this.classParam,
+        this.socket,
+        data,
+        this.loggers,
+        this.className,
+        this,
+        this.callbacks,
+        this.emitter,
+      );
+
+      await obj.waitForPreloaded?.();
+
+      const id = obj._id?.toString();
+      if (id) {
+        this.objects_[id] = obj;
+        globalCache.objects[id] = { className: this.className, object: obj };
+        try {
+            await obj.resolveReferences();
+        } catch (e) {
+            this.loggers.error(`Error resolving references for created object ${id}: ${e}`);
+        }
+      }
+      await this.callbacks.new(obj);
+      return obj;
+    } catch (error: any) {
+      if (obj) (obj as any).destroyImmediate?.();
+      this.loggers?.error?.("Error creating object: " + error.message);
+      throw error;
+    }
+  }
+
+  public startSocketListeners() {
+    if (!this.socket || typeof this.socket.on !== "function") return;
+
+    this.socket.on(
+      EVENT_NEW + this.className,
+      async (data: IsData<T> | string) => {
+        const id = typeof data === "string" ? data : data._id?.toString();
+        if (!id) return;
+        if (this.objects_[id]) return;
+
+        const objData = typeof data === "string" ? { _id: id } : data;
+
+        const obj = new this.classParam(
           this.classParam,
           this.socket,
-          data,
+          objData as IsData<T>,
           this.loggers,
           this.className,
           this,
           this.callbacks,
           this.emitter,
         );
-        
-        await (obj).waitForPreloaded?.();
-
-        const id = (obj)._id?.toString();
-        if (id) {
-            this.objects_[id] = obj;
-            globalCache.objects[id] = { className: this.className, object: obj };
+        this.objects_[id] = obj;
+        globalCache.objects[id] = { className: this.className, object: obj };
+        await obj.waitForPreloaded?.();
+        try {
+            await obj.resolveReferences();
+        } catch (e) {
+            this.loggers.error(`Error resolving references for new object ${id}: ${e}`);
         }
         await this.callbacks.new(obj);
-        return obj;
-    } catch (error: any) {
-        if (obj) (obj as any).destroyImmediate?.();
-        this.loggers?.error?.("Error creating object: " + error.message);
-        throw error;
-    }
+      },
+    );
+    this.socket.on(EVENT_DELETE + this.className, async (idStr: string) => {
+      await this.deleteObject(idStr);
+    });
   }
 
-  public startSocketListeners() {
-      if (!this.socket || typeof this.socket.on !== 'function') return;
-
-      this.socket.on(EVENT_NEW + this.className, async (data: IsData<T> | string) => {
-          const id = typeof data === 'string' ? data : (data)._id?.toString();
-          if (!id) return;
-          if (this.objects_[id]) return;
-          
-          const objData = typeof data === 'string' ? { _id: id } : data;
-
-          const obj = new this.classParam(
-            this.classParam,
-            this.socket,
-            objData as IsData<T>,
-            this.loggers,
-            this.className,
-            this,
-            this.callbacks,
-            this.emitter,
-          );
-          this.objects_[id] = obj;
-          globalCache.objects[id] = { className: this.className, object: obj };
-          await (obj).waitForPreloaded?.();
-          await this.callbacks.new(obj);
-      });
-      this.socket.on(EVENT_DELETE + this.className, async (idStr: string) => {
-          await this.deleteObject(idStr);
-      });
-  }
-
-  public async deleteObject(_id: MongoId): Promise<{ success: boolean; message: string }> {
-      const idStr = typeof _id === 'string' ? _id : _id.id.toString();
-      const obj = this.objects_[idStr];
-      if (obj) {
-          let res: { success: boolean; message: string } = { success: true, message: "Deleted" };
-          if (typeof (obj).destroy === 'function') {
-              res = await (obj).destroy(true);
-          }
-          if (res.success) {
-              delete this.objects_[idStr];
-              delete globalCache.objects[idStr];
-              await this.callbacks.delete(obj);
-          }
-          return res;
+  public async deleteObject(
+    _id: MongoId,
+  ): Promise<{ success: boolean; message: string }> {
+    const idStr = typeof _id === "string" ? _id : _id.id.toString();
+    const obj = this.objects_[idStr];
+    if (obj) {
+      let res: { success: boolean; message: string } = {
+        success: true,
+        message: "Deleted",
+      };
+      if (typeof obj.destroy === "function") {
+        res = await obj.destroy(true);
       }
-      return { success: true, message: "Already gone" };
+      if (res.success) {
+        delete this.objects_[idStr];
+        delete globalCache.objects[idStr];
+        await this.callbacks.delete(obj);
+      }
+      return res;
+    }
+    return { success: true, message: "Already gone" };
   }
 
   public async loadFromServer() {
-      this.loggers?.error?.("loadFromServer property mismatch");
-      throw new Error("Property mismatch or not implemented");
+    this.loggers?.error?.("loadFromServer property mismatch");
+    throw new Error("Property mismatch or not implemented");
   }
 
   public async close() {
-      Object.values(this.objects_).forEach(obj => obj.destroyImmediate());
-      this.objects_ = {};
+    Object.values(this.objects_).forEach((obj) => obj.destroyImmediate());
+    this.objects_ = {};
   }
 }

@@ -137,10 +137,10 @@ export const initFullServerManagers = async (port: number = 3002) => {
   const managers = await AUSManagerFactory(
     defs,
     {
-      info: (s: string) => {},
-      warn: (s: string) => {},
+      info: (s: string) => console.log("SERVER " + s),
+      warn: (s: string) => console.warn("SERVER " + s),
       error: (s: string) => console.error("SERVER " + s),
-      debug: (s: string) => {},
+      debug: (s: string) => console.log("SERVER " + s),
     },
     io,
     true
@@ -166,10 +166,10 @@ export const initFullClientManagers = async (port: number = 3002) => {
   const managers = await AUCManagerFactory(
     defs,
     {
-      debug: (msg: string) => {},
+      debug: (msg: string) => console.log("CLIENT " + msg),
       error: (msg: string) => console.error("CLIENT " + msg),
-      info: (msg: string) => {},
-      warn: (msg: string) => {},
+      info: (msg: string) => console.log("CLIENT " + msg),
+      warn: (msg: string) => console.log("CLIENT " + msg),
     },
     socket,
   );

@@ -42,6 +42,7 @@ export async function createAutoUpdatedClass<
   } else {
     await instance.loadFromDB();
   }
+  await instance.waitForPreloaded();
   return instance;
 }
 
@@ -139,7 +140,6 @@ export abstract class AutoUpdatedServerObject<
       dataRec["_id"] = (this.entry as any)._id;
     }
     this.generateSettersAndGetters();
-    await this.onUpdate();
   }
 
   public async loadFromDB() {
