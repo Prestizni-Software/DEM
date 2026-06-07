@@ -16,6 +16,7 @@ import {
   EVENT_UPDATE,
   EVENT_DELETE,
   EVENT_GET,
+  EVENT_GET_BATCH,
   EVENT_STARTUP,
   globalCache,
   InstanceOf,
@@ -115,6 +116,7 @@ export enum DEMEventTypes {
   "update" = "update",
   "delete" = "delete",
   "get" = "get",
+  "getBatch" = "getBatch",
   "startup" = "startup",
 }
 
@@ -135,6 +137,12 @@ export type DEMEvent<
       data: undefined;
     }
   | {
+      type: DEMEventTypes.getBatch;
+      manager: AutoUpdateServerManager<C>;
+      object: never;
+      data: string[];
+    }
+  | {
       type: DEMEventTypes.update;
       manager: AutoUpdateServerManager<C, M>;
       object: C;
@@ -153,6 +161,159 @@ export type DEMEvent<
       data: Omit<IsData<C>, "_id">;
     };
 
+<<<<<<< HEAD
+=======
+function setupSocketMiddleware<
+  T extends Record<string, AutoUpdatedServerObject<any>>,
+>(
+  socket_server: Server,
+  loggers: LoggersType,
+  managers: WrappedInstances<T>,
+  models?: any,
+) {
+  socket_server.use(async (socket, next) => {
+    socket.use((async (
+      event: SocketEvent,
+      next: (err?: ExtendedError | undefined) => void,
+    ) => {
+      if (
+        event.length !== 3 ||
+        typeof event[0] !== "string" ||
+        typeof event[2] !== "function"
+      ) {
+        loggers.warn(
+          "Invalid event: [" +
+            event.map((e) => JSON.stringify(e)).join("], [") +
+            "]",
+        );
+        return;
+      }
+      if (
+        !socket
+          .eventNames()
+          .some(
+            (e) =>
+              e.toString() === event[0] ||
+              e.toString() === event[0].slice(0, -24),
+          )
+      ) {
+        loggers.warn(
+          "Undefined event: [" +
+            event.map((e) => JSON.stringify(e)).join("], [") +
+            "]",
+        );
+        event[2]({
+          success: false,
+          message: "Undefined event, event: " + event[0] + " not found",
+        });
+        return;
+      }
+      try {
+        const e = event[0];
+        let demEvent: DEMEvent<any> = {} as any;
+
+        const id = e.slice(-24);
+        switch (true) {
+          case e.startsWith(EVENT_NEW):
+            demEvent.type = DEMEventTypes.new;
+            demEvent.manager = managers[e.replace(EVENT_NEW, "")];
+            demEvent.data = event[1];
+            break;
+
+          case e.startsWith(EVENT_UPDATE):
+            demEvent.type = DEMEventTypes.update;
+            demEvent.manager =
+              managers[e.replace(EVENT_UPDATE, "").replace(id, "")];
+            demEvent.object = demEvent.manager.getObject(id);
+            demEvent.data = event[1];
+            break;
+
+          case e.startsWith(EVENT_DELETE):
+            demEvent.type = DEMEventTypes.delete;
+            demEvent.manager = managers[e.replace(EVENT_DELETE, "")];
+            demEvent.object = demEvent.manager.getObject(event[1]);
+            if (!demEvent.object) {
+              event[2]({
+                success: true,
+                message: "Object already deleted",
+                data: undefined,
+              });
+              return;
+            }
+            break;
+
+          case e.startsWith(EVENT_GET_BATCH):
+            demEvent.type = DEMEventTypes.getBatch;
+            demEvent.manager = managers[e.replace(EVENT_GET_BATCH, "")];
+            demEvent.data = event[1];
+            break;
+
+          case e.startsWith(EVENT_GET):
+            demEvent.type = DEMEventTypes.get;
+            demEvent.manager =
+              managers[e.replace(EVENT_GET, "").replace(id, "")];
+            demEvent.object = demEvent.manager.getObject(id);
+            break;
+
+          case e.startsWith(EVENT_STARTUP):
+            demEvent.type = DEMEventTypes.startup;
+            demEvent.manager = managers[e.replace(EVENT_STARTUP, "")];
+            break;
+
+          default:
+            throw new Error(
+              "Unknown event: " +
+                e +
+                " - known events: [" +
+                Object.values(DEMEventTypes).join(", ") +
+                "]",
+            );
+        }
+        try {
+          await demEvent.manager.options?.accessDefinitions?.eventMiddleware?.(
+            demEvent,
+            managers,
+            socket,
+          );
+          next();
+        } catch (error) {
+          loggers.warn(
+            "Someone got access denied:\nUser (" +
+              JSON.stringify(socket.handshake.auth) +
+              ")\nWith ID: '" +
+              socket.id +
+              "'\nFrom: '" +
+              socket.handshake.address +
+              "'\nTo the event: '" +
+              event[0] +
+              "'\nFor: '" +
+              (error as any).message +
+              "'",
+          );
+          event[2]({
+            success: false,
+            message:
+              "You were denied access to this event '" +
+              event[0] +
+              "' by the server.\n" +
+              (error as any).message,
+          });
+        }
+      } catch (error) {
+        loggers.error(
+          "Error with event: " +
+            event[0] +
+            "\nError: " +
+            (error as Error).message,
+        );
+        return;
+      }
+    }) as any);
+    next();
+  });
+}
+
+>>>>>>> 105986a8a36b21cfdf5c685f44010c3f9a2aac9d
 export async function AUSManagerFactory<
   T extends Record<string, Constructor<AutoUpdatedServerObject<any, any>>>,
 >(
@@ -304,12 +465,158 @@ export class AutoUpdateServerManager<
         ) => void,
       ) => {
         try {
+<<<<<<< HEAD
           const objects =
             await (this.options?.accessDefinitions?.startupMiddleware?.(
               this.objectsAsArray,
               this.managers as any,
               socket,
             ) ?? Promise.resolve(this.objectsAsArray));
+=======
+          const ids = (
+            (
+              await this.options?.accessDefinitions?.startupMiddleware?.(
+                this.objectsAsArray,
+                this.managers,
+                socket,
+              )
+            )?.map((obj) => obj._id) ?? this.objectIDs
+          ).filter(Boolean);
+          this.loggers.debug(
+            "Sending startup data for manager " + this.className,
+          );
+          if (ids.some((id) => (this.objects_[id] as any) === "undefined"))
+            this.loggers.error(
+              ids.find((id) => (this.objects_[id] as any) === "undefined"),
+            );
+          ack({
+            data: { ids, properties: this.properties as string[] },
+            success: true,
+          });
+        } catch (error: any) {
+          this.loggers.error(
+            "Error sending startup data for manager " +
+              this.className +
+              ": " +
+              error.message,
+          );
+          this.loggers.error(error.stack);
+          ack({
+            success: false,
+            message: error.message,
+          });
+        }
+      },
+    );
+    socket.on(
+      EVENT_GET_BATCH + this.className,
+      async (ids: string[], ack: (res: ServerResponse<any[]>) => void) => {
+        try {
+          const results = ids
+            .map((id) => this.objects_[id]?.extractedData)
+            .filter(Boolean);
+          ack({
+            data: results as any,
+            success: true,
+            message: "Batch loaded successfully",
+          });
+        } catch (error: any) {
+          this.loggers.error(
+            "Error sending batch data for manager " +
+              this.className +
+              ": " +
+              error.message,
+          );
+          this.loggers.error(error.stack);
+          ack({
+            success: false,
+            message: error.message,
+          });
+        }
+      },
+    );
+    socket.on(
+      EVENT_DELETE + this.className,
+      async (id: string, ack: (res: ServerResponse<undefined>) => void) => {
+        this.loggers.debug(
+          "Deleting object from manager " + this.className + " - " + id,
+        );
+        try {
+          await this.deleteObject(id);
+          ack({
+            success: true,
+            message: "Deleted successfully",
+            data: undefined,
+          });
+        } catch (error: any) {
+          this.loggers.error(
+            "Error deleting object from manager " +
+              this.className +
+              " - " +
+              id +
+              ": " +
+              error.message,
+          );
+          this.loggers.error(error.stack);
+          ack({ success: false, message: error.message });
+        }
+      },
+    );
+    socket.on(
+      EVENT_NEW + this.className,
+      async (
+        data: Omit<IsData<Pure<T>>, "_id">,
+        ack: (res: ServerResponse<T>) => void,
+      ) => {
+        this.loggers.debug(
+          "Recieved new object creation in manager " + this.className,
+        );
+        try {
+          const newDoc = await this.createObject(data);
+          ack({
+            data: newDoc.extractedData as any,
+            success: true,
+            message: "Created successfully",
+          });
+        } catch (error: any) {
+          this.loggers.error(
+            "Error creating new object creation in manager " +
+              this.className +
+              " - " +
+              error.message,
+          );
+          this.loggers.error(error.stack);
+          ack({ success: false, message: error.message });
+        }
+      },
+    );
+    socket.on(EVENT_UPDATE + this.className, async () => {});
+    socket.on(EVENT_GET + this.className, async () => {});
+    socket.onAny(
+      async (
+        event: string,
+        data: ServerUpdateRequest<T>,
+        ack: (res: ServerResponse<null>) => void,
+      ) => {
+        if (
+          event.startsWith(EVENT_UPDATE + this.className) &&
+          event.replace(EVENT_UPDATE + this.className, "").length === 24
+        ) {
+          this.loggers.debug(
+            "Updating object in manager " +
+              this.className +
+              ": " +
+              event +
+              " - " +
+              JSON.stringify(data),
+          );
+          try {
+            const id = event.replace(EVENT_UPDATE + this.className, "");
+            let obj = this.objects_[id];
+            if (typeof obj === "string")
+              throw new Error(`Never... failed to get object somehow: ${obj}`);
+            const res = await obj.setValue(data.key as any, data.value);
+>>>>>>> 105986a8a36b21cfdf5c685f44010c3f9a2aac9d
 
           const ids = objects.map((obj) => obj._id.toString());
           if (typeof ack === "function") {

@@ -50,6 +50,8 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
     mockSocket.emit.mockImplementation((event: string, data: any, cb: any) => {
       if (event === "startupTest") {
         cb({ success: true, data: { ids: ["1"], properties: [] } });
+      } else if (event === "getBatchTest") {
+        cb({ success: true, data: [{ _id: "1" }] });
       }
     });
 

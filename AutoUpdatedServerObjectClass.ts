@@ -120,6 +120,7 @@ export abstract class AutoUpdatedServerObject<
     for (const prop of this.properties) {
       if (typeof prop !== "string") continue;
       const isRef = getMetadataRecursive("isRef", this, prop);
+<<<<<<< HEAD
       if (isRef && dataRec[prop]) {
         dataRec[prop] = Array.isArray(dataRec[prop])
           ? (dataRec[prop] as unknown[])
@@ -128,6 +129,30 @@ export abstract class AutoUpdatedServerObject<
               )
               .filter((item): item is ObjectId => item !== null)
           : new ObjectId(dataRec[prop]!.toString());
+=======
+      if (isRef && this.data[prop]) {
+        try {
+        this.data[prop] = Array.isArray(this.data[prop])
+          ? (this.data[prop] as any)
+              .map((item: any) =>
+                item
+                  ? new ObjectId(
+                      ((item as any)._id ? (item as any)._id : item) as
+                        | string
+                        | ObjectId,
+                    )
+                  : null,
+              )
+              .filter(Boolean)
+          : new ObjectId(
+              ((this.data[prop] as any)._id
+                ? (this.data[prop] as any)._id
+                : this.data[prop]) as string | ObjectId,
+            );} catch (error) {
+              this.loggers.error("Failed to set referance " + prop + " to " + this.data[prop]);
+              this.loggers.error((error as any).message);
+            }
+>>>>>>> 105986a8a36b21cfdf5c685f44010c3f9a2aac9d
       }
     }
   }
@@ -244,7 +269,15 @@ export abstract class AutoUpdatedServerObject<
         message: "Deletion uncussessful: " + error.message,
       };
     }
+<<<<<<< HEAD
     this.socket.emit(EVENT_DELETE + this.className, id.toString());
+=======
+    this.socket.emit(EVENT_DELETE + this.className, this.data._id);
+    this.socket.removeAllListeners(
+      EVENT_UPDATE + this.className + this.data._id,
+    );
+    this.socket.removeAllListeners(EVENT_DELETE + this.className);
+>>>>>>> 105986a8a36b21cfdf5c685f44010c3f9a2aac9d
     await this.wipeSelf();
     return {
       success: true,
