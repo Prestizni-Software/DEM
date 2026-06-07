@@ -25,6 +25,7 @@
   "exclude": [
     "expo-test/**",
     "dist/**",
+    "trash_src/**",
     "coverage/**",
     "tests/**/*.test.ts",
     "tests/coverage.test.ts",

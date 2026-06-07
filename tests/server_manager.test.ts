@@ -33,8 +33,8 @@ describe("AutoUpdateManager base class tests", () => {
         manager = new AutoUpdateServerManager(
             class { } as any,
             "TestClass",
-            loggers,
             mockSocket,
+            loggers,
             mockModel,
             {},
             mockEmitter

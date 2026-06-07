@@ -1,5 +1,5 @@
-import { AutoUpdatedClientObject, getMetadataRecursive, processIsRefProperties } from "./AutoUpdatedClientObjectClass.js";
-import { AutoUpdateServerManager, BaseManagers } from "./AutoUpdateServerManagerClass.js";
+import { AutoUpdatedClientObject, getMetadataRecursive, processIsRefProperties } from "./AutoUpdatedClientObjectClass";
+import { AutoUpdateServerManager, BaseManagers } from "./AutoUpdateServerManagerClass";
 import "reflect-metadata";
 import { ObjectId } from "mongodb";
 import { Server } from "socket.io";
@@ -12,67 +12,60 @@ import {
   EVENT_UPDATE,
   PathValueOf,
   MongoId,
-  IDEMSocket,
-} from "./CommonTypes.js";
+} from "./CommonTypes";
+import { Paths } from "./CommonTypes_server";
 import { DocumentType } from "@typegoose/typegoose";
 
-export async function createAutoUpdatedClass<
-  C extends AutoUpdatedServerObject<C, any>,
->(
+export async function createAutoUpdatedClass<C extends AutoUpdatedServerObject<C>>(
   classParam: Constructor<C>,
   className: string,
-  socket: Server,
+  socket: any,
   data: IsData<C>,
   loggers: LoggersType,
-  parentManager: AutoUpdateServerManager<any, any>,
+  parentManager: AutoUpdateServerManager<any>,
   emitter: EventEmitter3,
-  document?: DocumentType<C>,
+  document?: DocumentType<C>
 ): Promise<C> {
-  const instance = new classParam(
+  const instance = new (classParam as any)(
     classParam,
     socket,
     data,
     loggers,
     className,
-    parentManager as any,
-    emitter,
+    parentManager,
+    emitter
   );
   if (document) {
     await instance.loadFromDocument(document);
   } else {
     await instance.loadFromDB();
   }
-  await instance.waitForPreloaded();
   return instance;
 }
 
-// ---------------------- Class ----------------------
-export abstract class AutoUpdatedServerObject<
-  T extends AutoUpdatedServerObject<T, any>,
-  M extends BaseManagers = any,
-> extends AutoUpdatedClientObject<T, M> {
+export abstract class AutoUpdatedServerObject<T extends AutoUpdatedServerObject<T>> extends AutoUpdatedClientObject<T> {
   protected override readonly isServer: boolean = true;
-  declare protected entry: DocumentType<T>;
-  declare public parentManager: AutoUpdateServerManager<T, M>;
+  protected entry: DocumentType<T>;
+  declare public parentManager: AutoUpdateServerManager<any>;
 
   constructor();
   constructor(
     classParam: Constructor<T>,
-    socket: Server,
+    socket: any,
     data: IsData<T>,
     loggers: LoggersType,
     className: string,
-    parentManager: AutoUpdateServerManager<any, M>,
-    emitter: EventEmitter3,
+    parentManager: AutoUpdateServerManager<any>,
+    emitter: EventEmitter3
   );
   constructor(
     classParam?: Constructor<T>,
-    socket?: Server,
+    socket?: any,
     data?: IsData<T>,
     loggers?: LoggersType,
     className?: string,
-    parentManager?: AutoUpdateServerManager<any, M>,
-    emitter?: EventEmitter3,
+    parentManager?: AutoUpdateServerManager<any>,
+    emitter?: EventEmitter3
   ) {
     if (
       !classParam ||
@@ -93,191 +86,136 @@ export abstract class AutoUpdatedServerObject<
         !emitter
       ) {
         super();
-        this.entry = undefined as unknown as DocumentType<T>;
+        this.entry = undefined as any;
         return;
-      } else throw new Error("Missing arguments for AutoUpdatedServerObject: " + className);
+      } else throw new Error("Missing arguments???");
     }
+
     super(
       classParam,
-      socket as unknown as IDEMSocket,
+      socket,
       data,
       loggers,
       className,
       parentManager as any,
       {
-        update: () => {},
-        delete: () => {},
-        new: () => {},
-        progress: () => {},
+        update: (x) => { },
+        delete: (x) => { },
+        new: (x) => { },
+        progress: (x) => { },
       },
       emitter,
-      true,
+      true
     );
-    this.parentManager = parentManager;
-    this.entry = null as unknown as DocumentType<T>;
 
-    const dataRec = this.data as Record<string, unknown>;
-    for (const prop of this.properties) {
+    for (const prop of this.properties as string[]) {
       if (typeof prop !== "string") continue;
       const isRef = getMetadataRecursive("isRef", this, prop);
-<<<<<<< HEAD
-      if (isRef && dataRec[prop]) {
-        dataRec[prop] = Array.isArray(dataRec[prop])
-          ? (dataRec[prop] as unknown[])
-              .map((item) =>
-                item ? new ObjectId(item.toString()) : null,
-              )
-              .filter((item): item is ObjectId => item !== null)
-          : new ObjectId(dataRec[prop]!.toString());
-=======
-      if (isRef && this.data[prop]) {
-        try {
-        this.data[prop] = Array.isArray(this.data[prop])
-          ? (this.data[prop] as any)
-              .map((item: any) =>
-                item
-                  ? new ObjectId(
-                      ((item as any)._id ? (item as any)._id : item) as
-                        | string
-                        | ObjectId,
-                    )
-                  : null,
-              )
-              .filter(Boolean)
-          : new ObjectId(
-              ((this.data[prop] as any)._id
-                ? (this.data[prop] as any)._id
-                : this.data[prop]) as string | ObjectId,
-            );} catch (error) {
-              this.loggers.error("Failed to set referance " + prop + " to " + this.data[prop]);
-              this.loggers.error((error as any).message);
-            }
->>>>>>> 105986a8a36b21cfdf5c685f44010c3f9a2aac9d
+      if (isRef && (this.data as any)[prop]) {
+        (this.data as any)[prop] = Array.isArray((this.data as any)[prop])
+          ? (this.data as any)[prop]
+            .map((item: any) => item ? new ObjectId(item.toString()) : null)
+            .filter(Boolean)
+          : new ObjectId((this.data as any)[prop].toString());
       }
     }
+    this.parentManager = parentManager as any;
+    this.entry = null as any;
   }
 
   public async loadFromDocument(document: DocumentType<T>) {
     this.entry = document;
-    this.data = { ...(this.data as any), ...(this.entry.toObject() as any) } as IsData<T>;
-    const dataRec = this.data as Record<string, unknown>;
-    if (!dataRec["_id"] && (this.entry as any)._id) {
-      dataRec["_id"] = (this.entry as any)._id;
+    this.data = { ...(this.data as any), ...this.entry.toObject() } as any;
+    if (!(this.data as any)._id && (this.entry as any)._id) {
+      (this.data as any)._id = (this.entry as any)._id;
     }
     this.generateSettersAndGetters();
   }
 
-  public async loadFromDB() {
+  public async loadFromDB(): Promise<void> {
     try {
-      const dataRec = this.data as Record<string, unknown>;
-      const id = dataRec["_id"] as MongoId | undefined;
-      if (!id) throw new Error("Cannot load from DB: missing _id");
-
-      const manager = (this.parentManager as any).managers[this.className];
+      const manager = (this.parentManager.managers as any)[this.className];
       this.entry = (await manager.model.findOne({
-        _id: id,
+        _id: (this.data as any)._id,
       })) as DocumentType<T>;
-      
+
       if (!this.entry) {
-        throw new Error(`Object with ID ${id.toString()} not found in DB.`);
+        this.entry = (await manager.model.create(this.data)) as DocumentType<T>;
       }
-      this.data = { ...(this.data as any), ...(this.entry.toObject() as any) } as IsData<T>;
-      if (!dataRec["_id"] && (this.entry as any)._id) {
-        dataRec["_id"] = (this.entry as any)._id;
+      this.data = { ...(this.data as any), ...this.entry.toObject() } as any;
+      if (!(this.data as any)._id && (this.entry as any)._id) {
+        (this.data as any)._id = (this.entry as any)._id;
       }
       this.generateSettersAndGetters();
-      if (this.data) {
-        await this.onUpdate();
-      }
     } catch (error: any) {
-      this.loggers.error?.("Error loading object from database: " + error.message);
+      this.loggers.error("Error loading object from database: " + error.message);
+      this.loggers.error(error.stack);
       throw error;
     }
   }
 
-  protected handleNewObject(_data: IsData<T>) {
-    throw new Error("Cannot create new objects from server-side instance.");
+  public async setValue_<K extends Paths<T, AutoUpdatedServerObject<T>>>(
+    key: K,
+    val: PathValueOf<IsData<T>, K>
+  ): Promise<{ success: boolean; msg: string }> {
+    return await this.setValue__(key as any, val);
   }
 
-  public override get extractedData(): { [K in keyof IsData<T>]: IsData<T>[K] } {
-      const dataToProcess = this.entry ? this.entry.toObject() : this.data;
-      const extracted = processIsRefProperties(dataToProcess as any, this, null, [], {}, this.loggers).newData;
-      return extracted as any;
+  protected handleNewObject(_data: any): void {
+    throw new Error("Cannot create new objects like this.");
   }
 
   protected override async setValueInternal(
-    key: string,
-    value: unknown,
-    silent: boolean = false,
-    noUpdate: boolean = false,
+    key: any,
+    value: any,
+    _silent: boolean = false
   ): Promise<{ success: boolean; msg: string }> {
     try {
-      const dataRec = this.data as Record<string, unknown>;
-      const id = dataRec["_id"] as MongoId | undefined;
-      if (!id) {
-          throw new Error(`Cannot update object ${this.className} - missing _id.`);
+      if (!(this.data as any)?._id) {
+        throw new Error(`Cannot update object ${this.className} - missing _id. Data: ${JSON.stringify(this.data)}`);
       }
-      
-      const manager = (this.parentManager as any).managers[this.className];
-      if (!silent && !noUpdate) {
-          await manager.model.updateOne(
-            { _id: id },
-            { $set: { [key]: value } },
-          );
-      }
-
+      const manager = (this.parentManager.managers as any)[this.className];
+      await manager.model.updateOne({ _id: (this.data as any)._id }, { $set: { [key]: value } });
       const update = this.makeUpdate(key, value);
-      const event = EVENT_UPDATE + this.className + id.toString();
+      const event = EVENT_UPDATE + this.className + (this.data as any)._id.toString();
       this.socket.emit(event, update);
-
       return {
         success: true,
         msg: "Updated",
       };
-    } catch (error) {
-      const dataRec = this.data as Record<string, unknown>;
-      this.loggers.error?.(`Error saving object [${this.className}: ${dataRec["_id"]?.toString() ?? "not loaded"}]: ` + (error as Error).message);
+    } catch (error: any) {
+      this.loggers.error(`Error saving object [${this.className}: ${(this.data as any)?._id ?? "not loaded"}]: ` + error.message);
+      this.loggers.error(error.stack);
       return {
         success: false,
-        msg: "Error saving object: " + (error as Error).message,
+        msg: "Error saving object: " + error.message,
       };
     }
   }
 
-  public async destroy(
-    once: boolean = false,
-  ): Promise<{ success: boolean; message: string }> {
-    const dataRec = this.data as Record<string, unknown>;
-    const id = dataRec["_id"] as MongoId | undefined;
-    if (!id) return { success: false, message: "Missing _id" };
-
+  public async destroy(once = false): Promise<{ success: boolean; message: string }> {
     if (!once) {
-      return await this.parentManager.deleteObject(id);
+      return await this.parentManager.deleteObject((this.data as any)._id);
     }
     try {
-      await this.entry.deleteOne({ _id: id });
-      this.loggers.debug?.("Deleted object from server " + this.className);
+      const res = await this.entry.deleteOne({ _id: (this.data as any)._id });
+      this.loggers.debug("Deleted object from server " + this.className);
+      this.loggers.debug(res.deletedCount + " deleted.");
     } catch (error: any) {
-      this.loggers.error?.(
-        "Error deleting object from database - " +
-          this.className +
-          " - " +
-          id.toString(),
-      );
+      this.loggers.error("Error deleting object from database - " +
+        this.className +
+        " - " +
+        (this.data as any)._id);
+      this.loggers.error(error.message);
+      this.loggers.error(error.stack);
       return {
         success: false,
         message: "Deletion uncussessful: " + error.message,
       };
     }
-<<<<<<< HEAD
-    this.socket.emit(EVENT_DELETE + this.className, id.toString());
-=======
-    this.socket.emit(EVENT_DELETE + this.className, this.data._id);
-    this.socket.removeAllListeners(
-      EVENT_UPDATE + this.className + this.data._id,
-    );
+    this.socket.emit(EVENT_DELETE + this.className, (this.data as any)._id);
+    this.socket.removeAllListeners(EVENT_UPDATE + this.className + (this.data as any)._id.toString());
     this.socket.removeAllListeners(EVENT_DELETE + this.className);
->>>>>>> 105986a8a36b21cfdf5c685f44010c3f9a2aac9d
     await this.wipeSelf();
     return {
       success: true,
@@ -285,10 +223,10 @@ export abstract class AutoUpdatedServerObject<
     };
   }
 
-  public override async onUpdate(noUpdate: boolean = false) {
+  public override async onUpdate(noUpdate = false) {
     if (noUpdate) return;
-    await this.parentManager.options?.onUpdate?.(this as unknown as T, <K extends keyof IsData<T> & string>(key: K, val: PathValueOf<IsData<T>, K>) => {
-      return this.setValue(key, val, { silent: false, noGet: true, noUpdate: true });
+    await (this.parentManager as any).options?.onUpdate?.(this, (a: any, b: any) => {
+      return this.setValue__(a, b, false, true, true);
     });
   }
 }

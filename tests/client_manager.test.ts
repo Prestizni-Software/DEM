@@ -117,6 +117,12 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
     );
     managersToClose.push(manager);
 
+    mockSocket.emit.mockImplementation((event: string, data: any, cb: any) => {
+        if (event === "startupTest") {
+            cb({ success: true, data: { ids: [], properties: ["extra"] } });
+        }
+    });
+
     await expect(manager.loadFromServer()).rejects.toThrow();
     expect(loggers.error).toHaveBeenCalled();
   });

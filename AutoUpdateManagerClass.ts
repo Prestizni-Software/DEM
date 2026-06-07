@@ -1,32 +1,28 @@
-import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
+import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass";
 import {
   Constructor,
   EventEmitter3,
   LoggersType,
   Cache,
   globalCache,
-  IsData,
-  MongoId,
-  IDEMSocket,
-} from "./CommonTypes.js";
+} from "./CommonTypes";
 import "reflect-metadata";
 
 export abstract class AutoUpdateManager<
-  T extends AutoUpdatedClientObject<T, any>,
-  M = any,
+  T extends AutoUpdatedClientObject<any>,
 > {
-  protected abstract objects_: Record<string, T>;
+  protected abstract objects_: { [_id: string]: T };
   protected isLoaded_ = false;
-  public readonly socket: IDEMSocket;
+  public readonly socket: any;
   protected classParam: Constructor<T>;
-  protected properties: string[] = [];
+  protected properties: (keyof any)[];
   public readonly className: string;
-  public readonly cache: Cache<T> = {
+  public readonly cache: Cache<any> = {
     references: {},
   };
-  public readonly managers: M;
+  public readonly managers: Record<string, AutoUpdateManager<AutoUpdatedClientObject<any>>>;
   protected preloaded = false;
-  protected waitingToResolveReferences: Record<string, string> = {};
+  protected waitingToResolveReferences: { [_id: string]: string } = {};
   protected loggers: LoggersType = {
     info: () => {},
     debug: () => {},
@@ -34,30 +30,31 @@ export abstract class AutoUpdateManager<
     warn: () => {},
   };
   protected emitter: EventEmitter3;
+
   constructor(
     classParam: Constructor<T>,
     className: string,
-    socket: IDEMSocket,
+    socket: any,
     loggers: LoggersType,
-    managers: M,
+    managers: Record<string, AutoUpdateManager<AutoUpdatedClientObject<any>>>,
     emitter: EventEmitter3,
   ) {
+    console.log("DEBUG: AutoUpdateManager constructor, className=" + className + ", socket keys=" + Object.keys(socket || {}).join(","));
     this.className = className;
     this.managers = managers;
     this.emitter = emitter;
     this.socket = socket;
     this.classParam = classParam;
-    this.properties = Reflect.getMetadata("props", classParam.prototype) || [];
-    
-    // Assign loggers with prefix
+    this.properties = Reflect.getMetadata("props", classParam.prototype);
+
     this.loggers.debug = (s: string) =>
-      loggers?.debug?.("[DEM - " + className + " MANAGER] " + s);
+      loggers.debug?.("[DEM - " + className + " MANAGER] " + s);
     this.loggers.info = (s: string) =>
-      loggers?.info?.("[DEM - " + className + " MANAGER] " + s);
+      loggers.info?.("[DEM - " + className + " MANAGER] " + s);
     this.loggers.error = (s: string) =>
-      loggers?.error?.("[DEM - " + className + " MANAGER] " + s);
+      loggers.error?.("[DEM - " + className + " MANAGER] " + s);
     this.loggers.warn = (s: string) =>
-      loggers?.warn?.("[DEM - " + className + " MANAGER] " + s);
+      loggers.warn?.("[DEM - " + className + " MANAGER] " + s);
   }
 
   public get isLoaded() {
@@ -69,39 +66,27 @@ export abstract class AutoUpdateManager<
       delete this.objects_[id];
       delete globalCache.objects[id];
     }
-    this.socket.disconnect?.() ?? (this.socket as any).disconnectSockets?.(true);
+    this.socket.disconnect?.() ?? this.socket.disconnectSockets?.(true);
     this.loggers.info("Goodbye, see you next time!");
   }
 
   public async loadReferences(): Promise<void> {
-    const objects = this.objectsAsArray;
-    // Sequential resolution to avoid race conditions during batch load
-    for (const obj of objects) {
-      if (typeof (obj as any).resolveReferences === "function") {
-        await (obj as any).resolveReferences();
-      } else {
-        await obj.loadMissingReferences();
-      }
+    for (const obj of this.objectsAsArray) {
+      await obj.loadMissingReferences();
     }
     this.isLoaded_ = true;
   }
 
   public async deleteObject(
-    _id: MongoId,
+    _id: string,
   ): Promise<{ success: boolean; message: string }> {
-    const idStr = _id.toString();
-    const o = this.objects_[idStr];
-    if (!o) return { success: true, message: "Already gone" };
-    
-    const res = await o.destroy(true);
+    const o = this.objects_[_id];
+    const res = await o?.destroy(true);
     if (res?.success) {
-      delete this.objects_[idStr];
-      delete globalCache.objects[idStr];
-      const callbacks = (o as any).callbacks;
-      if (callbacks && typeof callbacks.delete === 'function') {
-          await callbacks.delete(o);
-      }
+      delete this.objects_[_id];
+      delete globalCache.objects[_id];
     }
+    await (o as any)?.callbacks?.delete?.(this);
     return res ?? { success: true, message: "Already gone" };
   }
 
@@ -111,16 +96,11 @@ export abstract class AutoUpdateManager<
 
   public abstract handleGetMissingObject(_id: string): Promise<T>;
 
-  public abstract createObject(data: Omit<IsData<T>, "_id">): Promise<T>;
+  public abstract createObject(data: Omit<any, "_id">): Promise<T>;
 
-  /**
-   * Returns the object with the given ID.
-   * If _id is undefined, returns null.
-   * If _id is provided but object is not found, returns undefined.
-   */
   public abstract getObject(_id?: string): T | null | undefined;
 
-  public abstract get objects(): Record<string, T>;
+  public abstract get objects(): { [_id: string]: T };
 
   public abstract get objectsAsArray(): T[];
 }

@@ -23,8 +23,8 @@ describe("AutoUpdateServerManagerClass Targeted Coverage", () => {
     const manager = new AutoUpdateServerManager(
       class {} as any,
       "test",
-      loggers,
       mockSocket,
+      loggers,
       mockModel as any,
       {},
       mockEmitter
@@ -44,8 +44,8 @@ describe("AutoUpdateServerManagerClass Targeted Coverage", () => {
     const manager = new AutoUpdateServerManager(
       class {} as any,
       "test",
-      loggers,
       mockSocket,
+      loggers,
       mockModel as any,
       {},
       mockEmitter

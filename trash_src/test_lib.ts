@@ -1,23 +1,23 @@
 import {
   AUSManagerFactory,
   DEMEventTypes,
-} from "./AutoUpdateServerManagerClass";
+} from "./AutoUpdateServerManagerClass.js";
 import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
 import mongoose from "mongoose";
 import { io } from "socket.io-client";
-import { AUCManagerFactory } from "./AutoUpdateClientManagerClass";
+import { AUCManagerFactory } from "./AutoUpdateClientManagerClass.js";
 import {
   AutoUpdatedClientObject,
-} from "./AutoUpdatedClientObjectClass";
+} from "./AutoUpdatedClientObjectClass.js";
 import {
   Constructor,
-} from "./CommonTypes";
-import * as ServerClasses from "./tests/testData/ServerClasses/index";
-import * as ClientClasses from "./tests/testData/ClientClasses/index";
+} from "./CommonTypes.js";
+import * as ServerClasses from "./tests/testData/ServerClasses/index.js";
+import * as ClientClasses from "./tests/testData/ClientClasses/index.js";
 
-import * as ServerTypes from "./ServerTypes";
-import * as ClientTypes from "./ClientTypes";
+import * as ServerTypes from "./ServerTypes.js";
+import * as ClientTypes from "./ClientTypes.js";
 
 mongoose.set('debug', true);
 
@@ -40,33 +40,33 @@ export const initServerManagers = async () => {
   const managers = await AUSManagerFactory(
     {
       Test: {
-        class: ServerTypes.Test as any,
+        class: ServerTypes.Test,
       },
       Company: {
-        class: (ServerClasses as any).Company,
+        class: ServerClasses.Company,
       },
       Construction: {
-        class: (ServerClasses as any).Construction,
+        class: ServerClasses.Construction,
       },
       Subordinate: {
-        class: (ServerClasses as any).Subordinate,
+        class: ServerClasses.Subordinate,
         options: {
           accessDefinitions: {
             startupMiddleware: async (objects, managers, socket) => {
               const returns =
-                socket.handshake.auth.token == "Client1"        
+                socket.handshake.auth.token == "Client1"
                   ? objects
                   : objects.filter(
                       (obj) =>
-                        (obj as any).name &&
-                        (obj as any).name !== "Redacted" &&
-                        (obj as any).name !== "Secret",
+                        obj.name &&
+                        obj.name !== "Redacted" &&
+                        obj.name !== "Secret",
                     );
               return returns;
             },
             eventMiddleware: async (event, managers, socket) => {
               if (
-                socket.handshake.auth.token == "Client2" &&     
+                socket.handshake.auth.token == "Client2" &&
                 event.type === DEMEventTypes.delete
               )
                 throw new Error("Fail");
@@ -78,15 +78,15 @@ export const initServerManagers = async () => {
     {
       info: (s: string) => console.log("SERVER " + s),
       warn: (s: string) => console.warn("SERVER " + s),
-      error: (s: string) => console.error("SERVER " + s),       
-      debug: (s: string) => console.debug("SERVER " + s),       
+      error: (s: string) => console.error("SERVER " + s),
+      debug: (s: string) => console.debug("SERVER " + s),
     },
     io,
   );
   return { managers, io, server };
 };
 
-export const initClientManagers = async (id: string) => {       
+export const initClientManagers = async (id: string) => {
   const socket = io("http://localhost:3001", {
     auth: {
       token: id,
@@ -96,16 +96,16 @@ export const initClientManagers = async (id: string) => {
 
   const managers = await AUCManagerFactory(
     {
-      Test: ClientTypes.Test as any,
-      Subordinate: (ClientClasses as any).Subordinate,
-      Company: (ClientClasses as any).Company,
-      Construction: (ClientClasses as any).Construction,
+      Test: ClientTypes.Test,
+      Subordinate: ClientClasses.Subordinate,
+      Company: ClientClasses.Company,
+      Construction: ClientClasses.Construction,
     },
     {
-      debug: (msg: string) => console.log("CLIENT " + msg),     
-      error: (msg: string) => console.error("CLIENT " + msg),   
-      info: (msg: string) => console.log("CLIENT " + msg),      
-      warn: (msg: string) => console.log("CLIENT " + msg),      
+      debug: (msg: string) => console.log("CLIENT " + msg),
+      error: (msg: string) => console.error("CLIENT " + msg),
+      info: (msg: string) => console.log("CLIENT " + msg),
+      warn: (msg: string) => console.log("CLIENT " + msg),
     },
     socket,
   );
@@ -126,9 +126,9 @@ export const initFullServerManagers = async (port: number = 3002) => {
         serverSelectionTimeoutMS: 5000,
       });
   }
-
+  
   const defs: any = {};
-  for (const [name, cls] of Object.entries(ServerClasses)) {    
+  for (const [name, cls] of Object.entries(ServerClasses)) {
     if (typeof cls === 'function' && cls.prototype instanceof (ServerClasses as any).AutoUpdatedServerObject) {
        defs[name] = { class: cls as any };
     }
@@ -139,7 +139,7 @@ export const initFullServerManagers = async (port: number = 3002) => {
     {
       info: (s: string) => console.log("SERVER " + s),
       warn: (s: string) => console.warn("SERVER " + s),
-      error: (s: string) => console.error("SERVER " + s),       
+      error: (s: string) => console.error("SERVER " + s),
       debug: (s: string) => console.log("SERVER " + s),
     },
     io,
@@ -157,7 +157,7 @@ export const initFullClientManagers = async (port: number = 3002) => {
   });
 
   const defs: Record<string, Constructor<AutoUpdatedClientObject<any>>> = {};
-  for (const [name, cls] of Object.entries(ClientClasses)) {    
+  for (const [name, cls] of Object.entries(ClientClasses)) {
     if (typeof cls === 'function' && cls.prototype instanceof (ClientClasses as any).AutoUpdatedClientObject) {
        defs[name] = cls as Constructor<AutoUpdatedClientObject<any>>;
     }
@@ -166,10 +166,10 @@ export const initFullClientManagers = async (port: number = 3002) => {
   const managers = await AUCManagerFactory(
     defs,
     {
-      debug: (msg: string) => console.log("CLIENT " + msg),     
-      error: (msg: string) => console.error("CLIENT " + msg),   
-      info: (msg: string) => console.log("CLIENT " + msg),      
-      warn: (msg: string) => console.log("CLIENT " + msg),      
+      debug: (msg: string) => console.log("CLIENT " + msg),
+      error: (msg: string) => console.error("CLIENT " + msg),
+      info: (msg: string) => console.log("CLIENT " + msg),
+      warn: (msg: string) => console.log("CLIENT " + msg),
     },
     socket,
   );

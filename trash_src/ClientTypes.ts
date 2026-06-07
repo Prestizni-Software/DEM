@@ -1,6 +1,6 @@
-import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass";
-import { classProp, classRef, populatedRef } from "./CommonTypes";
-import { Status, Objekt } from "./TestTypes";
+import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
+import { classProp, classRef, populatedRef } from "./CommonTypes.js";
+import { Status, Objekt } from "./TestTypes.js";
 
 
 export class Test extends AutoUpdatedClientObject<Test> {
