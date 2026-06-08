@@ -1,6 +1,6 @@
-import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass";
-import { classProp, classRef, populatedRef } from "./CommonTypes";
-import { Status, Objekt } from "./TestTypes";
+import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
+import { classProp, classRef, populatedRef } from "./CommonTypes.js";
+import { Status, Objekt } from "./TestTypes.js";
 
 
 export class Test extends AutoUpdatedClientObject<Test> {
@@ -32,7 +32,8 @@ export class Test extends AutoUpdatedClientObject<Test> {
   public parent!: Test | null;
 }
 
-export class Test2 extends AutoUpdatedClientObject<any> {
+export class Test2 extends AutoUpdatedClientObject<Test2> {
   @classProp
   public _id!: string;
 }
+

@@ -1,7 +1,7 @@
 import { Status } from "./TestTypes.js";
 import { initServerManagers } from "./test_lib.js";
 
-let { managers } = await initServerManagers();
+let { managers }: any = await initServerManagers();
 console.log("CREATING OBJECT WITH active = true, status = INACTIVE");
 
 const obj1 = await managers.Test.createObject({
@@ -15,8 +15,8 @@ const obj1 = await managers.Test.createObject({
     _id: "default",
     obj: { _id: "default" },
   },
-});
-managers = managers.Construction.objectsAsArray[0].parentManager.managers;
+} as any);
+managers = (managers.Construction.objectsAsArray[0] as any).parentManager.managers;
 const x1 = obj1.extractedData
 managers.Construction.objectsAsArray[0].setValue("objects", [obj1._id]);
 const obj2 = await managers.Test.createObject({
@@ -27,7 +27,7 @@ const obj2 = await managers.Test.createObject({
   refarr: [],
   obj: null,
   parent: obj1,
-});
+} as any);
 await obj2.setValue("parent", null);
 const x2 = [obj1, obj2._id, obj2._id.toString()];
 const obj3 = await (managers.Test).createObject({
@@ -38,7 +38,7 @@ const obj3 = await (managers.Test).createObject({
   refarr: [obj1._id, obj2],
   obj: null,
   parent: null,
-});
+} as any);
 
 if (!obj1 || !obj2) throw new Error("No obj");
 
@@ -48,7 +48,7 @@ await obj1.setValue("active", false);
 await obj1.setValue("obj", { _id: "1", obj: { _id: "2" } });
 await obj1.setValue("ref", obj2._id.toString());
 
-const refarr = [...obj1.refarr];
+const refarr = [...(obj1 as any).refarr];
 refarr.splice(0, refarr.length);
 refarr.push(obj2);
 await obj1.setValue("refarr", refarr);

@@ -17,45 +17,48 @@ import {
   EVENT_UPDATE,
   globalCache,
   ServerResponse,
-} from "./CommonTypes";
-import { ObjectId } from "bson";
+  MongoId,
+  IAutoUpdatedClientObject,
+  IAutoUpdatedClientObjectBase,
+  IAutoUpdatedServerObject,
+  IAutoUpdateManager,
+  DEMCache,
+} from "./CommonTypes.js";
+import { ObjectId, ObjectIdLike } from "bson";
 import { Socket } from "socket.io-client";
-import { AutoUpdateManager } from "./AutoUpdateManagerClass";
+import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 
-export type DEMClientCallbacks<T> = {
-  new: (obj: T) => Promise<void> | void;
-  update: (obj: T, key: string) => Promise<void> | void;
-  delete: (obj: T) => Promise<void> | void;
+export type DEMClientCallbacks<T extends object> = {
+  new: (obj: IAutoUpdatedClientObject<T>) => Promise<void> | void;
+  update: (obj: IAutoUpdatedClientObject<T>, key: string) => Promise<void> | void;
+  delete: (obj: IAutoUpdatedClientObject<T>) => Promise<void> | void;
   progress: (percent: number) => void;
 };
 
-type SocketType = Socket<any, any>;
+type SocketType = Socket;
 
-export abstract class AutoUpdatedClientObject<T> {
-  protected entry: any;
-  public preLoad: any;
-  public registerSocket: any;
-  public readyLoggers: any;
-
-  public loadFromDB(a: any): any {}
-  public setValue_(a: any, b: any): any {}
+export abstract class AutoUpdatedClientObject<
+  T extends IAutoUpdatedClientObjectBase,
+  M extends Record<string, IAutoUpdateManager<any>> = Record<string, IAutoUpdateManager<any>>,
+> implements IAutoUpdatedClientObject<T> {
+  protected entry: unknown;
 
   protected readonly socket: SocketType;
   protected data: IsData<T>;
   protected readonly isServer: boolean = false;
-  public abstract readonly _id: any;
+  public abstract readonly _id: MongoId;
   protected readonly loggers: LoggersType;
   protected isLoading = true;
   protected loadError?: string;
   protected isLoadingReferences = true;
   protected checkedMissingRefs = false;
   protected readonly emitter: EventEmitter3;
-  public readonly properties: (keyof OnlyAddedKeys<T, AutoUpdatedClientObject<T>>)[];
+  public readonly properties: string[];
   public readonly classParam: Constructor<T>;
   public readonly className: string;
-  public parentManager: AutoUpdateManager<AutoUpdatedClientObject<T>>;
+  public parentManager: IAutoUpdateManager<T> & { cache: DEMCache, managers: M };
   private readonly EmitterID = new ObjectId().toHexString();
-  protected readonly toChangeOnParents: { key: string; value: any }[] = [];
+  protected readonly toChangeOnParents: { key: string; value: unknown }[] = [];
   public callbacks: DEMClientCallbacks<T>;
 
   private readonly loadReferencesAsync = async (): Promise<void> => {
@@ -68,8 +71,8 @@ export abstract class AutoUpdatedClientObject<T> {
       for (const thing of this.toChangeOnParents) {
         await this.setValue__(thing.key, thing.value, true, false, false, true);
       }
-    } catch (error: any) {
-      this.loggers.error?.("Error loading references: " + error.message);
+    } catch (error: unknown) {
+      this.loggers.error?.("Error loading references: " + (error instanceof Error ? error.message : String(error)));
     } finally {
       this.isLoadingReferences = false;
     }
@@ -84,7 +87,7 @@ export abstract class AutoUpdatedClientObject<T> {
     data?: string | IsData<T>,
     loggers?: LoggersType,
     className?: string,
-    parentManager?: AutoUpdateManager<any>,
+    parentManager?: IAutoUpdateManager<IAutoUpdatedClientObject<any>>,
     callback?: DEMClientCallbacks<T>,
     emitter?: EventEmitter3,
     isServer: boolean = false,
@@ -100,13 +103,13 @@ export abstract class AutoUpdatedClientObject<T> {
     ) {
       this.classParam = classParam!;
       this.socket = socket!;
-      this.data = data as any;
+      this.data = data as IsData<T>;
       this.loggers = loggers!;
       this.className = className!;
-      this.parentManager = parentManager!;
+      this.parentManager = parentManager as unknown as IAutoUpdateManager<T> & { cache: DEMCache, managers: M };
       this.callbacks = callback!;
       this.emitter = emitter!;
-      this.properties = undefined as any;
+      this.properties = undefined as unknown as string[];
 
       if (
         !classParam &&
@@ -128,7 +131,7 @@ export abstract class AutoUpdatedClientObject<T> {
     this.emitter = emitter;
     this.isLoadingReferences = true;
     this.isLoading = true;
-    this.parentManager = parentManager;
+    this.parentManager = parentManager as unknown as IAutoUpdateManager<T> & { cache: DEMCache, managers: M };
     this.className = className;
 
     const allProps = new Set<string>();
@@ -138,38 +141,38 @@ export abstract class AutoUpdatedClientObject<T> {
       for (const p of props) allProps.add(p);
       proto_ = Object.getPrototypeOf(proto_);
     }
-    this.properties = Array.from(allProps) as any;
+    this.properties = Array.from(allProps) as string[];
     this.callbacks = callback!;
 
     this.loggers = {
       debug: (s: string) =>
         loggers.debug?.(
           `[DEM - ${this.className}: ${
-            (this.data as any)?._id ?? (this as any)._id ?? "not loaded"
+            this.data?._id ?? (this as unknown as { _id: MongoId })._id ?? "not loaded"
           }] ${s}`,
         ),
       info: (s: string) =>
         loggers.info?.(
           `[DEM - ${this.className}: ${
-            (this.data as any)?._id ?? (this as any)._id ?? "not loaded"
+            this.data?._id ?? (this as unknown as { _id: MongoId })._id ?? "not loaded"
           }] ${s}`,
         ),
       warn: (s: string) =>
         loggers.warn?.(
           `[DEM - ${this.className}: ${
-            (this.data as any)?._id ?? (this as any)._id ?? "not loaded"
+            this.data?._id ?? (this as unknown as { _id: MongoId })._id ?? "not loaded"
           }] ${s}`,
         ),
       error: (s: string) =>
         loggers.error?.(
           `[DEM - ${this.className}: ${
-            (this.data as any)?._id ?? (this as any)._id ?? "not loaded"
+            this.data?._id ?? (this as unknown as { _id: MongoId })._id ?? "not loaded"
           }] ${s}`,
         ),
     };
 
     if (typeof data === "string") {
-      this.data = { _id: data } as any;
+      this.data = { _id: data } as IsData<T>;
       if (this.isServer) {
         this.isLoading = false;
         this.generateSettersAndGetters();
@@ -186,7 +189,7 @@ export abstract class AutoUpdatedClientObject<T> {
             this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID, true, res.message);
             return;
           }
-          this.data = res.data as any;
+          this.data = res.data as unknown as IsData<T>;
           this.generateSettersAndGetters();
           this.isLoading = false;
           this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
@@ -195,26 +198,27 @@ export abstract class AutoUpdatedClientObject<T> {
       );
     } else {
       this.isLoading = true;
-      this.data = data as any;
+      this.data = data as IsData<T>;
       for (const key of (this.properties as string[]) || []) {
         const isRef = getMetadataRecursive("isRef", this, key);
-        if (isRef && (this.data as any)[key]) {
-          if (Array.isArray((this.data as any)[key])) {
-            (this.data as any)[key] = (this.data as any)[key].map(
-              (obj: any) => obj._id?.toString() ?? obj?.toString(),
+        const dataAsRecord = this.data as unknown as Record<string, unknown>;
+        if (isRef && dataAsRecord[key]) {
+          if (Array.isArray(dataAsRecord[key])) {
+            dataAsRecord[key] = (dataAsRecord[key] as unknown[]).map(
+              (obj: unknown) => (obj as { _id?: { toString(): string } | string })?._id?.toString() ?? (obj as { toString(): string })?.toString(),
             );
           } else {
-            (this.data as any)[key] =
-              (this.data as any)[key]?._id?.toString() ??
-              (this.data as any)[key]?.toString();
+            dataAsRecord[key] =
+              (dataAsRecord[key] as { _id?: { toString(): string } | string })?._id?.toString() ??
+              (dataAsRecord[key] as { toString(): string })?.toString();
           }
         }
       }
       if (
-        (!(this.data as any)._id || (this.data as any)._id === "") &&
+        (!this.data._id || this.data._id === "") &&
         !this.isServer
       ) {
-        this.handleNewObject(data as any);
+        this.handleNewObject(data as IsData<T>);
       } else {
         this.isLoading = false;
         if (!this.isServer) this.openSockets();
@@ -255,7 +259,7 @@ export abstract class AutoUpdatedClientObject<T> {
         );
         return;
       }
-      this.data = res.data as any;
+      this.data = res.data as unknown as IsData<T>;
       this.generateSettersAndGetters();
       this.isLoading = false;
       this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
@@ -263,16 +267,16 @@ export abstract class AutoUpdatedClientObject<T> {
     });
   }
 
-  public get extractedData(): ExtractedData<T, AutoUpdatedClientObject<T>> {
+  public get extractedData(): ExtractedData<T, IAutoUpdatedClientObject<any>> {
     const extracted = processIsRefProperties(
-      this.data,
+      this.data as unknown as Record<string, unknown>,
       this,
       null,
       [],
-      {},
+      {} as Record<string, unknown>,
       this.loggers,
     ).newData;
-    return _.cloneDeep(extracted);
+    return _.cloneDeep(extracted) as unknown as ExtractedData<T, IAutoUpdatedClientObject<any>>;
   }
 
   public get isLoaded(): boolean {
@@ -290,27 +294,27 @@ export abstract class AutoUpdatedClientObject<T> {
   }
 
   private openSockets() {
-    const id = (this.data as any)?._id ?? (this as any)._id;
+    const id = this.data?._id ?? (this as unknown as { _id: MongoId })._id;
     const event = EVENT_UPDATE + this.className + id.toString();
-    this.socket.on(event, async (update: any, ack: any) => {
-      const res = await this.handleUpdateRequest(update);
+    this.socket.on(event, async (update: unknown, ack: (res: ServerResponse<unknown>) => void) => {
+      const res = await this.handleUpdateRequest(update as { key: string; value: unknown });
       if (ack && typeof ack === "function") ack(res);
       return res;
     });
   }
 
-  private async handleUpdateRequest(update: any) {
+  private async handleUpdateRequest(update: { key: string; value: unknown }): Promise<ServerResponse<unknown>> {
     try {
       await this.setValue__(update.key, update.value, true);
-      if (this.isLoaded) this.callbacks.update(this as any, update.key);
+      if (this.isLoaded) this.callbacks.update(this as unknown as IAutoUpdatedClientObject<T>, update.key);
       return { success: true, data: undefined, message: "" };
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.loggers.error?.(
-        `[${(this.data as any)._id}] Error applying patch: ${error.message}`,
+        `[${this.data._id}] Error applying patch: ${error instanceof Error ? error.message : String(error)}`,
       );
       return {
         success: false,
-        message: "Error applying update: " + error.message,
+        message: "Error applying update: " + (error instanceof Error ? error.message : String(error)),
       };
     }
   }
@@ -321,25 +325,25 @@ export abstract class AutoUpdatedClientObject<T> {
       if (typeof key !== "string") continue;
       const isRef = getMetadataRecursive("isRef", this, key);
 
-      delete (this as any)[key];
+      delete (this as Record<string, unknown>)[key];
       Object.defineProperty(this, key, {
         get: () => {
           if (!this.data) return undefined;
-          let val = (this.data as any)[key];
+          let val = (this.data as Record<string, unknown>)[key];
           if (val === null) val = undefined;
           if (isRef && val) {
             if (Array.isArray(val)) {
               return val
-                .map((id: any) => this.findReference(id, key))
+                .map((id: string | ObjectId) => this.findReference(id, key))
                 .filter(Boolean);
             } else {
-              return this.findReference(val, key);
+              return this.findReference(val as string | ObjectId, key);
             }
           }
           return val;
         },
-        set: (v: any) => {
-          if (this.data) (this.data as any)[key] = v;
+        set: (v: unknown) => {
+          if (this.data) (this.data as Record<string, unknown>)[key] = v;
         },
         enumerable: true,
         configurable: true,
@@ -347,49 +351,51 @@ export abstract class AutoUpdatedClientObject<T> {
     }
   }
 
-  public getValue(key_: Paths<T, AutoUpdatedClientObject<unknown>>): any {
+  public getValue<K extends Paths<T, IAutoUpdatedClientObject<any>>>(key_: K): PathValueOf<T, K>;
+  public getValue(key_: string): any;
+  public getValue(key_: string): any {
     const key = key_ as string;
     const parts = key.split(".");
     let value: any = this;
     for (const part of parts) {
-      if (value === undefined || value === null) return undefined;
-      const nextValue = value[part];
+      if (value === undefined || value === null) return undefined as any;
+      const nextValue = (value as Record<string, unknown>)[part];
       if (nextValue !== undefined) {
         value = nextValue;
-      } else if (value.data && value.data[part] !== undefined) {
-        value = value.data[part];
+      } else if ((value as { data?: Record<string, unknown> }).data && (value as { data: Record<string, unknown> }).data[part] !== undefined) {
+        value = (value as { data: Record<string, unknown> }).data[part];
       } else {
-        return undefined;
+        return undefined as any;
       }
     }
     return value;
   }
 
-  protected findReference(id: string | ObjectId, key: string): any {
+  protected findReference(id: string | ObjectId, key: string): IAutoUpdatedClientObject<any> | undefined {
     if (!id) return undefined;
     const idStr = id.toString();
     if (this.parentManager.cache.references[key])
-      return this.parentManager.cache.references[key].getObject(idStr);
+      return this.parentManager.cache.references[key]?.getObject(idStr) ?? undefined;
     for (const manager of Object.values(this.parentManager.managers)) {
       const result = manager.getObject(idStr);
       if (result) {
-        this.parentManager.cache.references[key] = manager as any;
-        return result;
+        this.parentManager.cache.references[key] = manager;
+        return result as IAutoUpdatedClientObject<any>;
       }
     }
     return undefined;
   }
 
-  public async setValue<K extends Paths<T, AutoUpdatedClientObject<T>>>(
+  public async setValue<K extends string>(
     key: K,
     val: PathValueOf<IsData<T>, K>,
   ): Promise<{ success: boolean; msg: string }> {
-    return await this.setValue__(key as any, val);
+    return await this.setValue__(key as string, val);
   }
 
   protected async setValue__(
-    key: any,
-    val: any,
+    key: string,
+    val: unknown,
     silent = false,
     noGet = false,
     noUpdate = false,
@@ -404,66 +410,67 @@ export abstract class AutoUpdatedClientObject<T> {
       let valueToStore = val;
       if (isRef) {
         valueToStore = Array.isArray(val)
-          ? val.map((v: any) => v._id?.toString() ?? v.toString())
-          : val?._id ?? val?.toString() ?? val;
+          ? val.map((v: unknown) => (v as { _id?: { toString(): string } | string })?._id?.toString() ?? (v as { toString(): string })?.toString() ?? v)
+          : (val as { _id?: { toString(): string } | string })?._id?.toString() ?? (val as { toString(): string })?.toString() ?? val;
       }
-      const currentVal = this.getValue(key);
+      const currentVal = this.getValue(key as any);
       const currentValId = Array.isArray(currentVal)
-        ? currentVal.map((v: any) => v._id?.toString() ?? v.toString())
-        : currentVal?._id ?? currentVal?.toString();
+        ? (currentVal as any[]).map((v: unknown) => (v as { _id?: { toString(): string } | string })?._id?.toString() ?? (v as { toString(): string })?.toString() ?? v)
+        : (currentVal as { _id?: { toString(): string } | string })?._id?.toString() ?? (currentVal as { toString(): string })?.toString();
 
       if (_.isEqual(currentValId, valueToStore))
         return { success: true, msg: "Successfully set " + key + " to " + val };
 
       const path = (key as string).split(".");
       if (path.length > 1) {
-        let obj = this.data as any;
+        let obj = this.data as Record<string, unknown>;
         for (let i = 0; i < path.length - 1; i++) {
           const currentKey = path[i];
+          const valAtKey = obj[currentKey];
           if (
-            typeof obj[currentKey] === "string" ||
-            ObjectId.isValid(obj[currentKey])
+            typeof valAtKey === "string" ||
+            (valAtKey && ObjectId.isValid(valAtKey as any))
           ) {
-            const ref = await this.resolveReference(obj[currentKey].toString());
+            const ref = await this.resolveReference(String(valAtKey));
             if (!ref)
               throw new Error("Could not resolve reference on path: " + key);
-            return await ref.setValue(path.slice(i + 1).join(".") as any, val);
+            return await ref.setValue(path.slice(i + 1).join(".") as any, val as any);
           }
-          obj = obj[currentKey];
+          obj = obj[currentKey] as Record<string, unknown>;
         }
       }
 
       const res = await this.setValueInternal(key, valueToStore, silent, noUpdate);
       if (res.success) {
         const pathArr = (key as string).split(".");
-        let obj = this.data as any;
+        let obj = this.data as Record<string, unknown>;
         for (let i = 0; i < pathArr.length - 1; i++) {
-          obj = obj[pathArr[i]];
+          obj = obj[pathArr[i]] as Record<string, unknown>;
         }
         obj[pathArr[pathArr.length - 1]] = valueToStore;
         await this.findAndLoadReferences(key, valueToStore);
         if (isRef && this.parentManager.isLoaded) await this.contactChildren();
-        if (this.isLoaded) this.callbacks.update(this as any, key);
+        if (this.isLoaded) this.callbacks.update(this as unknown as IAutoUpdatedClientObject<T>, key);
       }
       return {
         ...res,
         msg: res.msg ?? "Successfully set " + key + " to " + val,
       };
-    } catch (error: any) {
-      this.loggers.error?.(`Error setting value ${key}: ${error.message}`);
-      return { success: false, msg: error.message };
+    } catch (error: unknown) {
+      this.loggers.error?.(`Error setting value ${key}: ${error instanceof Error ? error.message : String(error)}`);
+      return { success: false, msg: error instanceof Error ? error.message : String(error) };
     }
   }
 
   protected async setValueInternal(
     key: string,
-    value: any,
+    value: unknown,
     silent = false,
     noUpdate = false,
   ): Promise<{ success: boolean; msg: string }> {
     if (silent) return { success: true, msg: "Silent" };
     return new Promise((resolve) => {
-      const id = (this.data as any)?._id ?? (this as any)._id;
+      const id = this.data?._id ?? (this as unknown as { _id: MongoId })._id;
       this.socket.emit(
         EVENT_UPDATE + this.className + id,
         { _id: id.toString(), key, value },
@@ -477,8 +484,8 @@ export abstract class AutoUpdatedClientObject<T> {
     });
   }
 
-  protected makeUpdate(key: string, value: any): ServerUpdateRequest<T> {
-    const id = (this.data as any)?._id ?? (this as any)._id;
+  protected makeUpdate(key: string, value: unknown): ServerUpdateRequest<T> {
+    const id = this.data?._id ?? (this as unknown as { _id: MongoId })._id;
     if (!id) {
       this.loggers.error?.(
         `Probably missing the identifier ['_id'] again: ${key} = ${value}`,
@@ -492,22 +499,22 @@ export abstract class AutoUpdatedClientObject<T> {
 
   protected async resolveReference(
     id: string,
-  ): Promise<AutoUpdatedClientObject<any> | null> {
+  ): Promise<IAutoUpdatedClientObject<any> | null> {
     for (const manager of Object.values(this.parentManager.managers)) {
       const obj = manager.getObject(id);
-      if (obj) return obj;
+      if (obj) return obj as IAutoUpdatedClientObject<any>;
     }
     return null;
   }
 
-  private async findAndLoadReferences(lastPath: string, value: any) {
+  private async findAndLoadReferences(lastPath: string, value: unknown) {
     const isRef = getMetadataRecursive("isRef", this, lastPath);
     if (isRef) {
       for (const id of Array.isArray(value) ? value : [value]) {
         if (!id) continue;
-        let result: any;
+        let result: IAutoUpdatedClientObject<any> | undefined;
         for (const manager of Object.values(this.parentManager.managers)) {
-          result = manager.getObject(id?.toString());
+          result = manager.getObject(id?.toString()) as IAutoUpdatedClientObject<any> | undefined;
           if (result) break;
         }
         if (result && typeof result.loadMissingReferences === "function") {
@@ -518,13 +525,13 @@ export abstract class AutoUpdatedClientObject<T> {
   }
 
   protected async wipeSelf(): Promise<void> {
-    if ((this.data as any).Wiped) return;
-    const id = (this.data as any)?._id ?? (this as any)._id;
+    if ((this.data as unknown as { Wiped: boolean }).Wiped) return;
+    const id = this.data?._id ?? (this as unknown as { _id: MongoId })._id;
     const _id = id ? id.toString() : "unknown";
-    for (const key of Object.keys(this.data as any)) {
-      delete (this.data as any)[key];
+    for (const key of Object.keys(this.data as Record<string, unknown>)) {
+      delete (this.data as Record<string, unknown>)[key];
     }
-    (this.data as any) = { Wiped: true };
+    (this.data as unknown as { Wiped: boolean }) = { Wiped: true };
     this.loggers.info?.(`[${_id}] ${this.className} object wiped`);
   }
 
@@ -533,9 +540,9 @@ export abstract class AutoUpdatedClientObject<T> {
   }
 
   private async loadForceReferences(
-    obj: any = this.data,
-    proto: any = this,
-    alreadySeen: any[] = [],
+    obj: Record<string, unknown> = this.data as unknown as Record<string, unknown>,
+    proto: object = this,
+    alreadySeen: unknown[] = [],
   ) {
     const props = (Reflect.getMetadata("props", proto) as string[]) || [];
     for (const key of props) {
@@ -545,11 +552,11 @@ export abstract class AutoUpdatedClientObject<T> {
 
       if (
         pointer &&
-        obj === this.data &&
+        obj === (this.data as unknown as Record<string, unknown>) &&
         obj[key] &&
         !alreadySeen.includes(obj)
       ) {
-        await this.createdWithParent(pointer.split(":"), obj[key]);
+        await this.createdWithParent(pointer.split(":"), obj[key] as Record<string, unknown>);
       }
 
       if (obj[key] && !alreadySeen.includes(obj[key])) alreadySeen.push(obj[key]);
@@ -561,27 +568,27 @@ export abstract class AutoUpdatedClientObject<T> {
         const nestedProto = Object.getPrototypeOf(val);
         if (nestedProto && !alreadySeen.includes(val)) {
           alreadySeen.push(val);
-          await this.loadForceReferences(val, nestedProto, alreadySeen);
+          await this.loadForceReferences(val as Record<string, unknown>, nestedProto, alreadySeen);
         }
       }
     }
   }
 
-  private async handleLoad(obj: any, key: string, alreadySeen: any[]) {
-    const refIds = Array.isArray(obj[key]) ? obj[key] : [obj[key]];
+  private async handleLoad(obj: Record<string, unknown>, key: string, alreadySeen: unknown[]) {
+    const refIds = Array.isArray(obj[key]) ? (obj[key] as unknown[]) : [obj[key]];
     for (const refId of refIds) {
       if (refId) {
-        const idStr = refId.toString();
+        const idStr = (refId as { toString(): string }).toString();
         let result = globalCache.objects[idStr]?.object;
         if (!result) {
           for (const manager of Object.values(this.parentManager.managers)) {
-            result = manager.getObject(idStr) as any;
+            result = manager.getObject(idStr) as IAutoUpdatedClientObject<any>;
             if (result) break;
           }
         }
         if (result && !alreadySeen.includes(idStr)) {
           alreadySeen.push(idStr);
-          await (result as any).loadForceReferences(
+          await (result as unknown as { loadForceReferences(obj?: Record<string, unknown>, proto?: object, alreadySeen?: unknown[]): Promise<void> }).loadForceReferences(
             undefined,
             undefined,
             alreadySeen,
@@ -591,19 +598,19 @@ export abstract class AutoUpdatedClientObject<T> {
     }
   }
 
-  protected async createdWithParent(pointer: string[], parent: any): Promise<void> {
+  protected async createdWithParent(pointer: string[], parent: Record<string, unknown>): Promise<void> {
     if (pointer.length !== 2) return;
-    const parentId = parent._id?.toString() ?? parent.toString();
-    const obj = (this.parentManager.managers[pointer[0]] as any)?.getObject(
+    const parentId = (parent._id as { toString(): string })?.toString() ?? parent.toString();
+    const obj = (this.parentManager.managers[pointer[0]] as unknown as { getObject(id: string): IAutoUpdatedClientObject<any> })?.getObject(
       parentId,
-    );
+    ) as IAutoUpdatedClientObject<any> | undefined;
     if (!obj) return;
-    const val = obj.getValue(pointer[1]);
-    const myId = (this.data as any)._id.toString();
+    const val = obj.getValue(pointer[1] as any);
+    const myId = this.data._id.toString();
     if (Array.isArray(val)) {
-      const ids = val.map((v: any) => v._id?.toString() ?? v.toString());
+      const ids = val.map((v: unknown) => (v as { _id?: { toString(): string } | string })?._id?.toString() ?? (v as { toString(): string })?.toString());
       if (!ids.includes(myId)) {
-        await obj.setValue__(
+        await (obj as unknown as { setValue__(key: string, val: unknown, silent?: boolean, noGet?: boolean, noUpdate?: boolean, isParentUpdate?: boolean): Promise<void> }).setValue__(
           pointer[1],
           [...val, myId],
           true,
@@ -612,17 +619,17 @@ export abstract class AutoUpdatedClientObject<T> {
           true,
         );
       }
-    } else if ((val?._id?.toString() ?? val?.toString()) !== myId) {
-      await obj.setValue__(pointer[1], myId, true, false, false, true);
+    } else if (((val as { _id?: { toString(): string } | string })?._id?.toString() ?? (val as { toString(): string })?.toString()) !== myId) {
+      await (obj as unknown as { setValue__(key: string, val: unknown, silent?: boolean, noGet?: boolean, noUpdate?: boolean, isParentUpdate?: boolean): Promise<void> }).setValue__(pointer[1], myId, true, false, false, true);
     }
   }
 
   public async destroy(once = false): Promise<{ success: boolean; message: string }> {
-    if (!once) return await this.parentManager.deleteObject((this.data as any)._id);
+    if (!once) return await this.parentManager.deleteObject(this.data._id.toString());
     return new Promise((resolve) => {
       this.socket.emit(
         EVENT_DELETE + this.className,
-        (this.data as any)._id,
+        this.data._id,
         (res: ServerResponse<undefined>) => {
           resolve({ success: res.success, message: res.message ?? "" });
         },
@@ -644,19 +651,19 @@ export abstract class AutoUpdatedClientObject<T> {
   private async findMissingObjectReference(prop: string, pointer: string[]) {
     if (this.checkedMissingRefs) return;
     this.checkedMissingRefs = true;
-    const ac = (this.parentManager.managers as any)[pointer[0]];
+    const ac = (this.parentManager.managers as Record<string, IAutoUpdateManager<IAutoUpdatedClientObject<any>>>)[pointer[0]];
     if (!ac) return;
-    const targetId = (this.data as any)._id.toString();
-    const allObjects = Object.values(ac.objects) as AutoUpdatedClientObject<any>[];
+    const targetId = this.data._id.toString();
+    const allObjects = Object.values(ac.objectsAsArray) as IAutoUpdatedClientObject<any>[];
     for (const obj of allObjects) {
       if (!obj.isLoaded) await obj.waitForPreloaded();
       const val = obj.getValue(pointer[1] as any);
       if (!val) continue;
       const ids = Array.isArray(val)
-        ? val.map((v: any) => v._id?.toString() ?? v.toString())
-        : [val._id?.toString() ?? val.toString()];
+        ? val.map((v: unknown) => (v as { _id?: { toString(): string } | string })?._id?.toString() ?? (v as { toString(): string }).toString())
+        : [(val as { _id?: { toString(): string } | string })._id?.toString() ?? (val as { toString(): string }).toString()];
       if (ids.includes(targetId)) {
-        (this.data as any)[prop] = obj._id;
+        (this.data as Record<string, unknown>)[prop] = obj._id;
         return;
       }
     }
@@ -670,9 +677,9 @@ export abstract class AutoUpdatedClientObject<T> {
       const obj = this.getValue(prop as any);
       if (!obj) continue;
       const children = Array.isArray(obj) ? obj : [obj];
-      for (const child of children) {
-        if (child && typeof child.loadMissingReferences === "function") {
-          await child.loadMissingReferences();
+      for (const child of children as any[]) {
+        if (child && typeof (child as { loadMissingReferences?: () => Promise<void> }).loadMissingReferences === "function") {
+          await (child as { loadMissingReferences(): Promise<void> }).loadMissingReferences();
         }
       }
     }
@@ -684,37 +691,37 @@ export abstract class AutoUpdatedClientObject<T> {
 }
 
 export function processIsRefProperties(
-  instance: any,
-  target: any,
+  instance: Record<string, unknown>,
+  target: object,
   prefix: string | null,
   allProps: string[],
-  newData: any,
+  newData: Record<string, unknown>,
   loggers: LoggersType,
-): { allProps: string[]; newData: any } {
+): { allProps: string[]; newData: Record<string, unknown> } {
   const props = (Reflect.getMetadata("props", target) as string[]) || [];
   for (const prop of props) {
     const path = prefix ? `${prefix}.${prop}` : prop;
     allProps.push(path);
-    newData[prop] = ObjectId.isValid(instance[prop])
-      ? instance[prop]?.toString()
+    newData[prop] = (instance[prop] && ObjectId.isValid(instance[prop] as any))
+      ? (instance[prop] as { toString(): string })?.toString()
       : instance[prop];
     if (Reflect.getMetadata("isRef", target, prop)) {
       if (Array.isArray(instance[prop]))
-        newData[prop] = instance[prop]
-          .map((item: any) => item?._id?.toString() ?? item?.toString())
+        newData[prop] = (instance[prop] as unknown[])
+          .map((item: unknown) => (item as { _id?: { toString(): string } | string })?._id?.toString() ?? (item as { toString(): string })?.toString())
           .filter(Boolean);
       else
         newData[prop] =
-          instance[prop]?._id?.toString() ?? instance[prop]?.toString();
+          (instance[prop] as { _id?: { toString(): string } | string })?._id?.toString() ?? (instance[prop] as { toString(): string })?.toString();
     }
     const type = Reflect.getMetadata("design:type", target, prop) as {
-      prototype?: any;
+      prototype?: object;
     };
     if (type?.prototype) {
       const nestedProps = Reflect.getMetadata("props", type.prototype);
       if (nestedProps && instance[prop]) {
         newData[prop] = processIsRefProperties(
-          instance[prop],
+          instance[prop] as Record<string, unknown>,
           type.prototype,
           path,
           allProps,
@@ -729,9 +736,9 @@ export function processIsRefProperties(
 
 export function getMetadataRecursive(
   metaKey: string,
-  proto: any,
+  proto: object | null,
   prop: string,
-): any {
+): unknown {
   while (proto) {
     const meta = Reflect.getMetadata(metaKey, proto, prop);
     if (meta) return meta;
@@ -739,3 +746,4 @@ export function getMetadataRecursive(
   }
   return undefined;
 }
+

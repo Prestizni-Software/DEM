@@ -1,26 +1,34 @@
-import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass";
 import {
+  IAutoUpdatedClientObject,
+  IAutoUpdatedClientObjectBase,
+  MongoId,
+  IsData,
+  IAutoUpdateManager,
   Constructor,
   EventEmitter3,
   LoggersType,
-  Cache,
+  DEMCache,
   globalCache,
-} from "./CommonTypes";
+} from "./CommonTypes.js";
 import "reflect-metadata";
 
 export abstract class AutoUpdateManager<
-  T extends AutoUpdatedClientObject<any>,
-> {
+  T extends IAutoUpdatedClientObjectBase,
+  M extends Record<string, IAutoUpdateManager<any>> = Record<
+    string,
+    IAutoUpdateManager<any>
+  >,
+> implements IAutoUpdateManager<T> {
   protected abstract objects_: { [_id: string]: T };
   protected isLoaded_ = false;
-  public readonly socket: any;
+  public readonly socket: unknown;
   protected classParam: Constructor<T>;
-  protected properties: (keyof any)[];
+  protected properties: string[];
   public readonly className: string;
-  public readonly cache: Cache<any> = {
+  public readonly cache: DEMCache = {
     references: {},
   };
-  public readonly managers: Record<string, AutoUpdateManager<AutoUpdatedClientObject<any>>>;
+  public readonly managers: M;
   protected preloaded = false;
   protected waitingToResolveReferences: { [_id: string]: string } = {};
   protected loggers: LoggersType = {
@@ -34,18 +42,23 @@ export abstract class AutoUpdateManager<
   constructor(
     classParam: Constructor<T>,
     className: string,
-    socket: any,
+    socket: unknown,
     loggers: LoggersType,
-    managers: Record<string, AutoUpdateManager<AutoUpdatedClientObject<any>>>,
+    managers: M,
     emitter: EventEmitter3,
   ) {
-    console.log("DEBUG: AutoUpdateManager constructor, className=" + className + ", socket keys=" + Object.keys(socket || {}).join(","));
+    console.log(
+      "DEBUG: AutoUpdateManager constructor, className=" +
+        className +
+        ", socket keys=" +
+        Object.keys((socket as object) || {}).join(","),
+    );
     this.className = className;
     this.managers = managers;
     this.emitter = emitter;
     this.socket = socket;
     this.classParam = classParam;
-    this.properties = Reflect.getMetadata("props", classParam.prototype);
+    this.properties = Reflect.getMetadata("props", classParam.prototype) || [];
 
     this.loggers.debug = (s: string) =>
       loggers.debug?.("[DEM - " + className + " MANAGER] " + s);
@@ -66,7 +79,18 @@ export abstract class AutoUpdateManager<
       delete this.objects_[id];
       delete globalCache.objects[id];
     }
-    this.socket.disconnect?.() ?? this.socket.disconnectSockets?.(true);
+    (
+      this.socket as {
+        disconnect?: () => void;
+        disconnectSockets?: (b: boolean) => void;
+      }
+    ).disconnect?.() ??
+      (
+        this.socket as {
+          disconnect?: () => void;
+          disconnectSockets?: (b: boolean) => void;
+        }
+      ).disconnectSockets?.(true);
     this.loggers.info("Goodbye, see you next time!");
   }
 
@@ -78,15 +102,20 @@ export abstract class AutoUpdateManager<
   }
 
   public async deleteObject(
-    _id: string,
+    _id: MongoId,
   ): Promise<{ success: boolean; message: string }> {
-    const o = this.objects_[_id];
+    const _idStr = _id.toString();
+    const o = this.objects_[_idStr];
     const res = await o?.destroy(true);
     if (res?.success) {
-      delete this.objects_[_id];
-      delete globalCache.objects[_id];
+      delete this.objects_[_idStr];
+      delete globalCache.objects[_idStr];
     }
-    await (o as any)?.callbacks?.delete?.(this);
+    await (
+      o as unknown as {
+        callbacks?: { delete?: (m: AutoUpdateManager<T>) => void };
+      }
+    )?.callbacks?.delete?.(this);
     return res ?? { success: true, message: "Already gone" };
   }
 
@@ -94,11 +123,11 @@ export abstract class AutoUpdateManager<
     return Object.keys(this.objects_);
   }
 
-  public abstract handleGetMissingObject(_id: string): Promise<T>;
+  public abstract handleGetMissingObject(_id: MongoId): Promise<T>;
 
-  public abstract createObject(data: Omit<any, "_id">): Promise<T>;
+  public abstract createObject(data: Omit<IsData<T>, "_id">): Promise<T>;
 
-  public abstract getObject(_id?: string): T | null | undefined;
+  public abstract getObject(_id?: MongoId): T | null | undefined;
 
   public abstract get objects(): { [_id: string]: T };
 

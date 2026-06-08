@@ -1,8 +1,8 @@
-import { Objekt, Status } from "./TestTypes";
-import { classProp, classRef, populatedRef } from "./CommonTypes";
+import { Objekt, Status } from "./TestTypes.js";
+import { classProp, classRef, populatedRef } from "./CommonTypes.js";
 import { Types } from "mongoose";
 import { prop } from "@typegoose/typegoose";
-import { AutoUpdatedServerObject } from "./AutoUpdatedServerObjectClass";
+import { AutoUpdatedServerObject } from "./AutoUpdatedServerObjectClass.js";
 
 export class Test extends AutoUpdatedServerObject<Test> {
   @classProp

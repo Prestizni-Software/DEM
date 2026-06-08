@@ -1,8 +1,8 @@
-import * as AutoUpdateServerManagerClass from "./AutoUpdateServerManagerClass";
-import * as AutoUpdateManagerClass from "./AutoUpdateManagerClass";
-import * as AutoUpdatedClientObjectClass from "./AutoUpdatedClientObjectClass";
-import * as AutoUpdatedServerObjectClass from "./AutoUpdatedServerObjectClass";
-import * as CommonTypes from "./CommonTypes_server";
+import * as AutoUpdateServerManagerClass from "./AutoUpdateServerManagerClass.js";
+import * as AutoUpdateManagerClass from "./AutoUpdateManagerClass.js";
+import * as AutoUpdatedClientObjectClass from "./AutoUpdatedClientObjectClass.js";
+import * as AutoUpdatedServerObjectClass from "./AutoUpdatedServerObjectClass.js";
+import * as CommonTypes from "./CommonTypes_server.js";
 
 export {
   AutoUpdateServerManagerClass,

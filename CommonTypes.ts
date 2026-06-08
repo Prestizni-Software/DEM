@@ -1,18 +1,53 @@
 import { EventEmitter } from "eventemitter3";
 import { ObjectId, ObjectIdLike } from "bson";
 import "reflect-metadata";
-import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass";
-import { AutoUpdateManager } from "./AutoUpdateManagerClass";
 
 type RefType = string | ObjectId;
 export type MongoId = RefType;
 export type EventEmitter3 = EventEmitter;
 
+export interface IAutoUpdateManager<T extends IAutoUpdatedClientObjectBase> {
+    readonly className: string;
+    readonly cache: DEMCache;
+    readonly managers: Record<string, IAutoUpdateManager<IAutoUpdatedClientObjectBase>>;
+    getObject(_id?: MongoId): T | null | undefined;
+    deleteObject(_id: MongoId): Promise<{ success: boolean; message: string }>;
+    readonly objectsAsArray: T[];
+    readonly isLoaded: boolean;
+}
+
+export interface IAutoUpdatedClientObjectBase {
+    readonly _id: MongoId;
+    readonly properties: string[];
+    readonly className: string;
+    readonly isLoaded: boolean;
+    loadMissingReferences(): Promise<void>;
+    waitForPreloaded(): Promise<void>;
+    destroy(once?: boolean): Promise<{ success: boolean; message: string }>;
+    isPreLoadedAsync(): Promise<boolean>;
+    contactChildren(): Promise<void>;
+    onUpdate(): Promise<void>;
+    getValue(key: string): any;
+    setValue(key: string, val: any): Promise<{ success: boolean; msg: string }>;
+    readonly parentManager: IAutoUpdateManager<IAutoUpdatedClientObjectBase>;
+    readonly callbacks: any;
+    readonly classParam: any;
+}
+
+export interface IAutoUpdatedClientObject<T extends object = any> extends IAutoUpdatedClientObjectBase {
+    readonly extractedData: ExtractedData<T, IAutoUpdatedClientObject<any>>;
+    getValue<K extends Paths<T, IAutoUpdatedClientObject<any>>>(key: K): PathValueOf<T, K>;
+    setValue<K extends Paths<T, IAutoUpdatedClientObject<any>>>(key: K, val: PathValueOf<IsData<T>, K>): Promise<{ success: boolean; msg: string }>;
+}
+
+export interface IAutoUpdatedServerObject<T extends object = any> extends IAutoUpdatedClientObject<T> {
+    loadFromDB(): Promise<void>;
+    loadFromDocument(document: unknown): Promise<void>;
+}
+
 export type AutoProps<T> = {
     readonly [K in keyof T]: T[K];
 };
-
-export type InstanceOf<T> = T extends Constructor<infer I> ? I : T;
 
 export type Constructor<T> = new (...args: any[]) => T;
 
@@ -25,33 +60,39 @@ export type LoggersType = {
     warn: (s: string) => void;
 };
 
-type IsAUCO<T> = T extends {
+type IsAUCOBase<T> = T extends {
     className: string;
+    _id: any;
 } ? true : false;
 
-type AllowStringForRefs<V> = NonNullable<V> extends Array<infer U> ? IsAUCO<NonNullable<U>> extends true ? (U | string | ObjectIdLike)[] : V : IsAUCO<NonNullable<V>> extends true ? V | string | ObjectIdLike : V;
+type AllowStringForRefs<V> = NonNullable<V> extends Array<infer U> ? IsAUCOBase<NonNullable<U>> extends true ? (U | string | ObjectIdLike)[] : V : IsAUCOBase<NonNullable<V>> extends true ? V | string | ObjectIdLike : V;
 
-type OnlyStringForRefs<V> = NonNullable<V> extends Array<infer U> ? IsAUCO<NonNullable<U>> extends true ? string[] : V : IsAUCO<NonNullable<V>> extends true ? string : V;
+type OnlyStringForRefs<V> = V extends any ? (
+    V extends Array<infer U> ? OnlyStringForRefs<U>[] :
+    V extends IAutoUpdatedClientObjectBase ? string :
+    V extends Date ? V :
+    V extends ObjectId | ObjectIdLike ? string :
+    V extends object ? { [K in keyof V as V[K] extends Function ? never : K]: K extends "_id" ? string : OnlyStringForRefs<V[K]> } :
+    V
+) : never;
 
-export type Cache<T> = {
-    references: {
-        [K in keyof T]?: AutoUpdateManager<AutoUpdatedClientObject<any>>;
-    };
+export type DEMCache = {
+    references: Record<string, any>; // Using any here to break circular dependency with AutoUpdateManager
 };
 
-export type IsData<T> = {
-    [K in keyof T]: AllowStringForRefs<T[K]>;
+export type Pure<T extends object, Base = IAutoUpdatedClientObject<any>> = Omit<T, keyof Base | "parentManager" | "callbacks" | "classParam" | "className" | "properties" | "isLoaded" | "extractedData" | "getValue" | "setValue" | "loadFromDB" | "setValue_">;
+
+export type IsData<T extends object> = {
+    [K in keyof Pure<T> as T[K] extends Function ? never : K]: AllowStringForRefs<T[K]>;
 } & {
-    _id: any;
+    _id: MongoId;
 };
 
-export type ExtractedData<T, Base = AutoUpdatedClientObject<T>> = {
-    [K in keyof FixPure<T, Base>]: OnlyStringForRefs<T[K]>;
-};
+export type ExtractedData<T extends object, Base = IAutoUpdatedClientObject<any>> = {
+    [K in keyof IsData<T> as K extends "_id" ? never : K]: OnlyStringForRefs<IsData<T>[K]>;
+} & { _id: string };
 
-type FixPure<T, Base> = Omit<T, keyof Omit<Base, "_id">>;
-
-export type SocketEvent = [string, any, (res: ServerResponse<any>) => void];
+export type SocketEvent = [string, unknown, (res: ServerResponse<unknown>) => void];
 
 export type ServerResponse<T> = {
     data: T;
@@ -65,24 +106,24 @@ export type ServerResponse<T> = {
 export type ServerUpdateRequest<T> = {
     _id: RefType;
     key: string;
-    value: any;
+    value: unknown;
 };
 
-export function classProp(target: any, propertyKey: string): void {
-    const props = Reflect.getOwnMetadata("props", target) || [];
+export function classProp(target: object, propertyKey: string): void {
+    const props = (Reflect.getOwnMetadata("props", target) as string[]) || [];
     const newProps = [...props, propertyKey];
     Reflect.defineMetadata("props", newProps, target);
 }
 
-export function populatedRef(where: string): (target: any, propertyKey: string) => void {
-    return function (target: any, propertyKey: string) {
+export function populatedRef(where: string): (target: object, propertyKey: string) => void {
+    return function (target: object, propertyKey: string) {
         classRef()(target, propertyKey);
         Reflect.defineMetadata("refsTo", where, target, propertyKey);
     };
 }
 
-export function classRef(): (target: any, propertyKey: string) => void {
-    return function (target: any, propertyKey: string) {
+export function classRef(): (target: object, propertyKey: string) => void {
+    return function (target: object, propertyKey: string) {
         Reflect.defineMetadata("isRef", true, target, propertyKey);
     };
 }
@@ -93,7 +134,7 @@ export type Pretty<T> = {
 
 export type StripPrototypePrefix<P extends string> = P extends "prototype" ? never : P extends `prototype.${infer Rest}` ? Rest : P;
 
-export type Recurseable<T> = T extends object ? T extends Array<any> | Function ? never : T : never;
+export type Recurseable<T> = T extends object ? T extends Array<unknown> | Function ? never : T : never;
 
 export type OnlyClassKeys<T> = {
     [K in keyof T]: K;
@@ -103,9 +144,9 @@ export type Split<S extends string> = S extends `${infer L}.${infer R}` ? [L, ..
 
 export type NonOptional<T> = Exclude<T, null | undefined>;
 
-export type DeAutoUpdate<T> = T extends AutoUpdatedClientObject<infer U> ? U : T;
+export type DeAutoUpdate<T> = T extends IAutoUpdatedClientObject<any> ? unknown : T;
 
-export type RecursiveDeAutoUpdate<T extends AutoUpdatedClientObject<any>> = T extends AutoUpdatedClientObject<infer U> ? U extends object ? DeAutoUpdate<U> : U : T;
+export type RecursiveDeAutoUpdate<T extends IAutoUpdatedClientObject<any>> = T extends IAutoUpdatedClientObject<any> ? unknown : T;
 
 export type OnlyAddedKeys<Sub, Parent> = Pick<Sub, Exclude<keyof Sub, keyof Omit<Parent, "_id">>>;
 
@@ -113,13 +154,11 @@ export type Prev = [never, 0, 1, 2, 3];
 
 export type Join<K, P> = K extends string | number ? P extends string | number ? `${K}${"" extends P ? "" : "."}${P}` : never : never;
 
-export type Paths<T, Base, D extends number = 3> = [D] extends [never] ? never : NonNullable<T> extends object ? {
-    [K in keyof OnlyAddedKeys<NonNullable<T>, Base> & string]-?: NonNullable<NonNullable<T>[K]> extends Function ? never : NonNullable<NonNullable<T>[K]> extends Array<any> | Date | ObjectId ? K : NonNullable<NonNullable<T>[K]> extends object ? K | Join<K, Paths<NonNullable<NonNullable<T>[K]>, Base, Prev[D]>> : K;
+export type Paths<T, Base, D extends number = 3> = 0 extends (1 & T) ? string : [D] extends [never] ? never : NonNullable<T> extends object ? {
+    [K in keyof OnlyAddedKeys<NonNullable<T>, Base> & string]-?: NonNullable<NonNullable<T>[K]> extends Function ? never : NonNullable<NonNullable<T>[K]> extends Array<unknown> | Date | ObjectId ? K : NonNullable<NonNullable<T>[K]> extends object ? K | Join<K, Paths<NonNullable<NonNullable<T>[K]>, Base, Prev[D]>> : K;
 }[keyof OnlyAddedKeys<NonNullable<T>, Base> & string] : never;
 
-export type PathValueOf<T, P extends string> = P extends `${infer K}.${infer Rest}` ? K extends keyof NonNullable<T> ? PathValueOf<NonNullable<NonNullable<T>[K]>, Rest> : never : P extends keyof NonNullable<T> ? NonNullable<T>[P] : never;
-
-export type Pure<T, Base = AutoUpdatedClientObject<T>> = FixPure<T, Base>;
+export type PathValueOf<T, P extends string> = 0 extends (1 & T) ? any : P extends `${infer K}.${infer Rest}` ? K extends keyof NonNullable<T> ? PathValueOf<NonNullable<NonNullable<T>[K]>, Rest> : never : P extends keyof NonNullable<T> ? NonNullable<T>[P] : never;
 
 export const EVENT_INTERNAL_PRE_LOADED = "pre-loaded";
 export const EVENT_UPDATE = "update";
@@ -131,7 +170,7 @@ export const EVENT_STARTUP = "startup";
 export type GlobalCache = {
     objects: Record<string, {
         className: string;
-        object: AutoUpdatedClientObject<any>;
+        object: IAutoUpdatedClientObjectBase;
     }>;
 };
 

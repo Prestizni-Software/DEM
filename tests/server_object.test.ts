@@ -15,19 +15,20 @@ describe("AutoUpdatedServerObjectClass Coverage with Subordinate", () => {
         mockEmitter = new EventEmitter();
         mockManager = {
             deleteObject: jest.fn(),
+            model: {
+                findOne: jest.fn(),
+                findById: jest.fn(),
+                create: jest.fn(),
+                updateOne: jest.fn(),
+            },
             managers: {
-                Subordinate: {
-                    model: {
-                        findOne: jest.fn(),
-                        create: jest.fn(),
-                        updateOne: jest.fn(),
-                    }
-                }
+                Subordinate: null as any
             },
             options: {
                 onUpdate: jest.fn()
             }
         };
+        mockManager.managers.Subordinate = mockManager;
     });
 
     test("Constructor empty case", () => {
@@ -49,18 +50,19 @@ describe("AutoUpdatedServerObjectClass Coverage with Subordinate", () => {
 
     test("loadFromDB success findOne", async () => {
         const mockData = { _id: "123", name: "TestSub", toObject: () => ({ _id: "123", name: "TestSub" }) };
-        mockManager.managers.Subordinate.model.findOne.mockResolvedValue(mockData);
+        mockManager.model.findById.mockResolvedValue(mockData);
         
         const obj = new Subordinate(Subordinate, mockSocket, { _id: "123" } as any, loggers, "Subordinate", mockManager, mockEmitter);
         await obj.loadFromDB();
         
-        expect(mockManager.managers.Subordinate.model.findOne).toHaveBeenCalled();
+        expect(mockManager.model.findById).toHaveBeenCalled();
         expect(obj['data'].name).toBe("TestSub");
     });
 
     test("setValueInternal success", async () => {
         const obj = new Subordinate(Subordinate, mockSocket, { _id: "123" } as any, loggers, "Subordinate", mockManager, mockEmitter);
-        mockManager.managers.Subordinate.model.updateOne.mockResolvedValue({ acknowledged: true });
+        const mockEntry = { save: jest.fn().mockResolvedValue({}) };
+        mockManager.model.findById.mockResolvedValue(mockEntry);
         
         const res = await (obj as any).setValueInternal("name", "NewName");
         expect(res.success).toBe(true);
