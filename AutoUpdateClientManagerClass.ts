@@ -5,10 +5,8 @@ import {
   Constructor,
   IsData,
   LoggersType,
-  Pure,
   globalCache,
   ServerResponse,
-  IAutoUpdatedClientObject,
   IAutoUpdatedClientObjectBase,
   MongoId,
   IAutoUpdateManager,
@@ -39,34 +37,12 @@ export async function AUCManagerFactory<
   > = {},
 ): Promise<WrappedInstances<T>> {
   const defaultCallbacks: DEMClientCallbacks<IAutoUpdatedClientObjectBase> = {
-    new:
-      (
-        callbacks as Record<
-          string,
-          DEMClientCallbacks<IAutoUpdatedClientObjectBase>["new"]
-        >
-      ).new ?? ((_x: IAutoUpdatedClientObjectBase) => {}),
+    new: callbacks.new ?? ((_x: IAutoUpdatedClientObjectBase) => {}),
     update:
-      (
-        callbacks as Record<
-          string,
-          DEMClientCallbacks<IAutoUpdatedClientObjectBase>["update"]
-        >
-      ).update ?? ((_x: IAutoUpdatedClientObjectBase, _y: string) => {}),
-    delete:
-      (
-        callbacks as Record<
-          string,
-          DEMClientCallbacks<IAutoUpdatedClientObjectBase>["delete"]
-        >
-      ).delete ?? ((_x: IAutoUpdatedClientObjectBase) => {}),
-    progress:
-      (
-        callbacks as Record<
-          string,
-          DEMClientCallbacks<IAutoUpdatedClientObjectBase>["progress"]
-        >
-      ).progress ?? ((_x: number) => {}),
+      callbacks.update ??
+      ((_x: IAutoUpdatedClientObjectBase, _y: string) => {}),
+    delete: callbacks.delete ?? ((_x: IAutoUpdatedClientObjectBase) => {}),
+    progress: callbacks.progress ?? ((_x: number) => {}),
   };
 
   if (!doDebug) {
@@ -75,13 +51,7 @@ export async function AUCManagerFactory<
 
   let wholeProgress = 0;
   let numberOfManagers = Object.keys(defs).length || 1;
-  const progressUpdater =
-    (
-      callbacks as Record<
-        string,
-        DEMClientCallbacks<IAutoUpdatedClientObjectBase>["progress"]
-      >
-    ).progress ?? ((_x: number) => {});
+  const progressUpdater = callbacks.progress ?? ((_x: number) => {});
 
   const innerProgressUpdater = (fraction: number) => {
     progressUpdater(
@@ -99,22 +69,19 @@ export async function AUCManagerFactory<
     try {
       const Model = defs[key];
       const c = new AutoUpdateClientManager(
-        Model as any,
+        Model,
         key,
         socket,
         loggers,
-        managers as unknown as Record<
-          string,
-          AutoUpdateClientManager<IAutoUpdatedClientObjectBase>
-        >,
+        managers,
         emitter,
         {
           ...defaultCallbacks,
-          ...(callbacks as any)[key],
+          ...callbacks[key],
           progress: innerProgressUpdater,
-        } as DEMClientCallbacks<any>,
+        },
       );
-      (managers as any)[key] = c;
+      managers[key] = c as any;
     } catch (error: unknown) {
       if (
         error instanceof Error &&
@@ -139,12 +106,7 @@ export async function AUCManagerFactory<
   const loadPromises = Object.keys(defs).map(async (key) => {
     let temp2 = { s: Date.now(), f: 0 };
     try {
-      const manager = (
-        managers as Record<
-          string,
-          AutoUpdateClientManager<IAutoUpdatedClientObjectBase>
-        >
-      )[key];
+      const manager = managers[key];
       if (!manager) {
         throw new Error(`Manager ${key} was not created due to previous error`);
       }
@@ -211,7 +173,7 @@ export class AutoUpdateClientManager<
     emitter: EventEmitter,
     callbacks: DEMClientCallbacks<any>,
   ) {
-    super(classParam, className, socket as any, loggers, managers, emitter);
+    super(classParam, className, socket, loggers, managers, emitter);
     this.socket = socket;
     this.managers = managers;
     this.callbacks = callbacks;
@@ -224,7 +186,7 @@ export class AutoUpdateClientManager<
       );
       try {
         this.totalObjects += 1;
-        await this.handleGetMissingObject(id as any);
+        await this.handleGetMissingObject(id);
         this.loadedObjects += 1;
       } catch (error: unknown) {
         this.loggers.error(
@@ -247,7 +209,7 @@ export class AutoUpdateClientManager<
       try {
         this.totalObjects -= 1;
         this.loadedObjects -= 1;
-        await this.deleteObject(id as any);
+        await this.deleteObject(id);
       } catch (error: unknown) {
         this.loggers.error(
           "Error applying object deletion from manager " +
@@ -318,9 +280,9 @@ export class AutoUpdateClientManager<
 
           for (const id of data.ids) {
             try {
-              this.objects_[id] = new (this.classParam as any)(
+              this.objects_[id] = new this.classParam(
                 this.classParam,
-                this.socket as any,
+                this.socket,
                 id,
                 this.loggers,
                 this.className,
@@ -330,7 +292,7 @@ export class AutoUpdateClientManager<
               );
               globalCache.objects[id] = {
                 className: this.className,
-                object: this.objects_[id] as IAutoUpdatedClientObjectBase,
+                object: this.objects_[id],
               };
             } catch (error: unknown) {
               this.loggers.error(
@@ -422,15 +384,15 @@ export class AutoUpdateClientManager<
 
   public getObject(_id?: MongoId): T | null | undefined {
     if (!_id) return null;
-    return (this.objects_[_id.toString()] as any) || undefined;
+    return this.objects_[_id.toString()] || undefined;
   }
 
   public get objects(): { [_id: string]: T } {
-    return this.objects_ as any;
+    return this.objects_;
   }
 
   public get objectsAsArray(): T[] {
-    return Object.values(this.objects_) as any;
+    return Object.values(this.objects_);
   }
 
   async handleGetMissingObject(_id: MongoId): Promise<T> {
@@ -440,9 +402,9 @@ export class AutoUpdateClientManager<
     if (!this.managers) throw new Error(`No managers.`);
     if (this.objects_[_idStr]) return this.objects_[_idStr];
 
-    const object = new (this.classParam as any)(
+    const object = new this.classParam(
       this.classParam,
-      this.socket as any,
+      this.socket,
       _idStr,
       this.loggers,
       this.className,
@@ -455,7 +417,7 @@ export class AutoUpdateClientManager<
     this.objects_[object._id.toString()] = object;
     globalCache.objects[object._id.toString()] = {
       className: this.className,
-      object: object as IAutoUpdatedClientObjectBase,
+      object: object,
     };
     await object.isPreLoadedAsync();
     await object.loadMissingReferences();
@@ -467,10 +429,10 @@ export class AutoUpdateClientManager<
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
     try {
-      const object = new (this.classParam as any)(
+      const object = new this.classParam(
         this.classParam,
-        this.socket as any,
-        data as unknown as IsData<T>,
+        this.socket,
+        data,
         this.loggers,
         this.className,
         this,
@@ -482,11 +444,11 @@ export class AutoUpdateClientManager<
       this.objects_[id] = object;
       globalCache.objects[id] = {
         className: this.className,
-        object: object as IAutoUpdatedClientObjectBase,
+        object: object,
       };
       await this.objects_[id].isPreLoadedAsync();
       await this.objects_[id].loadMissingReferences();
-      await (this.objects_[id] as any).contactChildren();
+      await this.objects_[id].contactChildren();
       this.callbacks.new(this.objects_[id] as any);
       return this.objects_[id];
     } catch (error: unknown) {

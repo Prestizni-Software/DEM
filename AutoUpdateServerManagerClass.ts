@@ -1,18 +1,15 @@
 import { Server, Socket } from "socket.io";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 import {
-  AutoUpdatedServerObject,
   createAutoUpdatedClass,
 } from "./AutoUpdatedServerObjectClass.js";
 import {
   Constructor,
   IsData,
   LoggersType,
-  Pure,
   globalCache,
   ServerResponse,
   IAutoUpdatedClientObject,
-  IAutoUpdatedServerObject,
   EVENT_NEW,
   EVENT_UPDATE,
   EVENT_DELETE,
@@ -24,10 +21,9 @@ import {
   IAutoUpdateManager,
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types";
-import { Paths, PathValueOf } from "./CommonTypes_server.js";
 import { EventEmitter } from "eventemitter3";
 import * as machineId from "node-machine-id";
-import { getModelForClass, DocumentType } from "@typegoose/typegoose";
+import { getModelForClass } from "@typegoose/typegoose";
 
 export type WrappedInstances<
   T extends Record<string, IAutoUpdatedClientObject<any>>,
@@ -163,7 +159,7 @@ function setupSocketMiddleware(
       }
       try {
         const e = event[0];
-        let demEvent = {} as DEMEvent<IAutoUpdatedClientObject<any>>;
+        let demEvent: DEMEvent<IAutoUpdatedClientObject<any>>;
         const id = e.slice(-24);
         switch (true) {
           case e.startsWith(EVENT_NEW):
@@ -297,14 +293,14 @@ export async function AUSManagerFactory<
   defs: AUSDefinitions<T>,
   loggers: LoggersType,
   socket: Server,
-  _disableDEMDebugMessages: boolean = false,
+  doDebug: boolean = true,
   emitter: EventEmitter3 = new EventEmitter(),
   models?: unknown,
 ): Promise<WrappedInstances<T>> {
   readyLoggers(loggers);
-  /* if (disableDEMDebugMessages) {
+  if (!doDebug) {
         loggers.debug = (_) => { };
-    } */
+    } 
   socket.use((socket, next) => {
     socket.onAny((event) => {
       loggers.debug?.(

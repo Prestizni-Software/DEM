@@ -1,5 +1,4 @@
 import {
-  IAutoUpdatedClientObject,
   IAutoUpdatedClientObjectBase,
   MongoId,
   IsData,
@@ -111,11 +110,7 @@ export abstract class AutoUpdateManager<
       delete this.objects_[_idStr];
       delete globalCache.objects[_idStr];
     }
-    await (
-      o as unknown as {
-        callbacks?: { delete?: (m: AutoUpdateManager<T>) => void };
-      }
-    )?.callbacks?.delete?.(this);
+    o?.callbacks?.delete?.(this);
     return res ?? { success: true, message: "Already gone" };
   }
 

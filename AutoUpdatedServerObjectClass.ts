@@ -1,6 +1,6 @@
 import { AutoUpdatedClientObject, getMetadataRecursive, processIsRefProperties } from "./AutoUpdatedClientObjectClass.js";
 import { AutoUpdateServerManager } from "./AutoUpdateServerManagerClass.js";
-import { Constructor, IsData, LoggersType, EVENT_UPDATE, EVENT_DELETE, EventEmitter3, MongoId, IAutoUpdatedClientObject, IAutoUpdatedServerObject, EVENT_INTERNAL_PRE_LOADED, IAutoUpdateManager, ExtractedData } from "./CommonTypes.js";
+import { Constructor, IsData, LoggersType, EVENT_UPDATE, EVENT_DELETE, EventEmitter3, IAutoUpdatedClientObject, IAutoUpdatedServerObject, EVENT_INTERNAL_PRE_LOADED, IAutoUpdateManager, ExtractedData } from "./CommonTypes.js";
 import { DocumentType } from "@typegoose/typegoose";
 import { ObjectId } from "mongodb";
 
@@ -144,9 +144,7 @@ export abstract class AutoUpdatedServerObject<T extends IAutoUpdatedClientObject
       const _id = this.data._id;
       if (!_id) throw new Error(`Cannot update object ${this.className} - missing _id.`);
 
-      if (!this.entry) {
-        this.entry = await this.parentManager.model.findById(_id);
-      }
+      this.entry ??= await this.parentManager.model.findById(_id);
       if (!this.entry) throw new Error("Object not found in DB.");
 
       if (!silent && !noUpdate) {
@@ -174,9 +172,7 @@ export abstract class AutoUpdatedServerObject<T extends IAutoUpdatedClientObject
     }
 
     try {
-      if (!this.entry) {
-          this.entry = await this.parentManager.model.findById(_id);
-      }
+      this.entry ??= await this.parentManager.model.findById(_id);
       if (this.entry) {
           await this.entry.deleteOne();
       }

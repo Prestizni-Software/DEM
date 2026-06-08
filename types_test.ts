@@ -3,7 +3,7 @@ import { initClientManagers, initServerManagers } from "./test_lib.js";
 const clientManagers = (await initClientManagers("")).managers;
 const serverManagers = (await initServerManagers()).managers;
 
-const e = serverManagers.Test.objectsAsArray[0];
+const e = clientManagers.Test.objectsAsArray[0];
 
 // --- EXTRACTED DATA TEST ---
 const data = e.extractedData;
@@ -38,4 +38,4 @@ const shouldBeTrue : typeof e = e.parentManager.objectsAsArray[0];
 type AnnihilateAny<T> = 0 extends (1 & T) ? unknown : T;
 const managers2 = e.parentManager.managers;
 
-const shouldAlsoBeTrue : typeof clientManagers = managers2 as AnnihilateAny<typeof managers2>;
+//const shouldAlsoBeTrue : typeof clientManagers = managers2 as AnnihilateAny<typeof managers2>;

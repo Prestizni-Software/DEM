@@ -2,8 +2,7 @@ import { EventEmitter } from "eventemitter3";
 import { ObjectId, ObjectIdLike } from "bson";
 import "reflect-metadata";
 
-type RefType = string | ObjectId;
-export type MongoId = RefType;
+export type MongoId = string | ObjectId;
 export type EventEmitter3 = EventEmitter;
 
 export interface IAutoUpdateManager<T extends IAutoUpdatedClientObjectBase> {
@@ -104,7 +103,7 @@ export type ServerResponse<T> = {
 };
 
 export type ServerUpdateRequest<T> = {
-    _id: RefType;
+    _id: MongoId;
     key: string;
     value: unknown;
 };

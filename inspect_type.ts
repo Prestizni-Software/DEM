@@ -1,5 +1,5 @@
 import { Test } from "./ClientTypes.js";
-import { IAutoUpdatedClientObject, Pure } from "./CommonTypes.js";
+import { Pure } from "./CommonTypes.js";
 
 type P = Pure<Test>;
 type PK = keyof P;

@@ -8,7 +8,6 @@ import {
   PathValueOf,
   ServerUpdateRequest,
   Paths,
-  OnlyAddedKeys,
   ExtractedData,
   EVENT_INTERNAL_PRE_LOADED,
   EVENT_DELETE,
@@ -20,13 +19,11 @@ import {
   MongoId,
   IAutoUpdatedClientObject,
   IAutoUpdatedClientObjectBase,
-  IAutoUpdatedServerObject,
   IAutoUpdateManager,
   DEMCache,
 } from "./CommonTypes.js";
-import { ObjectId, ObjectIdLike } from "bson";
+import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
-import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
 
 export type DEMClientCallbacks<T extends object> = {
   new: (obj: IAutoUpdatedClientObject<T>) => Promise<void> | void;
@@ -49,7 +46,7 @@ export abstract class AutoUpdatedClientObject<
   public abstract readonly _id: MongoId;
   protected readonly loggers: LoggersType;
   protected isLoading = true;
-  protected loadError?: string;
+  public loadError?: string;
   protected isLoadingReferences = true;
   protected checkedMissingRefs = false;
   protected readonly emitter: EventEmitter3;
@@ -103,13 +100,13 @@ export abstract class AutoUpdatedClientObject<
     ) {
       this.classParam = classParam!;
       this.socket = socket!;
-      this.data = data as IsData<T>;
+      this.data = data as any;
       this.loggers = loggers!;
       this.className = className!;
-      this.parentManager = parentManager as unknown as IAutoUpdateManager<T> & { cache: DEMCache, managers: M };
+      this.parentManager = parentManager as any;
       this.callbacks = callback!;
       this.emitter = emitter!;
-      this.properties = undefined as unknown as string[];
+      this.properties = undefined as any;
 
       if (
         !classParam &&
@@ -131,48 +128,48 @@ export abstract class AutoUpdatedClientObject<
     this.emitter = emitter;
     this.isLoadingReferences = true;
     this.isLoading = true;
-    this.parentManager = parentManager as unknown as IAutoUpdateManager<T> & { cache: DEMCache, managers: M };
+    this.parentManager = parentManager as any;
     this.className = className;
 
     const allProps = new Set<string>();
     let proto_ = classParam.prototype;
     while (proto_ && proto_ !== Object.prototype) {
-      const props = (Reflect.getOwnMetadata("props", proto_) as string[]) || [];
+      const props = (Reflect.getOwnMetadata("props", proto_) ) || [];
       for (const p of props) allProps.add(p);
       proto_ = Object.getPrototypeOf(proto_);
     }
-    this.properties = Array.from(allProps) as string[];
+    this.properties = Array.from(allProps);
     this.callbacks = callback!;
 
     this.loggers = {
       debug: (s: string) =>
         loggers.debug?.(
           `[DEM - ${this.className}: ${
-            this.data?._id ?? (this as unknown as { _id: MongoId })._id ?? "not loaded"
+            this.data?._id ?? (this )._id ?? "not loaded"
           }] ${s}`,
         ),
       info: (s: string) =>
         loggers.info?.(
           `[DEM - ${this.className}: ${
-            this.data?._id ?? (this as unknown as { _id: MongoId })._id ?? "not loaded"
+            this.data?._id ?? (this )._id ?? "not loaded"
           }] ${s}`,
         ),
       warn: (s: string) =>
         loggers.warn?.(
           `[DEM - ${this.className}: ${
-            this.data?._id ?? (this as unknown as { _id: MongoId })._id ?? "not loaded"
+            this.data?._id ?? (this)._id ?? "not loaded"
           }] ${s}`,
         ),
       error: (s: string) =>
         loggers.error?.(
           `[DEM - ${this.className}: ${
-            this.data?._id ?? (this as unknown as { _id: MongoId })._id ?? "not loaded"
+            this.data?._id ?? (this)._id ?? "not loaded"
           }] ${s}`,
         ),
     };
 
     if (typeof data === "string") {
-      this.data = { _id: data } as IsData<T>;
+      this.data = { _id: data } as any;
       if (this.isServer) {
         this.isLoading = false;
         this.generateSettersAndGetters();
@@ -189,7 +186,7 @@ export abstract class AutoUpdatedClientObject<
             this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID, true, res.message);
             return;
           }
-          this.data = res.data as unknown as IsData<T>;
+          this.data = res.data as any;
           this.generateSettersAndGetters();
           this.isLoading = false;
           this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
@@ -198,8 +195,8 @@ export abstract class AutoUpdatedClientObject<
       );
     } else {
       this.isLoading = true;
-      this.data = data as IsData<T>;
-      for (const key of (this.properties as string[]) || []) {
+      this.data = data;
+      for (const key of (this.properties ) || []) {
         const isRef = getMetadataRecursive("isRef", this, key);
         const dataAsRecord = this.data as unknown as Record<string, unknown>;
         if (isRef && dataAsRecord[key]) {
@@ -269,11 +266,11 @@ export abstract class AutoUpdatedClientObject<
 
   public get extractedData(): ExtractedData<T, IAutoUpdatedClientObject<any>> {
     const extracted = processIsRefProperties(
-      this.data as unknown as Record<string, unknown>,
+      this.data,
       this,
       null,
       [],
-      {} as Record<string, unknown>,
+      {},
       this.loggers,
     ).newData;
     return _.cloneDeep(extracted) as unknown as ExtractedData<T, IAutoUpdatedClientObject<any>>;
@@ -294,7 +291,7 @@ export abstract class AutoUpdatedClientObject<
   }
 
   private openSockets() {
-    const id = this.data?._id ?? (this as unknown as { _id: MongoId })._id;
+    const id = this.data?._id ?? (this)._id;
     const event = EVENT_UPDATE + this.className + id.toString();
     this.socket.on(event, async (update: unknown, ack: (res: ServerResponse<unknown>) => void) => {
       const res = await this.handleUpdateRequest(update as { key: string; value: unknown });
@@ -470,7 +467,7 @@ export abstract class AutoUpdatedClientObject<
   ): Promise<{ success: boolean; msg: string }> {
     if (silent) return { success: true, msg: "Silent" };
     return new Promise((resolve) => {
-      const id = this.data?._id ?? (this as unknown as { _id: MongoId })._id;
+      const id = this.data?._id ?? (this)._id;
       this.socket.emit(
         EVENT_UPDATE + this.className + id,
         { _id: id.toString(), key, value },
@@ -485,7 +482,7 @@ export abstract class AutoUpdatedClientObject<
   }
 
   protected makeUpdate(key: string, value: unknown): ServerUpdateRequest<T> {
-    const id = this.data?._id ?? (this as unknown as { _id: MongoId })._id;
+    const id = this.data?._id ?? (this)._id;
     if (!id) {
       this.loggers.error?.(
         `Probably missing the identifier ['_id'] again: ${key} = ${value}`,
@@ -526,7 +523,7 @@ export abstract class AutoUpdatedClientObject<
 
   protected async wipeSelf(): Promise<void> {
     if ((this.data as unknown as { Wiped: boolean }).Wiped) return;
-    const id = this.data?._id ?? (this as unknown as { _id: MongoId })._id;
+    const id = this.data?._id ?? (this)._id;
     const _id = id ? id.toString() : "unknown";
     for (const key of Object.keys(this.data as Record<string, unknown>)) {
       delete (this.data as Record<string, unknown>)[key];
@@ -601,7 +598,7 @@ export abstract class AutoUpdatedClientObject<
   protected async createdWithParent(pointer: string[], parent: Record<string, unknown>): Promise<void> {
     if (pointer.length !== 2) return;
     const parentId = (parent._id as { toString(): string })?.toString() ?? parent.toString();
-    const obj = (this.parentManager.managers[pointer[0]] as unknown as { getObject(id: string): IAutoUpdatedClientObject<any> })?.getObject(
+    const obj = (this.parentManager.managers[pointer[0]])?.getObject(
       parentId,
     ) as IAutoUpdatedClientObject<any> | undefined;
     if (!obj) return;
