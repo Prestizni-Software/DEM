@@ -231,6 +231,7 @@ export class ConstructionObject extends AutoUpdatedServerObject<ConstructionObje
 
     @populatedRef("Construction:objects")
     @classProp
+    @prop({ required: false, ref: () => Construction, type: () => Construction })
     public parent?: Construction;
 }
 

@@ -27,7 +27,7 @@ let testServerObject3: any;
 beforeAll(async () => {
     // Connect to DB if needed
     if (mongoose.connection.readyState === 0) {
-        await mongoose.connect("mongodb://localhost:27017/GeoDB_Full", {
+        await mongoose.connect("mongodb://localhost:27017/GeoDB_Test", {
           serverSelectionTimeoutMS: 5000,
         });
     }
@@ -351,5 +351,43 @@ describe("DEM Library Tests with New Data Structure", () => {
       expect(c1mt.parent).toBeDefined();
       expect(c1mt.parent.constructionObject).toBeDefined();
       expect(c1mt.parent.constructionObject.number).toBe("SO 102");
+  });
+
+  test("Automatic parent-child relationship update (Construction -> ConstructionObject)", async () => {
+    // 1. Create a Construction
+    const construction = await serverManagers.Construction.createObject({
+        name: "Parent Construction",
+        objects: [],
+    });
+
+    // 2. Create a ConstructionObject with this Construction as parent
+    const constructionObject = await serverManagers.ConstructionObject.createObject({
+        number: "SO 201",
+        path: "Root/SO 201",
+        parent: construction._id,
+        siteManagers: [],
+    });
+
+    // 3. Verify that the Construction's 'objects' array now contains the ConstructionObject's ID
+    // We check on the server object directly first
+    expect(construction.objects).toBeDefined();
+    const objectIds = construction.objects.map((obj: any) => obj._id?.toString() ?? obj.toString());
+    expect(objectIds).toContain(constructionObject._id.toString());
+
+    // 4. Verify on Client1
+    const start = Date.now();
+    let c1const: any;
+    while (Date.now() - start < 5000) {
+        c1const = clientManagers1.Construction.getObject(construction._id.toString());
+        if (c1const && c1const.objects && c1const.objects.length > 0) {
+            const c1ids = c1const.objects.map((obj: any) => obj._id?.toString() ?? obj.toString());
+            if (c1ids.includes(constructionObject._id.toString())) break;
+        }
+        await new Promise(r => setTimeout(r, 100));
+    }
+
+    expect(c1const).toBeDefined();
+    const finalC1Ids = c1const.objects.map((obj: any) => obj._id?.toString() ?? obj.toString());
+    expect(finalC1Ids).toContain(constructionObject._id.toString());
   });
 });

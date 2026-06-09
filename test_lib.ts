@@ -40,7 +40,7 @@ export const initServerManagers = async () => {
   });
 
   if (mongoose.connection.readyState === 0) {
-    await mongoose.connect("mongodb://localhost:27017/GeoDB", {
+    await mongoose.connect("mongodb://localhost:27017/GeoDB_Test", {
       serverSelectionTimeoutMS: 5000,
     });
   }
@@ -128,7 +128,7 @@ export const initFullServerManagers = async (port: number = 3002) => {
   });
 
   if (mongoose.connection.readyState === 0) {
-    await mongoose.connect("mongodb://localhost:27017/GeoDB_Full", {
+    await mongoose.connect("mongodb://localhost:27017/GeoDB_Test", {
       serverSelectionTimeoutMS: 5000,
     });
   }
