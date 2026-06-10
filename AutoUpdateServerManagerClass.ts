@@ -132,7 +132,7 @@ function setupSocketMiddleware(
       ) {
         loggers.warn?.(
           "Invalid event: [" +
-            event.map((e) => JSON.stringify(e)).join("], [") +
+            event.map((e) => typeof e === "object" ? "[object]" : String(e)).join("], [") +
             "]",
         );
         return;
@@ -148,7 +148,7 @@ function setupSocketMiddleware(
       ) {
         loggers.warn?.(
           "Undefined event: [" +
-            event.map((e) => JSON.stringify(e)).join("], [") +
+            event.map((e) => typeof e === "object" ? "[object]" : String(e)).join("], [") +
             "]",
         );
         event[2]({
@@ -424,7 +424,7 @@ export class AutoUpdateServerManager<
         doc as unknown as { _id?: { toString(): string } }
       )._id?.toString();
       if (!id) {
-        this.loggers.debug("Invalid document, no _id: " + JSON.stringify(doc));
+        this.loggers.debug("Invalid document, no _id: " + (doc as any)?._id ?? "[no id]");
         continue;
       }
       this.objects_[id] =
@@ -583,7 +583,7 @@ export class AutoUpdateServerManager<
               ": " +
               event +
               " - " +
-              JSON.stringify(data),
+              (typeof data === "object" ? "[object]" : String(data)),
           );
           try {
             const id = event.replace(EVENT_UPDATE + this.className, "");

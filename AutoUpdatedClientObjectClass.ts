@@ -742,7 +742,12 @@ export abstract class AutoUpdatedClientObject<
     }
     const val = obj.getValue(pointer[1] as any);
     const myId = this.data._id.toString();
-    this.loggers.debug?.(`createdWithParent: Current parent value for ${pointer[1]} is ${JSON.stringify(val)}, myId=${myId}`);
+    const valLog = Array.isArray(val)
+      ? `[${val.map((v: any) => v?._id?.toString() ?? v?.toString()).join(", ")}]`
+      : (val as any)?._id?.toString() ?? String(val);
+    this.loggers.debug?.(
+      `createdWithParent: Current parent value for ${pointer[1]} is ${valLog}, myId=${myId}`,
+    );
     if (Array.isArray(val)) {
       const ids = val.map(
         (v: unknown) =>
