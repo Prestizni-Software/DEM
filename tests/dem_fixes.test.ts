@@ -156,4 +156,116 @@ describe("DEM Fixes Verification", () => {
 
         expect(construction.objects.map((o: any) => o._id.toString())).toContain(constructionObject._id.toString());
     });
+
+    test("Fix 6: populatedRef loading from DB when missing in child document", async () => {
+        const constructionModel = getModelForClass(ServerClasses.Construction as any);
+        const constructionObjectModel = getModelForClass(ServerClasses.ConstructionObject as any);
+
+        const childId = new mongoose.Types.ObjectId();
+        const parentId = new mongoose.Types.ObjectId();
+
+        // Child document has NO parent field
+        await constructionObjectModel.create({
+            _id: childId,
+            number: "SO 999",
+            path: "Root/SO 999",
+            siteManagers: []
+        });
+
+        // Parent document HAS childId in 'objects' array
+        await constructionModel.create({
+            _id: parentId,
+            name: "Parent 999",
+            objects: [childId]
+        });
+
+        // Create new managers to load from DB
+        const initS = await initFullServerManagers(3010);
+        const initC = await initFullClientManagers(3010);
+
+        const cChild = initC.managers.ConstructionObject.getObject(childId.toString());
+        
+        const start = Date.now();
+        while (!cChild.parent && Date.now() - start < 10000) {
+            await new Promise(r => setTimeout(r, 100));
+        }
+        
+        expect(cChild.parent).toBeDefined();
+        expect(cChild.parent._id.toString()).toBe(parentId.toString());
+
+        // Cleanup
+        for (const m of Object.values(initC.managers)) (m as any).close();
+        initC.socket.close();
+        for (const m of Object.values(initS.managers)) (m as any).close();
+        initS.io.close();
+        initS.server.close();
+    });
+
+    test("Fix 7: Reference cache class-specificity (avoid collision)", async () => {
+        const protocolModel = getModelForClass(ServerClasses.Protocol as any);
+        const protocolTaskModel = getModelForClass(ServerClasses.ProtocolTask as any);
+        const attachmentModel = getModelForClass(ServerClasses.Attachment as any);
+
+        const protocolId = new mongoose.Types.ObjectId();
+        const protocolTaskId = new mongoose.Types.ObjectId();
+        const attachmentId = new mongoose.Types.ObjectId();
+
+        // ProtocolTask.protocol -> Protocol
+        await protocolTaskModel.create({
+            _id: protocolTaskId,
+            element: "TaskFix7",
+            protocol: protocolId,
+            constructionObject: new mongoose.Types.ObjectId(),
+            createdBy: new mongoose.Types.ObjectId(),
+            assignmentType: 0,
+            complex: false,
+            measurements: []
+        });
+
+        // Protocol.protocol -> Attachment
+        await protocolModel.create({
+            _id: protocolId,
+            protocol: attachmentId,
+            status: "WAITING",
+            isControl: false,
+            comments: [],
+            supervisor_comments: [],
+            hsvAprovement: -1,
+            supervisorAprovement: -1,
+            folderName: "test"
+        });
+
+        await attachmentModel.create({
+            _id: attachmentId,
+            name: "DocFix7",
+            fileName: "fix7.doc",
+            path: "/path",
+            type: "Other",
+            lastEdited: new Date()
+        });
+
+        const initS = await initFullServerManagers(3011);
+        const initC = await initFullClientManagers(3011);
+
+        const cProtocolTask = initC.managers.ProtocolTask.getObject(protocolTaskId.toString());
+        const cProtocol = initC.managers.Protocol.getObject(protocolId.toString());
+
+        const start = Date.now();
+        while ((!cProtocolTask.protocol || !cProtocol.protocol) && Date.now() - start < 10000) {
+            await new Promise(r => setTimeout(r, 100));
+        }
+
+        expect(cProtocolTask.protocol).toBeDefined();
+        expect(cProtocolTask.protocol.className).toBe("Protocol");
+        
+        expect(cProtocol.protocol).toBeDefined();
+        expect(cProtocol.protocol.className).toBe("Attachment");
+
+        // Cleanup
+        for (const m of Object.values(initC.managers)) (m as any).close();
+        initC.socket.close();
+        for (const m of Object.values(initS.managers)) (m as any).close();
+        initS.io.close();
+        initS.server.close();
+    });
 });

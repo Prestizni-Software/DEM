@@ -311,9 +311,6 @@ export async function AUSManagerFactory<
 
   socket.use((socket, next) => {
     socket.onAny((event) => {
-      loggers.debug?.(
-        "Recieved event: " + event + " from client: " + socket.id,
-      );
     });
     next();
   });

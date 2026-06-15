@@ -463,14 +463,15 @@ export abstract class AutoUpdatedClientObject<
   ): IAutoUpdatedClientObject<any> | undefined {
     if (!id) return undefined;
     const idStr = id.toString();
-    if (this.parentManager.cache.references[key])
+    const cacheKey = `${this.className}:${key}`;
+    if (this.parentManager.cache.references[cacheKey])
       return (
-        this.parentManager.cache.references[key]?.getObject(idStr) ?? undefined
+        this.parentManager.cache.references[cacheKey]?.getObject(idStr) ?? undefined
       );
     for (const manager of Object.values(this.parentManager.managers)) {
       const result = manager.getObject(idStr);
       if (result) {
-        this.parentManager.cache.references[key] = manager;
+        this.parentManager.cache.references[cacheKey] = manager;
         return result as IAutoUpdatedClientObject<any>;
       }
     }
