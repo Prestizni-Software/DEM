@@ -811,7 +811,7 @@ export abstract class AutoUpdatedClientObject<
         this,
         prop.toString(),
       ) as string;
-      if (pointer) {
+      if (pointer && !this.getValue(prop as any)) {
         const parts = pointer.split(":");
         if (parts.length === 2)
           await this.findMissingObjectReference(prop, parts);

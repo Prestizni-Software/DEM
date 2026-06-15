@@ -456,8 +456,6 @@ export class AutoUpdateServerManager<
     }
     for (const object of this.objectsAsArray) {
       await object.isPreLoadedAsync();
-      await object.contactChildren();
-      await object.loadMissingReferences();
     }
     this.loggers.debug(
       "Loaded manager DB " +
