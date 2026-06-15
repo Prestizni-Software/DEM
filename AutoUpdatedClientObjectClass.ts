@@ -268,40 +268,6 @@ export abstract class AutoUpdatedClientObject<
     });
   }
 
-   private async handleLoad(
-    obj: Record<string, unknown>,
-    key: string,
-    alreadySeen: unknown[],
-  ) {
-    const refIds = Array.isArray(obj[key])
-      ? (obj[key] as unknown[])
-      : [obj[key]];
-    for (const refId of refIds) {
-      if (refId) {
-        const idStr = (refId as { toString(): string }).toString();
-        let result = globalCache.objects[idStr]?.object;
-        if (!result) {
-          for (const manager of Object.values(this.parentManager.managers)) {
-            result = manager.getObject(idStr) as IAutoUpdatedClientObject<any>;
-            if (result) break;
-          }
-        }
-        if (result && !alreadySeen.includes(idStr)) {
-          alreadySeen.push(idStr);
-          await (
-            result as unknown as {
-              loadForceReferences(
-                obj?: Record<string, unknown>,
-                proto?: object,
-                alreadySeen?: unknown[],
-              ): Promise<void>;
-            }
-          ).loadForceReferences(undefined, undefined, alreadySeen);
-        }
-      }
-    }
-  }
-
   protected handleNewObject(data: IsData<T>): void {
     this.isLoading = true;
     this.socket.emit(
@@ -697,8 +663,6 @@ export abstract class AutoUpdatedClientObject<
           obj[key] as Record<string, unknown>,
         );
       }
-
-      if (isRef) await this.handleLoad(obj, key, alreadySeen);
 
       if (obj[key] && !alreadySeen.includes(obj[key]))
         alreadySeen.push(obj[key]);
