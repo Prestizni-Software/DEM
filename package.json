@@ -23,13 +23,12 @@
     "release_server": "xcopy .\\tsconfig.json ..\\server\\ /Y && xcopy .\\AutoUpdatedClientObjectClass.ts ..\\server\\ /Y && xcopy .\\AutoUpdateManagerClass.ts ..\\server\\ /Y && xcopy .\\server.ts ..\\server\\ /Y && xcopy .\\CommonTypes.ts ..\\server\\ /Y && xcopy .\\CommonTypes_server.ts ..\\server\\ /Y && xcopy .\\AutoUpdateServerManagerClass.ts ..\\server\\ /Y && xcopy .\\AutoUpdatedServerObjectClass.ts ..\\server\\ /Y && cd ..\\server && npm run release && cd ..\\src",
     "test": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js tests/ --detectOpenHandles --forceExit --coverage",
     "test_for_AI": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js tests/ --detectOpenHandles --forceExit --silent --verbose=false",
-    "fix_all": "cd ..\\client && npm audit fix && cd ..\\server && npm audit fix && cd ..\\src"
+    "fix_all": "cd ..\\client && npm audit fix && cd ..\\server && npm audit fix --force && cd ..\\src"
   },
   "dependencies": {
-    "@typegoose/typegoose": "^13.1.0",
+    "@typegoose/typegoose": "^13.3.0",
     "eventemitter3": "^5.0.4",
     "lodash": "^4.17.23",
-    "mongoose": "~9.1.4",
     "node-machine-id": "^1.1.12",
     "reflect-metadata": "^0.2.2",
     "socket.io": "^4.8.3",

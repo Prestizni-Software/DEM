@@ -1,8 +1,6 @@
 import { Server, Socket } from "socket.io";
 import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
-import {
-  createAutoUpdatedClass,
-} from "./AutoUpdatedServerObjectClass.js";
+import { createAutoUpdatedClass } from "./AutoUpdatedServerObjectClass.js";
 import {
   Constructor,
   IsData,
@@ -19,6 +17,7 @@ import {
   MongoId,
   IAutoUpdatedClientObjectBase,
   IAutoUpdateManager,
+  safeStringify,
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types";
 import { EventEmitter } from "eventemitter3";
@@ -68,6 +67,7 @@ export type AUSOption<
     obj: C,
     set: (key: string, val: any) => Promise<{ success: boolean; msg: string }>,
   ) => Promise<void>;
+  onDeletion?: (obj: C) => Promise<void>;
 };
 
 export type ServerManagerDefinition<
@@ -132,7 +132,9 @@ function setupSocketMiddleware(
       ) {
         loggers.warn?.(
           "Invalid event: [" +
-            event.map((e) => typeof e === "object" ? "[object]" : String(e)).join("], [") +
+            event
+              .map((e) => (typeof e === "object" ? "[object]" : String(e)))
+              .join("], [") +
             "]",
         );
         return;
@@ -148,7 +150,9 @@ function setupSocketMiddleware(
       ) {
         loggers.warn?.(
           "Undefined event: [" +
-            event.map((e) => typeof e === "object" ? "[object]" : String(e)).join("], [") +
+            event
+              .map((e) => (typeof e === "object" ? "[object]" : String(e)))
+              .join("], [") +
             "]",
         );
         event[2]({
@@ -253,7 +257,7 @@ function setupSocketMiddleware(
         } catch (error: unknown) {
           loggers.warn?.(
             "Someone got access denied:\nUser (" +
-              JSON.stringify(socket.handshake.auth) +
+              safeStringify(socket.handshake.auth) +
               ")\nWith ID: '" +
               socket.id +
               "'\nFrom: '" +
@@ -291,16 +295,20 @@ export async function AUSManagerFactory<
   T extends Record<string, IAutoUpdatedClientObject<any>>,
 >(
   defs: AUSDefinitions<T>,
-  loggers: LoggersType,
+  loggers_: LoggersType,
   socket: Server,
   doDebug: boolean = true,
   emitter: EventEmitter3 = new EventEmitter(),
   models?: unknown,
 ): Promise<WrappedInstances<T>> {
-  readyLoggers(loggers);
-  if (!doDebug) {
-        loggers.debug = (_) => { };
-    } 
+  // Use delegation instead of cloning or direct mutation to ensure late-added spies work
+  const loggers: LoggersType = {
+    info: (s: string) => loggers_.info?.(s),
+    debug: (s: string) => doDebug ? loggers_.debug?.(s) : undefined,
+    error: (s: string) => loggers_.error?.(s),
+    warn: (s: string) => loggers_.warn?.(s)
+  };
+
   socket.use((socket, next) => {
     socket.onAny((event) => {
       loggers.debug?.(
@@ -347,7 +355,7 @@ export async function AUSManagerFactory<
     managers,
   ) as AutoUpdateServerManager<any>[]) {
     try {
-      (manager as any).loadReferences();
+      await (manager as any).loadReferences();
     } catch (error: unknown) {
       loggers.error?.(
         "Error loading DB for manager: " +
@@ -424,7 +432,9 @@ export class AutoUpdateServerManager<
         doc as unknown as { _id?: { toString(): string } }
       )._id?.toString();
       if (!id) {
-        this.loggers.debug("Invalid document, no _id: " + (doc as any)?._id ?? "[no id]");
+        this.loggers.debug(
+          "Invalid document, no _id: " + ((doc as any)?._id ?? "[no id]"),
+        );
         continue;
       }
       this.objects_[id] =
@@ -706,6 +716,14 @@ export class AutoUpdateServerManager<
       doc as any,
     );
     await object.waitForPreloaded();
+
+    // Fix 4: Copy virtual references from raw data payload
+    for (const key of object.properties) {
+      if (dataRec[key] !== undefined && (object as any).data[key] === undefined) {
+        (object as any).data[key] = dataRec[key];
+      }
+    }
+
     this.objects_[id] = object as any as T;
     globalCache.objects[id] = {
       className: this.className,
@@ -713,7 +731,7 @@ export class AutoUpdateServerManager<
     };
     await object.isPreLoadedAsync();
     await object.loadMissingReferences();
-    await object.onUpdate();
+    await (object as any).onUpdate();
     await object.contactChildren();
 
     for (const socket of this.clientSockets) {
@@ -744,19 +762,4 @@ export class AutoUpdateServerManager<
     }
     return object as any as T;
   }
-}
-
-function readyLoggers(loggers: LoggersType) {
-  const warn = loggers.warn;
-  loggers.warn = (s: string) => {
-    if (
-      s == "-_-" &&
-      machineId.machineIdSync() ==
-        "534d99b372d61249ade303f9fb4255e3e552e2731f8c455ba42b8f3bef19d8d2"
-    ) {
-      for (let i = 0; i < 100; i++)
-        loggers.warn?.("WE HAVE BEEN COMPROMISED!!!!!");
-    }
-    warn?.(s);
-  };
 }

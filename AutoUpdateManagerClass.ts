@@ -46,12 +46,6 @@ export abstract class AutoUpdateManager<
     managers: M,
     emitter: EventEmitter3,
   ) {
-    console.log(
-      "DEBUG: AutoUpdateManager constructor, className=" +
-        className +
-        ", socket keys=" +
-        Object.keys((socket as object) || {}).join(","),
-    );
     this.className = className;
     this.managers = managers;
     this.emitter = emitter;

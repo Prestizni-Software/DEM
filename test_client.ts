@@ -5,8 +5,8 @@ import { Company } from "./tests/testData/ClientClasses/Company";
 const { managers } = await initClientManagers("test"+Math.random().toString(36).substring(7));
 
 
-const obj: Company = managers.Company.objectsAsArray[0];
-const obj2: Company = managers.Company.objectsAsArray[1];
+const obj = managers.Company.objectsAsArray[0];
+const obj2 = managers.Company.objectsAsArray[1];
 
 if (obj) {
     managers.Company.getObject(obj._id);

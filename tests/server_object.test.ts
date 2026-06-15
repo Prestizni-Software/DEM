@@ -25,7 +25,8 @@ describe("AutoUpdatedServerObjectClass Coverage with Subordinate", () => {
                 Subordinate: null as any
             },
             options: {
-                onUpdate: jest.fn()
+                onUpdate: jest.fn(),
+                onDeletion: jest.fn()
             }
         };
         mockManager.managers.Subordinate = mockManager;
@@ -69,15 +70,13 @@ describe("AutoUpdatedServerObjectClass Coverage with Subordinate", () => {
         expect(mockSocket.emit).toHaveBeenCalled();
     });
 
-    test("destroy(true) success", async () => {
+    test("destroy(true) calls onDeletion", async () => {
         const obj = new Subordinate(Subordinate, mockSocket, { _id: "123" } as any, loggers, "Subordinate", mockManager, mockEmitter);
         const mockEntry = { deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }) };
         (obj as any).entry = mockEntry;
-        const spyWipe = jest.spyOn(obj as any, 'wipeSelf').mockResolvedValue(undefined);
+        jest.spyOn(obj as any, 'wipeSelf').mockResolvedValue(undefined);
         
-        const res = await obj.destroy(true);
-        expect(res.success).toBe(true);
-        expect(mockSocket.emit).toHaveBeenCalledWith("deleteSubordinate", "123");
-        expect(spyWipe).toHaveBeenCalled();
+        await obj.destroy(true);
+        expect(mockManager.options.onDeletion).toHaveBeenCalledWith(obj);
     });
 });

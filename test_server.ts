@@ -1,7 +1,7 @@
 import { Status } from "./TestTypes.js";
 import { initServerManagers } from "./test_lib.js";
 
-let { managers }: any = await initServerManagers();
+let { managers } = await initServerManagers();
 console.log("CREATING OBJECT WITH active = true, status = INACTIVE");
 
 const obj1 = await managers.Test.createObject({

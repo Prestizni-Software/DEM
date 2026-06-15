@@ -54,7 +54,7 @@ export abstract class AutoUpdatedClientObject<
   protected isLoading = true;
   public loadError?: string;
   protected isLoadingReferences = true;
-  protected checkedMissingRefs = false;
+  protected checkedMissingProperties: Record<string, boolean> = {};
   protected readonly emitter: EventEmitter3;
   public readonly properties: string[];
   public readonly classParam: Constructor<T>;
@@ -78,17 +78,15 @@ export abstract class AutoUpdatedClientObject<
         await this.setValue__(thing.key, thing.value, true, false, false, true);
       }
     } catch (error: unknown) {
+      // Fix 3: Enhanced diagnostics with stack trace
       this.loggers.error?.(
         "Error loading references: " +
-          (error instanceof Error ? error.message : String(error)),
+          (error instanceof Error ? error.message + "\n" + error.stack : String(error)),
       );
     } finally {
       this.isLoadingReferences = false;
     }
   };
-
-  /** @deprecated Use loadReferencesAsync instead */
-  private readonly loadShit = this.loadReferencesAsync;
 
   constructor(
     classParam?: Constructor<T>,
@@ -311,11 +309,12 @@ export abstract class AutoUpdatedClientObject<
   }
 
   public async isPreLoadedAsync(): Promise<boolean> {
-    await this.loadShit();
+    await this.loadReferencesAsync();
     return true;
   }
 
   public async loadMissingReferences(): Promise<void> {
+    this.checkedMissingProperties = {};
     await this.checkForMissingRefs();
     this.generateSettersAndGetters();
   }
@@ -821,8 +820,8 @@ export abstract class AutoUpdatedClientObject<
   }
 
   private async findMissingObjectReference(prop: string, pointer: string[]) {
-    if (this.checkedMissingRefs) return;
-    this.checkedMissingRefs = true;
+    if (this.checkedMissingProperties[prop]) return;
+    this.checkedMissingProperties[prop] = true;
     const ac = (
       this.parentManager.managers as Record<
         string,
@@ -879,7 +878,11 @@ export abstract class AutoUpdatedClientObject<
     }
   }
 
-  public async onUpdate(noUpdate: boolean = false): Promise<void> {
+  protected async onUpdate(noUpdate: boolean = false): Promise<void> {
+    // Placeholder for server-side override
+  }
+
+  protected async onDeletion(): Promise<void> {
     // Placeholder for server-side override
   }
 }

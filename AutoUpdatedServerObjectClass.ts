@@ -8,6 +8,7 @@ export abstract class AutoUpdatedServerObject<T extends IAutoUpdatedClientObject
   protected override readonly isServer: boolean;
   protected entry: DocumentType<T> | null;
   declare public parentManager: AutoUpdateServerManager<T, any>;
+  private saveLock: Promise<any> = Promise.resolve();
 
   constructor();
   constructor(
@@ -116,8 +117,6 @@ export abstract class AutoUpdatedServerObject<T extends IAutoUpdatedClientObject
     (this as any).isLoading = false;
     this.generateSettersAndGetters();
     this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + (this as any).EmitterID);
-    
-    await this.onUpdate();
   }
 
   public async loadFromDocument(document: DocumentType<T>): Promise<void> {
@@ -147,9 +146,12 @@ export abstract class AutoUpdatedServerObject<T extends IAutoUpdatedClientObject
       this.entry ??= await this.parentManager.model.findById(_id);
       if (!this.entry) throw new Error("Object not found in DB.");
 
-      if (!silent && !noUpdate) {
-        (this.entry as any)[key] = value;
-        await this.entry.save();
+      // Fix 1 & 5: Serialized save with error handling and decoupling of DB writing from noUpdate flag.
+      // We always save to DB if it's a persisted field, regardless of noUpdate.
+      if ((this.entry as any)[key] !== undefined) {
+          (this.entry as any)[key] = value;
+          this.saveLock = this.saveLock.catch(() => {}).then(() => this.entry!.save());
+          await this.saveLock;
       }
 
       const update = this.makeUpdate(key, value);
@@ -174,6 +176,7 @@ export abstract class AutoUpdatedServerObject<T extends IAutoUpdatedClientObject
     try {
       this.entry ??= await this.parentManager.model.findById(_id);
       if (this.entry) {
+          await this.onDeletion();
           await this.entry.deleteOne();
       }
       this.loggers.debug?.("Deleted object from server " + this.className);
@@ -188,12 +191,19 @@ export abstract class AutoUpdatedServerObject<T extends IAutoUpdatedClientObject
     return { success: true, message: "Deleted" };
   }
 
-  public override async onUpdate(noUpdate: boolean = false): Promise<void> {
+  protected override async onUpdate(noUpdate: boolean = false): Promise<void> {
     if (noUpdate) return;
     if (this.parentManager.options?.onUpdate) {
         await this.parentManager.options.onUpdate(this as unknown as T, async (key: string, val: any) => {
-            return this.setValue(key as any, val);
+            // Fix 5: Pass noUpdate=true to internal setter to prevent recursive onUpdate calls.
+            return this.setValue__(key, val, false, false, true);
         });
+    }
+  }
+
+  protected override async onDeletion(): Promise<void> {
+    if (this.parentManager.options?.onDeletion) {
+      await this.parentManager.options.onDeletion(this as unknown as T);
     }
   }
 }
