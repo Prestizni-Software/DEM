@@ -729,7 +729,6 @@ export class AutoUpdateServerManager<
     };
     await object.isPreLoadedAsync();
     await object.loadMissingReferences();
-    await (object as any).onUpdate();
     await object.contactChildren();
 
     for (const socket of this.clientSockets) {
