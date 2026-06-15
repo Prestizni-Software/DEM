@@ -640,15 +640,9 @@ export abstract class AutoUpdatedClientObject<
     alreadySeen: unknown[] = [],
   ) {
     const props = (Reflect.getMetadata("props", proto) as string[]) || [];
-    this.loggers.debug?.(`loadForceReferences: className=${this.className}, props=[${props.join(", ")}]`);
     for (const key of props) {
       if (typeof key !== "string") continue;
-      const isRef = Reflect.getMetadata("isRef", proto, key);
       const pointer = Reflect.getMetadata("refsTo", proto, key) as string;
-      
-      if (pointer) {
-        this.loggers.debug?.(`loadForceReferences: key=${key}, has pointer=${pointer}, val=${obj[key]}`);
-      }
 
       if (
         pointer &&
@@ -665,8 +659,6 @@ export abstract class AutoUpdatedClientObject<
       if (obj[key] && !alreadySeen.includes(obj[key]))
         alreadySeen.push(obj[key]);
 
-      if (isRef) await this.handleLoad(obj, key, alreadySeen);
-
       const val = obj[key];
       if (val && typeof val === "object") {
         const nestedProto = Object.getPrototypeOf(val);
@@ -677,40 +669,6 @@ export abstract class AutoUpdatedClientObject<
             nestedProto,
             alreadySeen,
           );
-        }
-      }
-    }
-  }
-
-  private async handleLoad(
-    obj: Record<string, unknown>,
-    key: string,
-    alreadySeen: unknown[],
-  ) {
-    const refIds = Array.isArray(obj[key])
-      ? (obj[key] as unknown[])
-      : [obj[key]];
-    for (const refId of refIds) {
-      if (refId) {
-        const idStr = (refId as { toString(): string }).toString();
-        let result = globalCache.objects[idStr]?.object;
-        if (!result) {
-          for (const manager of Object.values(this.parentManager.managers)) {
-            result = manager.getObject(idStr) as IAutoUpdatedClientObject<any>;
-            if (result) break;
-          }
-        }
-        if (result && !alreadySeen.includes(idStr)) {
-          alreadySeen.push(idStr);
-          await (
-            result as unknown as {
-              loadForceReferences(
-                obj?: Record<string, unknown>,
-                proto?: object,
-                alreadySeen?: unknown[],
-              ): Promise<void>;
-            }
-          ).loadForceReferences(undefined, undefined, alreadySeen);
         }
       }
     }

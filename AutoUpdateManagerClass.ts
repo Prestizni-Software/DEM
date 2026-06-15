@@ -88,9 +88,7 @@ export abstract class AutoUpdateManager<
   }
 
   public async loadReferences(): Promise<void> {
-    for (const obj of this.objectsAsArray) {
-      await obj.loadMissingReferences();
-    }
+    await Promise.all(this.objectsAsArray.map((obj) => obj.loadMissingReferences()));
     this.isLoaded_ = true;
   }
 

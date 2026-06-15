@@ -319,7 +319,10 @@ export async function AUSManagerFactory<
   });
 
   const managers = {} as WrappedInstances<T>;
-  for (const key in defs) {
+  const keys = Object.keys(defs);
+  
+  // 1. Create all managers
+  for (const key of keys) {
     loggers.debug?.(`Creating manager for ${key}`);
     const def = defs[key];
     const model = getModelForClass(def.class as any);
@@ -339,8 +342,12 @@ export async function AUSManagerFactory<
       loggers.error?.("Error creating manager: " + key);
       loggers.error?.(error instanceof Error ? error.message : String(error));
       if (error instanceof Error && error.stack) loggers.error?.(error.stack);
-      continue;
     }
+  }
+
+  // 2. Pre-load all managers in parallel
+  await Promise.all(keys.map(async (key) => {
+    if (!managers[key]) return;
     loggers.debug?.("Loading DB for manager: " + key);
     try {
       await (managers[key] as any).preLoad();
@@ -349,23 +356,22 @@ export async function AUSManagerFactory<
       loggers.error?.(error instanceof Error ? error.message : String(error));
       if (error instanceof Error && error.stack) loggers.error?.(error.stack);
     }
-  }
+  }));
 
-  for (const manager of Object.values(
-    managers,
-  ) as AutoUpdateServerManager<any>[]) {
+  // 3. Load references for all managers in parallel
+  await Promise.all(Object.values(managers).map(async (manager) => {
     try {
       await (manager as any).loadReferences();
     } catch (error: unknown) {
       loggers.error?.(
         "Error loading DB for manager: " +
-          manager.className +
+          (manager as any).className +
           " (loadReferences)",
       );
       loggers.error?.(error instanceof Error ? error.message : String(error));
       if (error instanceof Error && error.stack) loggers.error?.(error.stack);
     }
-  }
+  }));
 
   socket.on("connection", async (socket: Socket) => {
     loggers.debug?.(`Client connected: ${socket.id}`);
@@ -454,9 +460,7 @@ export class AutoUpdateServerManager<
         object: this.objects_[id] as IAutoUpdatedClientObjectBase,
       };
     }
-    for (const object of this.objectsAsArray) {
-      await object.isPreLoadedAsync();
-    }
+    await Promise.all(this.objectsAsArray.map((object) => object.isPreLoadedAsync()));
     this.loggers.debug(
       "Loaded manager DB " +
         this.className +
