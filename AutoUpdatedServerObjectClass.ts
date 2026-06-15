@@ -147,16 +147,18 @@ export abstract class AutoUpdatedServerObject<T extends IAutoUpdatedClientObject
       if (!this.entry) throw new Error("Object not found in DB.");
 
       // Fix 1 & 5: Serialized save with error handling and decoupling of DB writing from noUpdate flag.
-      // We always save to DB if it's a persisted field, regardless of noUpdate.
-      if ((this.entry as any)[key] !== undefined) {
+      // We always save to DB if it's a persisted field, regardless of noUpdate, unless it's a silent update.
+      if (!silent && (this.entry as any)[key] !== undefined) {
           (this.entry as any)[key] = value;
           this.saveLock = this.saveLock.catch(() => {}).then(() => this.entry!.save());
           await this.saveLock;
       }
 
-      const update = this.makeUpdate(key, value);
-      const event = EVENT_UPDATE + this.className + _id.toString();
-      (this.socket as any).emit(event, update);
+      if (!silent) {
+        const update = this.makeUpdate(key, value);
+        const event = EVENT_UPDATE + this.className + _id.toString();
+        (this.socket as any).emit(event, update);
+      }
 
       return { success: true, msg: "Success" };
     } catch (error: any) {

@@ -141,14 +141,21 @@ export abstract class AutoUpdatedClientObject<
     this.parentManager = parentManager as any;
     this.className = className;
 
-    const allProps = new Set<string>();
-    let proto_ = classParam.prototype;
-    while (proto_ && proto_ !== Object.prototype) {
-      const props = Reflect.getOwnMetadata("props", proto_) || [];
-      for (const p of props) allProps.add(p);
-      proto_ = Object.getPrototypeOf(proto_);
+    const staticPropsCache = (classParam as any).__propsCache;
+    if (staticPropsCache) {
+      this.properties = staticPropsCache;
+    } else {
+      const allProps = new Set<string>();
+      let proto_ = classParam.prototype;
+      while (proto_ && proto_ !== Object.prototype) {
+        const props = Reflect.getOwnMetadata("props", proto_) || [];
+        for (const p of props) allProps.add(p);
+        proto_ = Object.getPrototypeOf(proto_);
+      }
+      this.properties = Array.from(allProps);
+      (classParam as any).__propsCache = this.properties;
     }
-    this.properties = Array.from(allProps);
+    
     this.callbacks = callback!;
 
     this.loggers = {
@@ -259,6 +266,40 @@ export abstract class AutoUpdatedClientObject<
         },
       );
     });
+  }
+
+   private async handleLoad(
+    obj: Record<string, unknown>,
+    key: string,
+    alreadySeen: unknown[],
+  ) {
+    const refIds = Array.isArray(obj[key])
+      ? (obj[key] as unknown[])
+      : [obj[key]];
+    for (const refId of refIds) {
+      if (refId) {
+        const idStr = (refId as { toString(): string }).toString();
+        let result = globalCache.objects[idStr]?.object;
+        if (!result) {
+          for (const manager of Object.values(this.parentManager.managers)) {
+            result = manager.getObject(idStr) as IAutoUpdatedClientObject<any>;
+            if (result) break;
+          }
+        }
+        if (result && !alreadySeen.includes(idStr)) {
+          alreadySeen.push(idStr);
+          await (
+            result as unknown as {
+              loadForceReferences(
+                obj?: Record<string, unknown>,
+                proto?: object,
+                alreadySeen?: unknown[],
+              ): Promise<void>;
+            }
+          ).loadForceReferences(undefined, undefined, alreadySeen);
+        }
+      }
+    }
   }
 
   protected handleNewObject(data: IsData<T>): void {
@@ -609,7 +650,7 @@ export abstract class AutoUpdatedClientObject<
             | undefined;
           if (result) break;
         }
-        if (result && typeof result.loadMissingReferences === "function") {
+        if (result && result.parentManager.isLoaded && typeof result.loadMissingReferences === "function") {
           await result.loadMissingReferences();
         }
       }
@@ -643,7 +684,7 @@ export abstract class AutoUpdatedClientObject<
     for (const key of props) {
       if (typeof key !== "string") continue;
       const pointer = Reflect.getMetadata("refsTo", proto, key) as string;
-
+      const isRef = Reflect.getMetadata("isRef", proto, key) as boolean;
       if (
         pointer &&
         obj === (this.data as unknown as Record<string, unknown>) &&
@@ -655,6 +696,8 @@ export abstract class AutoUpdatedClientObject<
           obj[key] as Record<string, unknown>,
         );
       }
+
+      if (isRef) await this.handleLoad(obj, key, alreadySeen);
 
       if (obj[key] && !alreadySeen.includes(obj[key]))
         alreadySeen.push(obj[key]);

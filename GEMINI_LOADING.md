@@ -42,10 +42,16 @@ The loading process in DEM (Data Exchange Manager) is a multi-phase operation de
 - **Parallelization**:
     - Adapted the Server Manager initialization to use `Promise.all` at all levels (manager creation, manager pre-load, manager reference load, and object-level initialization), matching the efficiency of the Client Manager.
 
+- **Metadata Caching**:
+    - The constructor of `AutoUpdatedClientObject` now caches the property list for each class. This avoids redundant prototype walks and metadata lookups when instantiating large numbers of objects of the same type.
+
+- **Reference Loading Optimization**:
+    - `findAndLoadReferences` (triggered by `setValue__`) now only calls `loadMissingReferences()` on target objects if their respective managers are already fully loaded. During the initial loading phase, this prevents a massive O(N^3) redundant work chain as back-references are being synchronized, relying instead on the manager's own loading loop to eventually ensure consistency.
+
 - **Logging Overhead**:
     - Removed excessive debug logging from the inner loops of `loadForceReferences` to reduce CPU and memory pressure during large-scale loading.
 
 - **Memory Pressure**:
     - Avoid logging large arrays (like ID lists) as it can lead to heap exhaustion in large datasets.
-    - DB Saves: On the server, `setValue__` triggers a DB save. Be cautious when syncing back-references during initialization to avoid massive amounts of concurrent writes.
+    - DB Saves: On the server, `setValue__` triggers a DB save unless the `silent` flag is set. The `createdWithParent` mechanism uses `silent: true` to avoid massive amounts of concurrent writes during back-reference synchronization.
 
