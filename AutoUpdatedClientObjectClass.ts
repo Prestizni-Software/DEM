@@ -63,7 +63,7 @@ export abstract class AutoUpdatedClientObject<
     cache: DEMCache;
     managers: M;
   };
-  private readonly EmitterID = new ObjectId().toHexString();
+  protected readonly EmitterID = new ObjectId().toHexString();
   protected readonly toChangeOnParents: { key: string; value: unknown }[] = [];
   public callbacks: DEMClientCallbacks<T>;
 
@@ -218,7 +218,16 @@ export abstract class AutoUpdatedClientObject<
       );
     } else {
       this.isLoading = true;
-      this.data = data;
+      if (this.isServer) {
+        this.data = data;
+      } else {
+        this.data = _.cloneDeepWith(data, (value) => {
+          if (value && typeof value === "object" && value._id && value.className) {
+            return value._id.toString();
+          }
+        });
+      }
+
       for (const key of this.properties || []) {
         const isRef = getMetadataRecursive("isRef", this, key);
         const dataAsRecord = this.data as unknown as Record<string, unknown>;
@@ -226,22 +235,18 @@ export abstract class AutoUpdatedClientObject<
           if (Array.isArray(dataAsRecord[key])) {
             dataAsRecord[key] = (dataAsRecord[key] as unknown[]).map(
               (obj: unknown) =>
-                (
-                  obj as { _id?: { toString(): string } | string }
-                )?._id?.toString() ??
+                (obj as { _id?: { toString(): string } | string })?._id?.toString() ??
                 (obj as { toString(): string })?.toString(),
             );
           } else {
             dataAsRecord[key] =
-              (
-                dataAsRecord[key] as { _id?: { toString(): string } | string }
-              )?._id?.toString() ??
+              (dataAsRecord[key] as { _id?: { toString(): string } | string })?._id?.toString() ??
               (dataAsRecord[key] as { toString(): string })?.toString();
           }
         }
       }
       if ((!this.data._id || this.data._id === "") && !this.isServer) {
-        this.handleNewObject(data as IsData<T>);
+        this.handleNewObject(this.data as IsData<T>);
       } else {
         this.isLoading = false;
         if (!this.isServer) this.openSockets();
@@ -317,6 +322,7 @@ export abstract class AutoUpdatedClientObject<
 
   public async isPreLoadedAsync(): Promise<boolean> {
     await this.loadReferencesAsync();
+    this.generateSettersAndGetters();
     return true;
   }
 
@@ -390,7 +396,23 @@ export abstract class AutoUpdatedClientObject<
           return val;
         },
         set: (v: unknown) => {
-          if (this.data) (this.data as Record<string, unknown>)[key] = v;
+          if (this.data) {
+            let valueToSet = v;
+            if (isRef && v) {
+              if (Array.isArray(v)) {
+                valueToSet = v.map((item) =>
+                  item && (item as any)._id
+                    ? (item as any)._id.toString()
+                    : item?.toString(),
+                );
+              } else {
+                valueToSet = (v as any)._id
+                  ? (v as any)._id.toString()
+                  : (v as any).toString();
+              }
+            }
+            (this.data as Record<string, unknown>)[key] = valueToSet;
+          }
         },
         enumerable: true,
         configurable: true,
@@ -842,6 +864,7 @@ export abstract class AutoUpdatedClientObject<
         }
       }
     }
+    this.generateSettersAndGetters();
   }
 
   protected async onUpdate(noUpdate: boolean = false): Promise<void> {

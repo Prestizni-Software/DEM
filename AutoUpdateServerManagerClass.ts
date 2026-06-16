@@ -552,7 +552,7 @@ export class AutoUpdateServerManager<
         try {
           const newDoc = await this.createObject(data as any as IsData<T>);
           ack({
-            data: (newDoc as any).extractedData,
+            data: (newDoc).extractedData,
             success: true,
             message: "Created successfully",
           });
@@ -702,17 +702,17 @@ export class AutoUpdateServerManager<
     if (dataRec._id === "" || dataRec._id === null) delete dataRec._id;
 
     const doc = await this.model.create(dataRec);
-    const id = (doc as any)._id.toString();
+    const id = (doc )._id.toString();
 
     const object = await createAutoUpdatedClass(
-      this.classParam as any,
+      this.classParam,
       this.className,
       this.socket,
       id as unknown as IsData<any>,
       this.loggers,
-      this as any,
+      this,
       this.emitter,
-      doc as any,
+      doc,
     );
     await object.waitForPreloaded();
 

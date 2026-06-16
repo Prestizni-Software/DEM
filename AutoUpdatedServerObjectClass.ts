@@ -113,18 +113,18 @@ export abstract class AutoUpdatedServerObject<T extends IAutoUpdatedClientObject
     
     if (!this.entry) throw new Error(`Object not found in DB: ${this.className} with ID ${_id}`);
     
-    this.data = { ...(this.data as Record<string, unknown>), ...this.entry.toObject() } as IsData<T>;
-    (this as any).isLoading = false;
+    this.data = { ...(this.data ), ...this.entry.toObject() };
+    (this ).isLoading = false;
     this.generateSettersAndGetters();
-    this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + (this as any).EmitterID);
+    this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + (this ).EmitterID);
   }
 
   public async loadFromDocument(document: DocumentType<T>): Promise<void> {
     this.entry = document;
-    this.data = { ...(this.data as Record<string, unknown>), ...this.entry.toObject() } as IsData<T>;
-    (this as any).isLoading = false;
+    this.data = { ...(this.data), ...this.entry.toObject() };
+    (this).isLoading = false;
     this.generateSettersAndGetters();
-    this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + (this as any).EmitterID);
+    this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + (this ).EmitterID);
   }
 
   public override get extractedData(): ExtractedData<T, IAutoUpdatedClientObject<any>> {
@@ -210,7 +210,7 @@ export abstract class AutoUpdatedServerObject<T extends IAutoUpdatedClientObject
   }
 }
 
-export async function createAutoUpdatedClass<T extends IAutoUpdatedClientObject<T>>(
+export async function createAutoUpdatedClass<T extends IAutoUpdatedServerObject<T>>(
   classParam: Constructor<T>,
   className: string,
   socket: unknown,
@@ -220,7 +220,7 @@ export async function createAutoUpdatedClass<T extends IAutoUpdatedClientObject<
   emitter: EventEmitter3,
   document?: DocumentType<T>,
 ): Promise<IAutoUpdatedServerObject<T>> {
-  const obj = new (classParam as any)(
+  const obj = new (classParam)(
     classParam,
     socket,
     data,
@@ -228,7 +228,7 @@ export async function createAutoUpdatedClass<T extends IAutoUpdatedClientObject<
     className,
     parentManager,
     emitter,
-  ) as IAutoUpdatedServerObject<T>;
+  );
   if (document) {
     await obj.loadFromDocument(document);
   } else {

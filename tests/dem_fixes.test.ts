@@ -268,4 +268,45 @@ describe("DEM Fixes Verification", () => {
         initS.io.close();
         initS.server.close();
     });
+
+    test("Fix 8: Data integrity on creation (convert objects to IDs)", async () => {
+        const construction = await clientManagers.Construction.createObject({
+            name: "DataIntegrity Construction",
+            objects: []
+        });
+
+        // Pass whole object as parent
+        const constructionObject = await clientManagers.ConstructionObject.createObject({
+            number: "SO-INTEGRITY",
+            path: "Root/SO-INTEGRITY",
+            parent: construction as any,
+            siteManagers: []
+        });
+
+        // Check raw data
+        const rawData = (constructionObject as any).data;
+        expect(typeof rawData.parent).toBe("string");
+        expect(rawData.parent).toBe(construction._id.toString());
+    });
+
+    test("Fix 9: Data integrity on property setter (convert objects to IDs)", async () => {
+        const construction = await clientManagers.Construction.createObject({
+            name: "SetterIntegrity Construction",
+            objects: []
+        });
+
+        const constructionObject = await clientManagers.ConstructionObject.createObject({
+            number: "SO-SETTER",
+            path: "Root/SO-SETTER",
+            siteManagers: []
+        });
+
+        // Use setter
+        (constructionObject as any).parent = construction;
+
+        // Check raw data
+        const rawData = (constructionObject as any).data;
+        expect(typeof rawData.parent).toBe("string");
+        expect(rawData.parent).toBe(construction._id.toString());
+    });
 });
