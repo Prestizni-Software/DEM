@@ -65,7 +65,10 @@ describe("AutoUpdateManager base class tests", () => {
     });
 
     test("loadReferences method", async () => {
-        const mockObj = { loadMissingReferences: jest.fn().mockResolvedValue(undefined) };
+        const mockObj = { 
+            loadMissingReferences: jest.fn().mockResolvedValue(undefined),
+            isPreLoadedAsync: jest.fn().mockResolvedValue(true)
+        };
         // We need to mock objectsAsArray because it's abstract in base but implemented in server manager
         Object.defineProperty(manager, 'objectsAsArray', {
             get: jest.fn().mockReturnValue([mockObj])
