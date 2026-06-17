@@ -4,18 +4,19 @@ The loading process in DEM (Data Exchange Manager) is a multi-phase operation de
 
 ## Initialization Phases
 
-1.  **Pre-Load (`preLoad`)**:
-    - Fetches all documents from the database for a given manager.
-    - Instantiates `AutoUpdatedServerObject` (or client equivalent) for each document.
-    - Adds objects to the `globalCache`.
-    - Calls `isPreLoadedAsync()` on each object to trigger initial reference resolution (`loadForceReferences`).
+1.  **Pre-Load (`preLoad` / `loadFromServer`)**:
+    - Fetches all documents from the database (Server) or IDs from the server (Client).
+    - Instantiates objects and adds them to the `globalCache`.
+    - **Client Manager**: Also calls `isPreLoadedAsync()` and `loadMissingReferences()` in this phase.
+    - **Server Manager**: Focuses exclusively on instantiation to ensure all objects exist before any reference resolution begins.
     - **Optimization**: All objects within a manager are pre-loaded in parallel using `Promise.all`.
-    - **Optimization**: All managers are pre-loaded in parallel in `AUSManagerFactory`.
+    - **Optimization**: All managers are pre-loaded in parallel in the factories (`AUSManagerFactory` / `AUCManagerFactory`).
 
 2.  **Load References (`loadReferences`)**:
     - Called after all managers have completed `preLoad`.
-    - Iterates through all objects and calls `loadMissingReferences()`.
-    - This phase ensures that cross-manager references can be resolved because all managers have their objects instantiated.
+    - **Initial Reference Resolution**: In the Server Manager, this phase first triggers `isPreLoadedAsync()` on each object to perform initial reference resolution (`loadForceReferences`). This ensures that all objects across all managers already exist in `globalCache` before their relationships are established.
+    - **Missing Reference Resolution**: Iterates through all objects and calls `loadMissingReferences()` to find any "parent" references (pointers) that might be missing from the data.
+    - This phase ensures that cross-manager references are correctly resolved because all managers have their objects instantiated and available in memory.
     - **Optimization**: All objects within a manager have their references loaded in parallel using `Promise.all`.
     - **Optimization**: All managers have their references loaded in parallel in `AUSManagerFactory`.
 
