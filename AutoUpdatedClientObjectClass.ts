@@ -209,7 +209,7 @@ export abstract class AutoUpdatedClientObject<
             );
             return;
           }
-          this.data = res.data as any;
+          this.data = this.handleDataCleanup(res.data as any);
           this.generateSettersAndGetters();
           this.isLoading = false;
           this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
@@ -218,33 +218,8 @@ export abstract class AutoUpdatedClientObject<
       );
     } else {
       this.isLoading = true;
-      if (this.isServer) {
-        this.data = data;
-      } else {
-        this.data = _.cloneDeepWith(data, (value) => {
-          if (value && typeof value === "object" && value._id && value.className) {
-            return value._id.toString();
-          }
-        });
-      }
+      this.data = this.handleDataCleanup(data as IsData<T>);
 
-      for (const key of this.properties || []) {
-        const isRef = getMetadataRecursive("isRef", this, key);
-        const dataAsRecord = this.data as unknown as Record<string, unknown>;
-        if (isRef && dataAsRecord[key]) {
-          if (Array.isArray(dataAsRecord[key])) {
-            dataAsRecord[key] = (dataAsRecord[key] as unknown[]).map(
-              (obj: unknown) =>
-                (obj as { _id?: { toString(): string } | string })?._id?.toString() ??
-                (obj as { toString(): string })?.toString(),
-            );
-          } else {
-            dataAsRecord[key] =
-              (dataAsRecord[key] as { _id?: { toString(): string } | string })?._id?.toString() ??
-              (dataAsRecord[key] as { toString(): string })?.toString();
-          }
-        }
-      }
       if ((!this.data._id || this.data._id === "") && !this.isServer) {
         this.handleNewObject(this.data as IsData<T>);
       } else {
@@ -257,6 +232,37 @@ export abstract class AutoUpdatedClientObject<
     Promise.resolve().then(() => {
       this.generateSettersAndGetters();
     });
+  }
+
+  protected handleDataCleanup(data: IsData<T>): IsData<T> {
+    if (!data || typeof data !== "object") return data;
+
+    // 1. Deep cleanup for any DEM objects embedded in the structure
+    const cleaned = _.cloneDeepWith(data, (value) => {
+      if (value && typeof value === "object" && value._id && value.className) {
+        return (value._id.toString?.() ?? String(value._id)) as any;
+      }
+    });
+
+    // 2. Property-specific reference cleanup (ensures all isRef properties are IDs)
+    for (const key of this.properties || []) {
+      const isRef = getMetadataRecursive("isRef", this, key);
+      const dataAsRecord = cleaned as unknown as Record<string, unknown>;
+      if (isRef && dataAsRecord[key]) {
+        if (Array.isArray(dataAsRecord[key])) {
+          dataAsRecord[key] = (dataAsRecord[key] as unknown[]).map(
+            (obj: unknown) =>
+              (obj as { _id?: { toString(): string } | string })?._id?.toString() ??
+              (obj as { toString(): string })?.toString(),
+          );
+        } else {
+          dataAsRecord[key] =
+            (dataAsRecord[key] as { _id?: { toString(): string } | string })?._id?.toString() ??
+            (dataAsRecord[key] as { toString(): string })?.toString();
+        }
+      }
+    }
+    return cleaned;
   }
 
   public async waitForPreloaded(): Promise<void> {

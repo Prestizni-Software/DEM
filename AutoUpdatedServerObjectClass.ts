@@ -88,12 +88,13 @@ export abstract class AutoUpdatedServerObject<T extends IAutoUpdatedClientObject
               .map((item) => {
                 if (!item) return null;
                 const idStr = (item as any)._id ? (item as any)._id.toString() : item.toString();
+                if (idStr === {}.toString()) return null; // Avoid [object Object]
                 return ObjectId.isValid(idStr) ? new ObjectId(idStr) : item;
               })
               .filter((item) => item !== null);
           } else {
             const idStr = (dataRec[prop] as any)._id ? (dataRec[prop] as any)._id.toString() : (dataRec[prop] as any).toString();
-            if (ObjectId.isValid(idStr)) {
+            if (idStr !== {}.toString() && ObjectId.isValid(idStr)) {
                 dataRec[prop] = new ObjectId(idStr);
             }
           }
@@ -113,7 +114,7 @@ export abstract class AutoUpdatedServerObject<T extends IAutoUpdatedClientObject
     
     if (!this.entry) throw new Error(`Object not found in DB: ${this.className} with ID ${_id}`);
     
-    this.data = { ...(this.data ), ...this.entry.toObject() };
+    this.data = this.handleDataCleanup({ ...(this.data ), ...this.entry.toObject() });
     (this ).isLoading = false;
     this.generateSettersAndGetters();
     this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + (this ).EmitterID);
@@ -121,7 +122,7 @@ export abstract class AutoUpdatedServerObject<T extends IAutoUpdatedClientObject
 
   public async loadFromDocument(document: DocumentType<T>): Promise<void> {
     this.entry = document;
-    this.data = { ...(this.data), ...this.entry.toObject() };
+    this.data = this.handleDataCleanup({ ...(this.data), ...this.entry.toObject() });
     (this).isLoading = false;
     this.generateSettersAndGetters();
     this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + (this ).EmitterID);
@@ -147,8 +148,8 @@ export abstract class AutoUpdatedServerObject<T extends IAutoUpdatedClientObject
       if (!this.entry) throw new Error("Object not found in DB.");
 
       // Fix 1 & 5: Serialized save with error handling and decoupling of DB writing from noUpdate flag.
-      // We always save to DB if it's a persisted field, regardless of noUpdate, unless it's a silent update.
-      if (!silent && (this.entry as any)[key] !== undefined) {
+      // We always save to DB if it's a persisted field, regardless of noUpdate or silent flags.
+      if ((this.entry as any)[key] !== undefined) {
           (this.entry as any)[key] = value;
           this.saveLock = this.saveLock.catch(() => {}).then(() => this.entry!.save());
           await this.saveLock;

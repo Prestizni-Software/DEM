@@ -430,7 +430,10 @@ export class AutoUpdateServerManager<
   public async preLoad(): Promise<void> {
     this.loggers.debug("Loading manager DB " + this.className);
     const docs = await this.model.find({});
-    for (const doc of docs) {
+    
+    // Optimization: Parallelize object creation to ensure all objects are in globalCache 
+    // as quickly as possible before reference resolution starts.
+    await Promise.all(docs.map(async (doc: any) => {
       const id = (
         doc as unknown as { _id?: { toString(): string } }
       )._id?.toString();
@@ -438,7 +441,7 @@ export class AutoUpdateServerManager<
         this.loggers.debug(
           "Invalid document, no _id: " + ((doc as any)?._id ?? "[no id]"),
         );
-        continue;
+        return;
       }
       this.objects_[id] =
         this.objects_[id] ??
@@ -456,8 +459,8 @@ export class AutoUpdateServerManager<
         className: this.className,
         object: this.objects_[id] as IAutoUpdatedClientObjectBase,
       };
-    }
-    await Promise.all(this.objectsAsArray.map((object) => object.isPreLoadedAsync()));
+    }));
+
     this.loggers.debug(
       "Loaded manager DB " +
         this.className +
@@ -465,6 +468,15 @@ export class AutoUpdateServerManager<
         docs.length +
         "] entries",
     );
+  }
+
+  public override async loadReferences(): Promise<void> {
+    // Phase 1: Initial reference resolution (including back-references/createdWithParent)
+    // This MUST happen after all managers have finished preLoad so that all objects exist in globalCache.
+    await Promise.all(this.objectsAsArray.map((object) => object.isPreLoadedAsync()));
+    
+    // Phase 2: Resolve missing references (pointers) and set isLoaded_ = true
+    await super.loadReferences();
   }
 
   public registerSocket(socket: Socket): void {
@@ -717,9 +729,10 @@ export class AutoUpdateServerManager<
     await object.waitForPreloaded();
 
     // Fix 4: Copy virtual references from raw data payload
+    const cleanedData = (object as any).handleDataCleanup(dataRec);
     for (const key of object.properties) {
-      if (dataRec[key] !== undefined && (object as any).data[key] === undefined) {
-        (object as any).data[key] = dataRec[key];
+      if (cleanedData[key] !== undefined && (object as any).data[key] === undefined) {
+        (object as any).data[key] = cleanedData[key];
       }
     }
 
