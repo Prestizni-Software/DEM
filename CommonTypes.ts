@@ -168,6 +168,7 @@ export type ServerUpdateRequest<T> = {
 
 export function classProp(target: object, propertyKey: string): void {
   const props = (Reflect.getOwnMetadata("props", target) as string[]) || [];
+  if (props.includes(propertyKey)) return;
   const newProps = [...props, propertyKey];
   Reflect.defineMetadata("props", newProps, target);
 }
@@ -176,6 +177,7 @@ export function populatedRef(
   where: string,
 ): (target: object, propertyKey: string) => void {
   return function (target: object, propertyKey: string) {
+    classProp(target, propertyKey);
     classRef()(target, propertyKey);
     Reflect.defineMetadata("refsTo", where, target, propertyKey);
   };
@@ -183,6 +185,7 @@ export function populatedRef(
 
 export function classRef(): (target: object, propertyKey: string) => void {
   return function (target: object, propertyKey: string) {
+    classProp(target, propertyKey);
     Reflect.defineMetadata("isRef", true, target, propertyKey);
   };
 }
