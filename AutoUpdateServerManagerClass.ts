@@ -23,6 +23,8 @@ import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types";
 import { EventEmitter } from "eventemitter3";
 import * as machineId from "node-machine-id";
 import { getModelForClass } from "@typegoose/typegoose";
+import { Paths } from "./CommonTypes.js";
+import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
 
 export type WrappedInstances<
   T extends Record<string, IAutoUpdatedClientObject<any>>,
@@ -65,7 +67,8 @@ export type AUSOption<
   accessDefinitions?: AccessMiddleware<T, C>;
   onUpdate?: (
     obj: C,
-    set: (key: string, val: any) => Promise<{ success: boolean; msg: string }>,
+    set: (key: Paths<C, AutoUpdatedClientObject<any>>, val: any) => Promise<{ success: boolean; msg: string }>,
+    key: Paths<C, AutoUpdatedClientObject<any>>,
   ) => Promise<void>;
   onDeletion?: (obj: C) => Promise<void>;
 };

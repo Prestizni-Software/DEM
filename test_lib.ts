@@ -78,6 +78,9 @@ export const initServerManagers = async () => {
                 throw new Error("Fail");
             },
           },
+          onUpdate: async (obj, set, key) => {
+            
+          }
         },
       },
     },

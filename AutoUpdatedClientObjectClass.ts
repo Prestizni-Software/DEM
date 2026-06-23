@@ -240,7 +240,7 @@ export abstract class AutoUpdatedClientObject<
     // 1. Deep cleanup for any DEM objects embedded in the structure
     const cleaned = _.cloneDeepWith(data, (value) => {
       if (value && typeof value === "object" && value._id && value.className) {
-        return (value._id.toString?.() ?? String(value._id)) as any;
+        return (value._id.toString?.() ?? String(value._id));
       }
     });
 
@@ -570,7 +570,7 @@ export abstract class AutoUpdatedClientObject<
             this as unknown as IAutoUpdatedClientObject<T>,
             key,
           );
-          await this.onUpdate(noUpdate);
+          await this.onUpdate(noUpdate, key);
         }
       }
       return {
@@ -873,7 +873,7 @@ export abstract class AutoUpdatedClientObject<
     this.generateSettersAndGetters();
   }
 
-  protected async onUpdate(noUpdate: boolean = false): Promise<void> {
+  protected async onUpdate(noUpdate: boolean = false, key?: string): Promise<void> {
     // Placeholder for server-side override
   }
 

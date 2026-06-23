@@ -194,13 +194,13 @@ export abstract class AutoUpdatedServerObject<T extends IAutoUpdatedClientObject
     return { success: true, message: "Deleted" };
   }
 
-  protected override async onUpdate(noUpdate: boolean = false): Promise<void> {
+  protected override async onUpdate(noUpdate: boolean = false, key: string): Promise<void> {
     if (noUpdate) return;
     if (this.parentManager.options?.onUpdate) {
         await this.parentManager.options.onUpdate(this as unknown as T, async (key: string, val: any) => {
             // Fix 5: Pass noUpdate=true to internal setter to prevent recursive onUpdate calls.
             return this.setValue__(key, val, false, false, true);
-        });
+        }, key as any);
     }
   }
 
