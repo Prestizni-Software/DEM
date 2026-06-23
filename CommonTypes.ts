@@ -124,6 +124,8 @@ export type Pure<T extends object, Base = IAutoUpdatedClientObject<any>> = Omit<
   | "setValue"
   | "loadFromDB"
   | "setValue_"
+  | "destroyImmediate"
+  | "loadError"
 >;
 
 export type IsData<T extends object> = {
