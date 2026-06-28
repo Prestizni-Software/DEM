@@ -1,7 +1,6 @@
 import {
   AUSManagerFactory,
   DEMEventTypes,
-  WrappedInstances as ServerWrappedInstances,
 } from "./AutoUpdateServerManagerClass.js";
 import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
@@ -9,12 +8,9 @@ import mongoose from "mongoose";
 import { io as socketIOClient } from "socket.io-client";
 import {
   AUCManagerFactory,
-  WrappedInstances as ClientWrappedInstances,
 } from "./AutoUpdateClientManagerClass.js";
 import {
   Constructor,
-  IAutoUpdatedClientObject,
-  IAutoUpdatedServerObject,
   IAutoUpdatedClientObjectBase,
 } from "./CommonTypes.js";
 import * as ServerClasses from "./tests/testData/ServerClasses/index.js";

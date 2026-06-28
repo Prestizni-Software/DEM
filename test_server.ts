@@ -15,9 +15,9 @@ const obj1 = await managers.Test.createObject({
     _id: "default",
     obj: { _id: "default" },
   },
-} as any);
-managers = (managers.Construction.objectsAsArray[0] as any).parentManager.managers;
-const x1 = obj1.extractedData
+});
+managers = managers.Construction.objectsAsArray[0].parentManager.managers;
+const x1 = obj1.extractedData;
 managers.Construction.objectsAsArray[0].setValue("objects", [obj1._id]);
 const obj2 = await managers.Test.createObject({
   active: true,
@@ -27,10 +27,10 @@ const obj2 = await managers.Test.createObject({
   refarr: [],
   obj: null,
   parent: obj1,
-} as any);
+});
 await obj2.setValue("parent", null);
 const x2 = [obj1, obj2._id, obj2._id.toString()];
-const obj3 = await (managers.Test).createObject({
+const obj3 = await managers.Test.createObject({
   active: true,
   status: Status.INACTIVE,
   description: "Obj3",
@@ -38,7 +38,7 @@ const obj3 = await (managers.Test).createObject({
   refarr: [obj1._id, obj2],
   obj: null,
   parent: null,
-} as any);
+});
 
 if (!obj1 || !obj2) throw new Error("No obj");
 

@@ -52,7 +52,7 @@ export interface IAutoUpdatedServerObject<
   T extends object = any,
 > extends IAutoUpdatedClientObject<T> {
   loadFromDB(): Promise<void>;
-  loadFromDocument(document: unknown): Promise<void>;
+  loadFromDocument(document: unknown): void;
 }
 
 export type AutoProps<T> = {

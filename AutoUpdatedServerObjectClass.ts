@@ -120,7 +120,7 @@ export abstract class AutoUpdatedServerObject<T extends IAutoUpdatedClientObject
     this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + (this ).EmitterID);
   }
 
-  public async loadFromDocument(document: DocumentType<T>): Promise<void> {
+  public loadFromDocument(document: DocumentType<T>): void {
     this.entry = document;
     this.data = this.handleDataCleanup({ ...(this.data), ...this.entry.toObject() });
     (this).isLoading = false;
@@ -231,7 +231,7 @@ export async function createAutoUpdatedClass<T extends IAutoUpdatedServerObject<
     emitter,
   );
   if (document) {
-    await obj.loadFromDocument(document);
+    obj.loadFromDocument(document);
   } else {
     await obj.loadFromDB();
   }
