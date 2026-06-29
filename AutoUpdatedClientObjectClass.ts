@@ -682,7 +682,7 @@ export abstract class AutoUpdatedClientObject<
       const isRef = Reflect.getMetadata("isRef", proto, key) as boolean;
       if (
         pointer &&
-        obj === (this.data as unknown as Record<string, unknown>) &&
+        obj === (this.data) &&
         obj[key] &&
         !alreadySeen.includes(obj)
       ) {
@@ -718,11 +718,11 @@ export abstract class AutoUpdatedClientObject<
     const parentId =
       (parent._id as { toString(): string })?.toString() ?? parent.toString();
     
-    this.loggers.debug?.(`createdWithParent: pointer=${pointer.join(":")}, parentId=${parentId}`);
+    this.loggers.debug(`createdWithParent: pointer=${pointer.join(":")}, parentId=${parentId}`);
 
     const manager = this.parentManager.managers[pointer[0]];
     if (!manager) {
-      this.loggers.warn?.(`createdWithParent: Manager not found for ${pointer[0]}. Available managers: ${Object.keys(this.parentManager.managers).join(", ")}`);
+      this.loggers.warn(`createdWithParent: Manager not found for ${pointer[0]}. Available managers: ${Object.keys(this.parentManager.managers).join(", ")}`);
       return;
     }
 
@@ -730,7 +730,7 @@ export abstract class AutoUpdatedClientObject<
       | IAutoUpdatedClientObject<any>
       | undefined;
     if (!obj) {
-      this.loggers.warn?.(`createdWithParent: Parent object not found for ID ${parentId} in manager ${pointer[0]}`);
+      this.loggers.warn(`createdWithParent: Parent object not found for ID ${parentId} in manager ${pointer[0]}`);
       return;
     }
     const val = obj.getValue(pointer[1] as any);
@@ -760,7 +760,7 @@ export abstract class AutoUpdatedClientObject<
               isParentUpdate?: boolean,
             ): Promise<void>;
           }
-        ).setValue__(pointer[1], [...val, myId], true, false, false, true);
+        ).setValue__(pointer[1], [...val, myId], false, false, false, true);
       }
     } else if (
       ((val as { _id?: { toString(): string } | string })?._id?.toString() ??
@@ -778,7 +778,7 @@ export abstract class AutoUpdatedClientObject<
             isParentUpdate?: boolean,
           ): Promise<void>;
         }
-      ).setValue__(pointer[1], myId, true, false, false, true);
+      ).setValue__(pointer[1], myId, false, false, false, true);
     }
   }
 

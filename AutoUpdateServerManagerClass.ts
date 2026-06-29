@@ -67,7 +67,10 @@ export type AUSOption<
   accessDefinitions?: AccessMiddleware<T, C>;
   onUpdate?: (
     obj: C,
-    set: (key: Paths<C, AutoUpdatedClientObject<any>>, val: any) => Promise<{ success: boolean; msg: string }>,
+    set: (
+      key: Paths<C, AutoUpdatedClientObject<any>>,
+      val: any,
+    ) => Promise<{ success: boolean; msg: string }>,
     key: Paths<C, AutoUpdatedClientObject<any>>,
   ) => Promise<void>;
   onDeletion?: (obj: C) => Promise<void>;
@@ -307,20 +310,19 @@ export async function AUSManagerFactory<
   // Use delegation instead of cloning or direct mutation to ensure late-added spies work
   const loggers: LoggersType = {
     info: (s: string) => loggers_.info?.(s),
-    debug: (s: string) => doDebug ? loggers_.debug?.(s) : undefined,
+    debug: (s: string) => (doDebug ? loggers_.debug?.(s) : undefined),
     error: (s: string) => loggers_.error?.(s),
-    warn: (s: string) => loggers_.warn?.(s)
+    warn: (s: string) => loggers_.warn?.(s),
   };
 
   socket.use((socket, next) => {
-    socket.onAny((event) => {
-    });
+    socket.onAny((event) => {});
     next();
   });
 
   const managers = {} as WrappedInstances<T>;
   const keys = Object.keys(defs);
-  
+
   // 1. Create all managers
   for (const key of keys) {
     loggers.debug?.(`Creating manager for ${key}`);
@@ -346,32 +348,36 @@ export async function AUSManagerFactory<
   }
 
   // 2. Pre-load all managers in parallel
-  await Promise.all(keys.map(async (key) => {
-    if (!managers[key]) return;
-    loggers.debug?.("Loading DB for manager: " + key);
-    try {
-      await (managers[key] as any).preLoad();
-    } catch (error: unknown) {
-      loggers.error?.("Error loading DB for manager: " + key);
-      loggers.error?.(error instanceof Error ? error.message : String(error));
-      if (error instanceof Error && error.stack) loggers.error?.(error.stack);
-    }
-  }));
+  await Promise.all(
+    keys.map(async (key) => {
+      if (!managers[key]) return;
+      loggers.debug?.("Loading DB for manager: " + key);
+      try {
+        await (managers[key] as any).preLoad();
+      } catch (error: unknown) {
+        loggers.error?.("Error loading DB for manager: " + key);
+        loggers.error?.(error instanceof Error ? error.message : String(error));
+        if (error instanceof Error && error.stack) loggers.error?.(error.stack);
+      }
+    }),
+  );
 
   // 3. Load references for all managers in parallel
-  await Promise.all(Object.values(managers).map(async (manager) => {
-    try {
-      await (manager as any).loadReferences();
-    } catch (error: unknown) {
-      loggers.error?.(
-        "Error loading DB for manager: " +
-          (manager as any).className +
-          " (loadReferences)",
-      );
-      loggers.error?.(error instanceof Error ? error.message : String(error));
-      if (error instanceof Error && error.stack) loggers.error?.(error.stack);
-    }
-  }));
+  await Promise.all(
+    Object.values(managers).map(async (manager) => {
+      try {
+        await (manager as any).loadReferences();
+      } catch (error: unknown) {
+        loggers.error?.(
+          "Error loading DB for manager: " +
+            (manager as any).className +
+            " (loadReferences)",
+        );
+        loggers.error?.(error instanceof Error ? error.message : String(error));
+        if (error instanceof Error && error.stack) loggers.error?.(error.stack);
+      }
+    }),
+  );
 
   socket.on("connection", async (socket: Socket) => {
     loggers.debug?.(`Client connected: ${socket.id}`);
@@ -433,36 +439,38 @@ export class AutoUpdateServerManager<
   public async preLoad(): Promise<void> {
     this.loggers.debug("Loading manager DB " + this.className);
     const docs = await this.model.find({});
-    
-    // Optimization: Parallelize object creation to ensure all objects are in globalCache 
+
+    // Optimization: Parallelize object creation to ensure all objects are in globalCache
     // as quickly as possible before reference resolution starts.
-    await Promise.all(docs.map(async (doc: any) => {
-      const id = (
-        doc as unknown as { _id?: { toString(): string } }
-      )._id?.toString();
-      if (!id) {
-        this.loggers.debug(
-          "Invalid document, no _id: " + ((doc as any)?._id ?? "[no id]"),
-        );
-        return;
-      }
-      this.objects_[id] =
-        this.objects_[id] ??
-        ((await createAutoUpdatedClass(
-          this.classParam as any,
-          this.className,
-          this.socket,
-          id as unknown as IsData<any>,
-          this.loggers,
-          this as any,
-          this.emitter,
-          doc as any,
-        )) as any as T);
-      globalCache.objects[id] = {
-        className: this.className,
-        object: this.objects_[id] as IAutoUpdatedClientObjectBase,
-      };
-    }));
+    await Promise.all(
+      docs.map(async (doc: any) => {
+        const id = (
+          doc as unknown as { _id?: { toString(): string } }
+        )._id?.toString();
+        if (!id) {
+          this.loggers.debug(
+            "Invalid document, no _id: " + ((doc as any)?._id ?? "[no id]"),
+          );
+          return;
+        }
+        this.objects_[id] =
+          this.objects_[id] ??
+          ((await createAutoUpdatedClass(
+            this.classParam as any,
+            this.className,
+            this.socket,
+            id as unknown as IsData<any>,
+            this.loggers,
+            this as any,
+            this.emitter,
+            doc as any,
+          )) as any as T);
+        globalCache.objects[id] = {
+          className: this.className,
+          object: this.objects_[id] as IAutoUpdatedClientObjectBase,
+        };
+      }),
+    );
 
     this.loggers.debug(
       "Loaded manager DB " +
@@ -476,8 +484,10 @@ export class AutoUpdateServerManager<
   public override async loadReferences(): Promise<void> {
     // Phase 1: Initial reference resolution (including back-references/createdWithParent)
     // This MUST happen after all managers have finished preLoad so that all objects exist in globalCache.
-    await Promise.all(this.objectsAsArray.map((object) => object.isPreLoadedAsync()));
-    
+    await Promise.all(
+      this.objectsAsArray.map((object) => object.isPreLoadedAsync()),
+    );
+
     // Phase 2: Resolve missing references (pointers) and set isLoaded_ = true
     await super.loadReferences();
   }
@@ -567,7 +577,7 @@ export class AutoUpdateServerManager<
         try {
           const newDoc = await this.createObject(data as any as IsData<T>);
           ack({
-            data: (newDoc).extractedData,
+            data: newDoc.extractedData,
             success: true,
             message: "Created successfully",
           });
@@ -717,7 +727,7 @@ export class AutoUpdateServerManager<
     if (dataRec._id === "" || dataRec._id === null) delete dataRec._id;
 
     const doc = await this.model.create(dataRec);
-    const id = (doc )._id.toString();
+    const id = doc._id.toString();
 
     const object = await createAutoUpdatedClass(
       this.classParam,
@@ -734,7 +744,10 @@ export class AutoUpdateServerManager<
     // Fix 4: Copy virtual references from raw data payload
     const cleanedData = (object as any).handleDataCleanup(dataRec);
     for (const key of object.properties) {
-      if (cleanedData[key] !== undefined && (object as any).data[key] === undefined) {
+      if (
+        cleanedData[key] !== undefined &&
+        (object as any).data[key] === undefined
+      ) {
         (object as any).data[key] = cleanedData[key];
       }
     }
