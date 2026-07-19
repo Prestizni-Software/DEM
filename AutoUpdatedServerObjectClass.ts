@@ -176,7 +176,7 @@ export abstract class AutoUpdatedServerObject<
     T,
     IAutoUpdatedClientObject<any>
   > {
-    const dataToProcess = this.entry ? this.entry.toObject() : this.data;
+    const dataToProcess = this.data;
     const extracted = processIsRefProperties(
       dataToProcess as any,
       this,

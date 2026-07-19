@@ -24,6 +24,7 @@ Welcome to the DEM Project. This file serves as the root of the project's memory
 ## Knowledge Index
 
 - [DEM Loading Process](./GEMINI_LOADING.md) - Detailed analysis of how objects and references are initialized and synchronized, including performance optimizations for recursion and parallelization.
+- [Client Population Bypass](./GEMINI_CLIENT_POPULATION.md) - Documentation on the architectural change to ship fully populated objects to the client and bypass client-side reference population logic.
 
 ## General Rules
 - Prefer Vanilla CSS for web components.

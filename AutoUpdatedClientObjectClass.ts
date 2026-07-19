@@ -73,9 +73,11 @@ export abstract class AutoUpdatedClientObject<
         await this.waitForPreloaded();
       }
       this.generateSettersAndGetters();
-      await this.loadForceReferences();
-      for (const thing of this.toChangeOnParents) {
-        await this.setValue__(thing.key, thing.value, true, false, false, true);
+      if (this.isServer) {
+        await this.loadForceReferences();
+        for (const thing of this.toChangeOnParents) {
+          await this.setValue__(thing.key, thing.value, true, false, false, true);
+        }
       }
     } catch (error: unknown) {
       // Fix 3: Enhanced diagnostics with stack trace
@@ -333,6 +335,7 @@ export abstract class AutoUpdatedClientObject<
   }
 
   public async loadMissingReferences(): Promise<void> {
+    if (!this.isServer) return;
     this.checkedMissingProperties = {};
     await this.checkForMissingRefs();
     this.generateSettersAndGetters();
@@ -563,8 +566,10 @@ export abstract class AutoUpdatedClientObject<
           obj = obj[pathArr[i]] as Record<string, unknown>;
         }
         obj[pathArr[pathArr.length - 1]] = valueToStore;
-        await this.findAndLoadReferences(key, valueToStore);
-        if (isRef && this.parentManager.isLoaded) await this.contactChildren();
+        if (this.isServer) {
+          await this.findAndLoadReferences(key, valueToStore);
+          if (isRef && this.parentManager.isLoaded) await this.contactChildren();
+        }
         if (this.isLoaded) {
           this.callbacks.update(
             this as unknown as IAutoUpdatedClientObject<T>,
@@ -851,6 +856,7 @@ export abstract class AutoUpdatedClientObject<
   }
 
   public async contactChildren(): Promise<void> {
+    if (!this.isServer) return;
     for (const prop of this.properties as string[]) {
       const isRef = getMetadataRecursive("isRef", this, prop.toString());
       const pointer = getMetadataRecursive("refsTo", this, prop.toString());

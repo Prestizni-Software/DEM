@@ -138,6 +138,13 @@ export async function AUCManagerFactory<
 
   await Promise.all(loadPromises);
 
+  // Generate getters and setters for all client objects now that everything is loaded
+  for (const manager of Object.values(managers)) {
+    for (const obj of (manager as any).objectsAsArray) {
+      (obj as any).generateSettersAndGetters();
+    }
+  }
+
   loggers.debug?.(
     "Loaded data from server for all managers in " +
       (Date.now() - startTime) +
@@ -232,7 +239,7 @@ export class AutoUpdateClientManager<
         "startup" + this.className,
         null,
         async (
-          res: ServerResponse<{ ids: string[]; properties: string[] }>,
+          res: ServerResponse<{ ids: string[]; objects?: any[]; properties: string[] }>,
         ) => {
           if (!res.success) {
             this.loggers.error("Error loading ids from server for manager");
@@ -278,12 +285,22 @@ export class AutoUpdateClientManager<
 
           this.totalObjects = data.ids.length;
 
+          const objectMap = new Map<string, any>();
+          if (data.objects) {
+            for (const objData of data.objects) {
+              if (objData && objData._id) {
+                objectMap.set(objData._id.toString(), objData);
+              }
+            }
+          }
+
           for (const id of data.ids) {
             try {
+              const objData = objectMap.get(id);
               this.objects_[id] = new this.classParam(
                 this.classParam,
                 this.socket,
-                id,
+                objData || id,
                 this.loggers,
                 this.className,
                 this,

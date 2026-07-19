@@ -499,24 +499,26 @@ export class AutoUpdateServerManager<
       async (
         _: unknown,
         ack: (
-          res: ServerResponse<{ ids: string[]; properties: string[] }>,
+          res: ServerResponse<{ ids: string[]; objects?: any[]; properties: string[] }>,
         ) => void,
       ) => {
         try {
-          const ids = (
-            ((
-              await this.options?.accessDefinitions?.startupMiddleware?.(
+          const allowedObjects = this.options?.accessDefinitions?.startupMiddleware
+            ? await this.options.accessDefinitions.startupMiddleware(
                 this.objectsAsArray,
                 this.managers as any,
                 socket,
               )
-            )?.map((obj) => obj._id) ?? this.objectIDs) as string[]
-          ).filter(Boolean);
+            : this.objectsAsArray;
+
+          const ids = allowedObjects.map((obj) => obj._id.toString()).filter(Boolean);
+          const objects = allowedObjects.map((obj) => (obj as any).extractedData).filter(Boolean);
+
           this.loggers.debug(
             "Sending startup data for manager " + this.className,
           );
           ack({
-            data: { ids, properties: this.properties as string[] },
+            data: { ids, objects, properties: this.properties as string[] },
             success: true,
           });
         } catch (error: unknown) {
