@@ -288,7 +288,7 @@ export class AutoUpdateClientManager<
           const objectMap = new Map<string, any>();
           if (data.objects) {
             for (const objData of data.objects) {
-              if (objData && objData._id) {
+              if (objData?._id) {
                 objectMap.set(objData._id.toString(), objData);
               }
             }
