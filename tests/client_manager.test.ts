@@ -202,4 +202,32 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
     expect(manager.objects["1"]).toBe(obj);
     expect(manager.objectsAsArray).toContain(obj);
   });
+
+  test("waitForPreloaded timeout", async () => {
+    const noRespSocket = { emit: () => {}, on: () => {}, off: () => {}, disconnect: () => {} } as any;
+    const RealClass = class extends AutoUpdatedClientObject<any> {
+      get _id() { return (this as any).data?._id; }
+    };
+    Reflect.defineMetadata("props", ["_id"], RealClass.prototype);
+    const obj = new RealClass(RealClass, noRespSocket, {} as any, loggers, "Test", {} as any, callbacks, emitter);
+    await expect(obj.waitForPreloaded(50)).rejects.toThrow("Timeout waiting for object preloading");
+  });
+
+  test("createObject socket error failure", async () => {
+    const errorSocket = {
+      emit: (_evt: string, _data: any, cb: any) => cb?.({ success: false, message: "Socket failure" }),
+      on: () => {},
+      off: () => {},
+      disconnect: () => {}
+    } as any;
+    const RealClass = class extends AutoUpdatedClientObject<any> {
+      get _id() { return (this as any).data?._id; }
+    };
+    Reflect.defineMetadata("props", ["_id"], RealClass.prototype);
+    const badManager = new AutoUpdateClientManager(
+      RealClass as any, "Test", errorSocket, loggers, {}, emitter, callbacks
+    );
+    managersToClose.push(badManager);
+    await expect(badManager.createObject({} as any)).rejects.toThrow("Socket failure");
+  });
 });

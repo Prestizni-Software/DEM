@@ -63,7 +63,13 @@ export abstract class AutoUpdatedClientObject<
     cache: DEMCache;
     managers: M;
   };
-  protected readonly EmitterID = new ObjectId().toHexString();
+  protected readonly EmitterID = (() => {
+    try {
+      return new ObjectId().toHexString();
+    } catch {
+      return Math.random().toString(36).substring(2) + Date.now().toString(36);
+    }
+  })();
   protected readonly toChangeOnParents: { key: string; value: unknown }[] = [];
   public callbacks: DEMClientCallbacks<T>;
 
@@ -267,13 +273,21 @@ export abstract class AutoUpdatedClientObject<
     return cleaned;
   }
 
-  public async waitForPreloaded(): Promise<void> {
+  public async waitForPreloaded(timeoutMs: number = 15000): Promise<void> {
     if (this.loadError) throw new Error(this.loadError);
     if (this.isLoaded) return;
     await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const errorMsg = `Timeout waiting for object preloading (${this.className})`;
+        this.loadError = errorMsg;
+        this.isLoading = false;
+        reject(new Error(errorMsg));
+      }, timeoutMs);
+
       this.emitter.once(
         EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
         (failed: boolean, reason: string) => {
+          clearTimeout(timer);
           if (failed) reject(new Error(reason));
           else resolve();
         },
@@ -283,10 +297,49 @@ export abstract class AutoUpdatedClientObject<
 
   protected handleNewObject(data: IsData<T>): void {
     this.isLoading = true;
+
+    if (!this.socket) {
+      const errorMsg = `Cannot create ${this.className}: Socket is missing.`;
+      this.loadError = errorMsg;
+      this.isLoading = false;
+      this.loggers.error?.(errorMsg);
+      this.emitter.emit(
+        EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
+        true,
+        errorMsg,
+      );
+      return;
+    }
+
+    let payload: IsData<T> = data;
+    try {
+      if (data && typeof data === "object") {
+        payload = JSON.parse(JSON.stringify(data));
+      }
+    } catch (err: unknown) {
+      this.loggers.warn?.(
+        `Failed to JSON-serialize creation payload for ${this.className}, falling back to raw data: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+
     this.socket.emit(
       EVENT_NEW + this.className,
-      data,
+      payload,
       (res: ServerResponse<T>) => {
+        if (!res) {
+          const errorMsg = `No response received from server when creating ${this.className}`;
+          this.isLoading = false;
+          this.loadError = errorMsg;
+          this.loggers.error?.(errorMsg);
+          this.emitter.emit(
+            EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
+            true,
+            errorMsg,
+          );
+          return;
+        }
         if (!res.success) {
           this.isLoading = false;
           this.loadError = res.message;

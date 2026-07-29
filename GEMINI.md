@@ -25,6 +25,7 @@ Welcome to the DEM Project. This file serves as the root of the project's memory
 
 - [DEM Loading Process](./GEMINI_LOADING.md) - Detailed analysis of how objects and references are initialized and synchronized, including performance optimizations for recursion and parallelization.
 - [Client Population Bypass](./GEMINI_CLIENT_POPULATION.md) - Documentation on the architectural change to ship fully populated objects to the client and bypass client-side reference population logic.
+- [DEM Object Creation & Browser Safeguards](./GEMINI_CREATE_OBJECT.md) - Analysis of client-side createObject execution, socket ACK loss safeguards, payload serialization, and Edge browser failure modes.
 
 ## General Rules
 - Prefer Vanilla CSS for web components.

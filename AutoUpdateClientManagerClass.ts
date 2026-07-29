@@ -457,7 +457,10 @@ export class AutoUpdateClientManager<
         this.emitter,
       );
       await object.waitForPreloaded();
-      const id = object._id.toString();
+      const id = object._id?.toString() ?? (object as any).data?._id?.toString();
+      if (!id) {
+        throw new Error(`Failed to create ${this.className}: Object _id is missing after preload.`);
+      }
       this.objects_[id] = object;
       globalCache.objects[id] = {
         className: this.className,
