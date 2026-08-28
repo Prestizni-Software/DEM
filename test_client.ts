@@ -17,10 +17,9 @@ type y = Pure<Company>;
 
 
 if (!obj || !obj2) {
-    console.log("No objects found");
+    // No objects found
 } else {
     await obj.setValue("fullName", "New Company Name");
-    console.log(obj.fullName);
     await obj2.setValue("fullName", obj.fullName);
     await obj.setValue("fullName", "Another Name");
     await obj.destroy();

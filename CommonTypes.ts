@@ -28,8 +28,8 @@ export interface IAutoUpdatedClientObjectBase {
   destroy(once?: boolean): Promise<{ success: boolean; message: string }>;
   isPreLoadedAsync(): Promise<boolean>;
   contactChildren(): Promise<void>;
-  getValue(key: string): any;
-  setValue(key: string, val: any): Promise<{ success: boolean; msg: string }>;
+  getValue(key: string): unknown;
+  setValue(key: string, val: unknown): Promise<{ success: boolean; msg: string }>;
   readonly parentManager: IAutoUpdateManager<IAutoUpdatedClientObjectBase>;
   readonly callbacks: any;
   readonly classParam: any;
@@ -107,7 +107,7 @@ type OnlyStringForRefs<V> = V extends any
   : never;
 
 export type DEMCache = {
-  references: Record<string, any>; // Using any here to break circular dependency with AutoUpdateManager
+  references: Record<string, any>;
 };
 
 export type Pure<T extends object, Base = IAutoUpdatedClientObject<any>> = Omit<
@@ -126,6 +126,8 @@ export type Pure<T extends object, Base = IAutoUpdatedClientObject<any>> = Omit<
   | "setValue_"
   | "destroyImmediate"
   | "loadError"
+  | "updateEventName"
+  | "getRawId"
 >;
 
 export type IsData<T extends object> = {
@@ -162,7 +164,7 @@ export type ServerResponse<T> =
       success: false;
     };
 
-export type ServerUpdateRequest<T> = {
+export type ServerUpdateRequest<T = unknown> = {
   _id: MongoId;
   key: string;
   value: unknown;
@@ -280,7 +282,7 @@ export const EVENT_NEW = "new";
 export const EVENT_GET = "get";
 export const EVENT_STARTUP = "startup";
 
-export function safeStringify(obj: any): string {
+export function safeStringify(obj: unknown): string {
   try {
     return JSON.stringify(obj);
   } catch (e) {
@@ -288,16 +290,24 @@ export function safeStringify(obj: any): string {
   }
 }
 
-export type GlobalCache = {
-  objects: Record<
+export class DEMGlobalCache {
+  public objects: Record<
     string,
     {
       className: string;
       object: IAutoUpdatedClientObjectBase;
     }
-  >;
-};
+  > = {};
 
-export const globalCache: GlobalCache = {
-  objects: {},
-};
+  public clear(): void {
+    this.objects = {};
+  }
+
+  public get size(): number {
+    return Object.keys(this.objects).length;
+  }
+}
+
+export type GlobalCache = DEMGlobalCache;
+
+export const globalCache = new DEMGlobalCache();

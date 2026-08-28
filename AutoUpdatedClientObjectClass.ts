@@ -156,7 +156,10 @@ export abstract class AutoUpdatedClientObject<
       const allProps = new Set<string>();
       let proto_ = classParam.prototype;
       while (proto_ && proto_ !== Object.prototype) {
-        const props = Reflect.getOwnMetadata("props", proto_) || [];
+        const props =
+          Reflect.getMetadata("props", proto_) ||
+          Reflect.getOwnMetadata("props", proto_) ||
+          [];
         for (const p of props) allProps.add(p);
         proto_ = Object.getPrototypeOf(proto_);
       }
@@ -328,6 +331,7 @@ export abstract class AutoUpdatedClientObject<
       EVENT_NEW + this.className,
       payload,
       (res: ServerResponse<T>) => {
+        if (this.loadError) return;
         if (!res) {
           const errorMsg = `No response received from server when creating ${this.className}`;
           this.isLoading = false;
@@ -434,10 +438,32 @@ export abstract class AutoUpdatedClientObject<
     }
   }
 
+  private _gettersGenerated = false;
+  private writeQueue: Promise<unknown> = Promise.resolve();
+
+  public get updateEventName(): string {
+    const id = this.data?._id ?? this._id;
+    return EVENT_UPDATE + this.className + (id ? id.toString() : "");
+  }
+
+  public getRawId(key: string): string | undefined {
+    if (!this.data) return undefined;
+    const val = (this.data as Record<string, unknown>)[key];
+    if (!val) return undefined;
+    if (typeof val === "string") return val;
+    if (typeof val === "object" && val !== null && (val as any)._id) {
+      return (val as any)._id.toString();
+    }
+    return String(val);
+  }
+
+  private _definedProps = new Set<string>();
+
   protected generateSettersAndGetters(): void {
     if (!this.properties) return;
     for (const key of this.properties as string[]) {
-      if (typeof key !== "string") continue;
+      if (typeof key !== "string" || this._definedProps.has(key)) continue;
+      this._definedProps.add(key);
       const isRef = getMetadataRecursive("isRef", this, key);
 
       delete (this as Record<string, unknown>)[key];
@@ -543,6 +569,38 @@ export abstract class AutoUpdatedClientObject<
     noUpdate = false,
     isParentUpdate = false,
   ): Promise<{ success: boolean; msg: string }> {
+    this.writeQueue = this.writeQueue
+      .catch(() => {})
+      .then(() =>
+        this.setValueQueueInternal(
+          key,
+          val,
+          silent,
+          noGet,
+          noUpdate,
+          isParentUpdate,
+        ),
+      );
+    return this.writeQueue as Promise<{ success: boolean; msg: string }>;
+  }
+
+  private async setValueQueueInternal(
+    key: string,
+    val: unknown,
+    silent = false,
+    noGet = false,
+    noUpdate = false,
+    isParentUpdate = false,
+  ): Promise<{ success: boolean; msg: string }> {
+    const rootProp = (key as string).split(".")[0];
+    if (
+      key === "__proto__" ||
+      key === "constructor" ||
+      key === "prototype" ||
+      (this.properties && !this.properties.includes(rootProp) && rootProp !== "_id")
+    ) {
+      return { success: false, msg: `Invalid property key: ${key}` };
+    }
     try {
       const isRef = getMetadataRecursive("isRef", this, key);
       const pointer = getMetadataRecursive("refsTo", this, key);

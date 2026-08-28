@@ -46,12 +46,24 @@ export abstract class AutoUpdateManager<
     managers: M,
     emitter: EventEmitter3,
   ) {
+    if (!classParam) throw new Error("Missing required argument: classParam");
     this.className = className;
     this.managers = managers;
     this.emitter = emitter;
     this.socket = socket;
     this.classParam = classParam;
-    this.properties = Reflect.getMetadata("props", classParam.prototype) || [];
+
+    const allProps = new Set<string>();
+    let proto_ = classParam.prototype;
+    while (proto_ && proto_ !== Object.prototype) {
+      const props =
+        Reflect.getOwnMetadata("props", proto_) ||
+        Reflect.getMetadata("props", proto_) ||
+        [];
+      for (const p of props) allProps.add(p);
+      proto_ = Object.getPrototypeOf(proto_);
+    }
+    this.properties = Array.from(allProps);
 
     this.loggers.debug = (s: string) =>
       loggers.debug?.("[DEM - " + className + " MANAGER] " + s);

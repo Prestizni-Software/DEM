@@ -28,7 +28,11 @@ mongoose.set("debug", true);
 export const initServerManagers = async () => {
   const server = new Server();
   server.listen(3001);
-  const io = new SocketServer(server, { cors: { origin: "*" } });
+  const io = new SocketServer(server, {
+    cors: {
+      origin: process.env.ALLOWED_ORIGIN || "http://localhost:3000",
+    },
+  });
 
   io.use(async (socket, next) => {
     if (!socket.handshake.auth.token) next(new Error("Invalid token"));

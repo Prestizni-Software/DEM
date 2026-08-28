@@ -10,6 +10,7 @@ import {
   IAutoUpdatedClientObjectBase,
   MongoId,
   IAutoUpdateManager,
+  EVENT_UPDATE,
 } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
 
@@ -64,10 +65,12 @@ export async function AUCManagerFactory<
   const managers = {} as WrappedInstances<T>;
   const startStartTime = Date.now();
   let startTime = Date.now();
-
   for (const key in defs) {
     try {
       const Model = defs[key];
+      if (typeof Model !== "function") {
+        throw new Error(`Invalid model constructor for manager: ${key}`);
+      }
       const c = new AutoUpdateClientManager(
         Model,
         key,
@@ -108,7 +111,8 @@ export async function AUCManagerFactory<
     try {
       const manager = managers[key];
       if (!manager) {
-        throw new Error(`Manager ${key} was not created due to previous error`);
+        loggers.warn?.(`Manager ${key} was not created due to previous error`);
+        return;
       }
       await manager.loadFromServer(temp2);
       loggers.debug?.(
@@ -170,6 +174,7 @@ export class AutoUpdateClientManager<
   public readonly socket: Socket;
   totalObjects: number = 0;
   loadedObjects: number = 0;
+  private pendingMissingFetches = new Map<string, Promise<T>>();
 
   constructor(
     classParam: Constructor<T>,
@@ -180,13 +185,37 @@ export class AutoUpdateClientManager<
     emitter: EventEmitter,
     callbacks: DEMClientCallbacks<any>,
   ) {
+    if (!classParam) throw new Error("Missing required argument: classParam");
+    if (!className) throw new Error("Missing required argument: className");
+    if (!socket) throw new Error("Missing required argument: socket");
     super(classParam, className, socket, loggers, managers, emitter);
     this.socket = socket;
     this.managers = managers;
     this.callbacks = callbacks;
+
+    this.socket?.on?.("reconnect", async () => {
+      this.loggers.info?.("Socket reconnected, reloading manager data from server...");
+      try {
+        await this.loadFromServer();
+      } catch (err: unknown) {
+        this.loggers.error?.(
+          "Error reloading on reconnect: " +
+            (err instanceof Error ? err.message : String(err)),
+        );
+      }
+    });
+  }
+
+  public normalizeProgress(loaded: number, total: number): number {
+    if (!total || total <= 0) return 1;
+    const ratio = loaded / total;
+    return Math.max(0, Math.min(1, ratio));
   }
 
   private startSocketListeners() {
+    this.socket.off("new" + this.className);
+    this.socket.off("delete" + this.className);
+
     this.socket.on("new" + this.className, async (id: string) => {
       this.loggers.debug(
         "Applying new object from manager " + this.className + " - " + id,
@@ -233,22 +262,41 @@ export class AutoUpdateClientManager<
     });
   }
 
+  public override async deleteObject(
+    _id: MongoId,
+  ): Promise<{ success: boolean; message: string }> {
+    const _idStr = _id.toString();
+    this.socket.off(EVENT_UPDATE + this.className + _idStr);
+    return super.deleteObject(_id);
+  }
+
   async loadFromServer(t?: { s: number; f: number }): Promise<void> {
     await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(
+          new Error(
+            `Timeout waiting for startup data from server for ${this.className}`,
+          ),
+        );
+      }, 5000);
+
       this.socket.emit(
         "startup" + this.className,
         null,
         async (
           res: ServerResponse<{ ids: string[]; objects?: any[]; properties: string[] }>,
         ) => {
-          if (!res.success) {
+          clearTimeout(timer);
+          if (!res || !res.success) {
+            const err = res?.message || "Failed to load startup data";
             this.loggers.error("Error loading ids from server for manager");
-            this.loggers.error(res.message);
-            reject(new Error(res.message));
+            this.loggers.error(err);
+            reject(new Error(err));
             return;
           }
 
           const data = res.data;
+          const serverPropsCopy = [...data.properties];
           let extraProperties: string[] = [];
           for (const property of this.properties) {
             if (typeof property !== "string")
@@ -256,14 +304,16 @@ export class AutoUpdateClientManager<
                 "Only string keys allowed. Not this shit: " + String(property),
               );
             if (property === "_id") continue;
-            if (data.properties.includes(property))
-              data.properties.splice(data.properties.indexOf(property), 1);
-            else extraProperties.push(property);
+            if (serverPropsCopy.includes(property)) {
+              serverPropsCopy.splice(serverPropsCopy.indexOf(property), 1);
+            } else {
+              extraProperties.push(property);
+            }
           }
 
           let { allowedToLoad, errorMessage } = this.checkLoadability(
             extraProperties,
-            data,
+            { properties: serverPropsCopy },
           );
           if (!allowedToLoad) {
             this.loggers.error?.(errorMessage);
@@ -283,7 +333,22 @@ export class AutoUpdateClientManager<
             this.loggers.debug(data.ids.join(", "));
           }
 
+          // Clear old objects before populating new ones on reconnection
+          for (const oldId of Object.keys(this.objects_)) {
+            delete globalCache.objects[oldId];
+          }
+          this.objects_ = {};
+
           this.totalObjects = data.ids.length;
+          this.loadedObjects = 0;
+
+          if (data.ids.length === 0) {
+            this.callbacks.progress?.(1);
+            this.startSocketListeners();
+            this.isLoaded_ = true;
+            resolve();
+            return;
+          }
 
           const objectMap = new Map<string, any>();
           if (data.objects) {
@@ -336,7 +401,9 @@ export class AutoUpdateClientManager<
                 this.loadedObjects % Math.ceil(this.totalObjects / 100) === 0 ||
                 this.loadedObjects === this.totalObjects
               ) {
-                this.callbacks.progress(this.loadedObjects / this.totalObjects);
+                this.callbacks.progress(
+                  this.normalizeProgress(this.loadedObjects, this.totalObjects),
+                );
               }
             } catch (error: unknown) {
               this.loggers.error(
@@ -419,32 +486,46 @@ export class AutoUpdateClientManager<
     if (!this.managers) throw new Error(`No managers.`);
     if (this.objects_[_idStr]) return this.objects_[_idStr];
 
-    const object = new this.classParam(
-      this.classParam,
-      this.socket,
-      _idStr,
-      this.loggers,
-      this.className,
-      this,
-      this.callbacks,
-      this.emitter,
-    );
-    await object.waitForPreloaded();
-    if ((object as any).loadError) throw new Error((object as any).loadError);
-    this.objects_[object._id.toString()] = object;
-    globalCache.objects[object._id.toString()] = {
-      className: this.className,
-      object: object,
-    };
-    await object.isPreLoadedAsync();
-    await object.loadMissingReferences();
-    this.callbacks.new(object as any);
-    return object;
+    if (this.pendingMissingFetches.has(_idStr)) {
+      return this.pendingMissingFetches.get(_idStr)!;
+    }
+
+    const fetchPromise = (async () => {
+      try {
+        const object = new this.classParam(
+          this.classParam,
+          this.socket,
+          _idStr,
+          this.loggers,
+          this.className,
+          this,
+          this.callbacks,
+          this.emitter,
+        );
+        await object.waitForPreloaded();
+        if ((object as any).loadError) throw new Error((object as any).loadError);
+        this.objects_[object._id.toString()] = object;
+        globalCache.objects[object._id.toString()] = {
+          className: this.className,
+          object: object,
+        };
+        await object.isPreLoadedAsync();
+        await object.loadMissingReferences();
+        this.callbacks.new(object as any);
+        return object;
+      } finally {
+        this.pendingMissingFetches.delete(_idStr);
+      }
+    })();
+
+    this.pendingMissingFetches.set(_idStr, fetchPromise);
+    return fetchPromise;
   }
 
   async createObject(data: Omit<IsData<T>, "_id">): Promise<T> {
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
+    let createdId: string | null = null;
     try {
       const object = new this.classParam(
         this.classParam,
@@ -461,6 +542,7 @@ export class AutoUpdateClientManager<
       if (!id) {
         throw new Error(`Failed to create ${this.className}: Object _id is missing after preload.`);
       }
+      createdId = id;
       this.objects_[id] = object;
       globalCache.objects[id] = {
         className: this.className,
@@ -472,6 +554,10 @@ export class AutoUpdateClientManager<
       this.callbacks.new(this.objects_[id] as any);
       return this.objects_[id];
     } catch (error: unknown) {
+      if (createdId) {
+        delete this.objects_[createdId];
+        delete globalCache.objects[createdId];
+      }
       this.loggers.error(
         "Error creating new object from manager " + this.className,
       );

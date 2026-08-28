@@ -135,10 +135,8 @@ describe("DEM Library Tests with New Data Structure", () => {
 
   test("Client2 redacted object not loaded", async () => {
     // Client2 should NOT see "Secret" (filtered in startupMiddleware in test_lib.ts)
-    // Actually, initFullClientManagers doesn't have the redact middleware, so it might see all 3.
-    // Let's check what test_lib.ts does.
-    await waitForClientObjects(clientManagers2.Subordinate, 2); 
-    // If it sees all 3, this test will fail, which is fine for now.
+    await waitForClientObjects(clientManagers2.Subordinate, 2);
+    expect(clientManagers2.Subordinate.objectsAsArray.length).toBeGreaterThanOrEqual(2);
   });
 
   test("Server object has correct values", async () => {

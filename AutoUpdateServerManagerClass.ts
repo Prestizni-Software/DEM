@@ -419,6 +419,7 @@ export class AutoUpdateServerManager<
   >;
   protected objects_: { [_id: string]: T } = {};
   public readonly managers: M;
+  public startupPayloadCache: { ids: string[]; objects?: any[]; properties: string[] } | null = null;
 
   constructor(
     classParam: Constructor<T>,
@@ -436,7 +437,7 @@ export class AutoUpdateServerManager<
     this.options = options;
   }
 
-  public async preLoad(): Promise<void> {
+  public async preLoad(options?: { batchSize?: number }): Promise<void> {
     this.loggers.debug("Loading manager DB " + this.className);
     const docs = await this.model.find({});
 
@@ -472,6 +473,8 @@ export class AutoUpdateServerManager<
       }),
     );
 
+    this.startupPayloadCache = null;
+
     this.loggers.debug(
       "Loaded manager DB " +
         this.className +
@@ -498,7 +501,7 @@ export class AutoUpdateServerManager<
       EVENT_STARTUP + this.className,
       async (
         _: unknown,
-        ack: (
+        ack?: (
           res: ServerResponse<{ ids: string[]; objects?: any[]; properties: string[] }>,
         ) => void,
       ) => {
@@ -517,10 +520,12 @@ export class AutoUpdateServerManager<
           this.loggers.debug(
             "Sending startup data for manager " + this.className,
           );
-          ack({
-            data: { ids, objects, properties: this.properties as string[] },
-            success: true,
-          });
+          if (typeof ack === "function") {
+            ack({
+              data: { ids, objects, properties: this.properties as string[] },
+              success: true,
+            });
+          }
         } catch (error: unknown) {
           this.loggers.error(
             "Error sending startup data for manager " +
@@ -530,27 +535,39 @@ export class AutoUpdateServerManager<
           );
           if (error instanceof Error && error.stack)
             this.loggers.error(error.stack);
-          ack({
-            success: false,
-            message: error instanceof Error ? error.message : String(error),
-          });
+          if (typeof ack === "function") {
+            ack({
+              success: false,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
       },
     );
 
     socket.on(
       EVENT_DELETE + this.className,
-      async (id: string, ack: (res: ServerResponse<undefined>) => void) => {
+      async (id: string, ack?: (res: ServerResponse<undefined>) => void) => {
         this.loggers.debug(
           "Deleting object from manager " + this.className + " - " + id,
         );
         try {
-          await this.deleteObject(id as any);
-          ack({
-            success: true,
-            message: "Deleted successfully",
-            data: undefined,
-          });
+          const res = await this.deleteObject(id as any);
+          this.startupPayloadCache = null;
+          if (typeof ack === "function") {
+            if (res && !res.success) {
+              ack({
+                success: false,
+                message: res.message || "Deletion unsuccessful",
+              });
+            } else {
+              ack({
+                success: true,
+                message: "Deleted successfully",
+                data: undefined,
+              });
+            }
+          }
         } catch (error: unknown) {
           this.loggers.error(
             "Error deleting object from manager " +
@@ -562,27 +579,32 @@ export class AutoUpdateServerManager<
           );
           if (error instanceof Error && error.stack)
             this.loggers.error(error.stack);
-          ack({
-            success: false,
-            message: error instanceof Error ? error.message : String(error),
-          });
+          if (typeof ack === "function") {
+            ack({
+              success: false,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
       },
     );
 
     socket.on(
       EVENT_NEW + this.className,
-      async (data: unknown, ack: (res: ServerResponse<unknown>) => void) => {
+      async (data: unknown, ack?: (res: ServerResponse<unknown>) => void) => {
         this.loggers.debug(
           "Recieved new object creation in manager " + this.className,
         );
         try {
           const newDoc = await this.createObject(data as any as IsData<T>);
-          ack({
-            data: newDoc.extractedData,
-            success: true,
-            message: "Created successfully",
-          });
+          this.startupPayloadCache = null;
+          if (typeof ack === "function") {
+            ack({
+              data: newDoc.extractedData,
+              success: true,
+              message: "Created successfully",
+            });
+          }
         } catch (error: unknown) {
           this.loggers.error(
             "Error creating new object creation in manager " +
@@ -592,14 +614,17 @@ export class AutoUpdateServerManager<
           );
           if (error instanceof Error && error.stack)
             this.loggers.error(error.stack);
-          ack({
-            success: false,
-            message: error instanceof Error ? error.message : String(error),
-          });
+          if (typeof ack === "function") {
+            ack({
+              success: false,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
       },
     );
 
+    // Registered into socket.eventNames() so setupSocketMiddleware can validate and permit dynamic update/get events
     socket.on(EVENT_UPDATE + this.className, async () => {});
     socket.on(EVENT_GET + this.className, async () => {});
 
@@ -607,7 +632,7 @@ export class AutoUpdateServerManager<
       async (
         event: string,
         data: unknown,
-        ack: (res: ServerResponse<unknown>) => void,
+        ack?: (res: ServerResponse<unknown>) => void,
       ) => {
         if (
           event.startsWith(EVENT_UPDATE + this.className) &&
@@ -630,21 +655,25 @@ export class AutoUpdateServerManager<
               (data as any).key,
               (data as any).value,
             );
-            res.success
-              ? ack({
-                  data: null,
-                  success: res.success,
-                  message: res.msg,
-                })
-              : ack({ success: res.success, message: res.msg });
+            if (typeof ack === "function") {
+              res.success
+                ? ack({
+                    data: null,
+                    success: res.success,
+                    message: res.msg,
+                  })
+                : ack({ success: res.success, message: res.msg });
+            }
           } catch (error: unknown) {
             this.loggers.warn(
               "Failed to update object in manager " + this.className,
             );
-            ack({
-              success: false,
-              message: error instanceof Error ? error.message : String(error),
-            });
+            if (typeof ack === "function") {
+              ack({
+                success: false,
+                message: error instanceof Error ? error.message : String(error),
+              });
+            }
           }
         } else if (
           event.startsWith(EVENT_GET + this.className) &&
@@ -654,11 +683,13 @@ export class AutoUpdateServerManager<
             const id = event.replace(EVENT_GET + this.className, "");
             let obj = this.objects_[id];
             if (!obj) throw new Error(`Object not found: ${id}`);
-            ack({
-              data: (obj as any).extractedData,
-              success: true,
-              message: "Updated successfully",
-            });
+            if (typeof ack === "function") {
+              ack({
+                data: (obj as any).extractedData,
+                success: true,
+                message: "Updated successfully",
+              });
+            }
           } catch (error: unknown) {
             this.loggers.error(
               "Error sending startup data for manager " +
@@ -668,10 +699,12 @@ export class AutoUpdateServerManager<
             );
             if (error instanceof Error && error.stack)
               this.loggers.error(error.stack);
-            ack({
-              success: false,
-              message: error instanceof Error ? error.message : String(error),
-            });
+            if (typeof ack === "function") {
+              ack({
+                success: false,
+                message: error instanceof Error ? error.message : String(error),
+              });
+            }
           }
         }
       },
@@ -695,38 +728,81 @@ export class AutoUpdateServerManager<
     return Object.values(this.objects_) as any;
   }
 
+  private pendingMissingFetches = new Map<string, Promise<T>>();
+
   public async handleGetMissingObject(_id: MongoId): Promise<T> {
     const _idStr = _id.toString();
     if (this.getObject(_idStr)) return this.getObject(_idStr)!;
-    const document = await this.model.findById(_idStr);
-    if (!document) throw new Error(`No document with id ${_idStr} in DB.`);
-    if (!this.managers) throw new Error(`No managers.`);
-    const object = await createAutoUpdatedClass(
-      this.classParam as any,
-      this.className,
-      this.socket,
-      document as any,
-      this.loggers,
-      this as any,
-      this.emitter,
-    );
-    await object.waitForPreloaded();
-    this.objects_[object._id.toString()] = object as any as T;
-    globalCache.objects[object._id.toString()] = {
-      className: this.className,
-      object: object as IAutoUpdatedClientObjectBase,
-    };
-    await object.isPreLoadedAsync();
-    await object.loadMissingReferences();
-    await object.contactChildren();
-    return object as any as T;
+    if (this.pendingMissingFetches.has(_idStr)) {
+      return this.pendingMissingFetches.get(_idStr)!;
+    }
+
+    const fetchPromise = (async () => {
+      try {
+        const document = await this.model.findById(_idStr);
+        if (!document) throw new Error(`No document with id ${_idStr} in DB.`);
+        if (!this.managers) throw new Error(`No managers.`);
+        const object = await createAutoUpdatedClass(
+          this.classParam as any,
+          this.className,
+          this.socket,
+          document as any,
+          this.loggers,
+          this as any,
+          this.emitter,
+        );
+        await object.waitForPreloaded();
+        this.objects_[object._id.toString()] = object as any as T;
+        globalCache.objects[object._id.toString()] = {
+          className: this.className,
+          object: object as IAutoUpdatedClientObjectBase,
+        };
+        await object.isPreLoadedAsync();
+        await object.loadMissingReferences();
+        await object.contactChildren();
+        return object as any as T;
+      } finally {
+        this.pendingMissingFetches.delete(_idStr);
+      }
+    })();
+
+    this.pendingMissingFetches.set(_idStr, fetchPromise);
+    return fetchPromise;
   }
 
   public async createObject(data: Omit<IsData<T>, "_id">): Promise<T> {
     if (!this.managers) throw new Error(`No managers.`);
     this.loggers.debug("Creating new object from manager " + this.className);
-    const dataRec = { ...data } as any;
-    if (dataRec._id === "" || dataRec._id === null) delete dataRec._id;
+    const rawRec = { ...data } as any;
+    if (rawRec._id === "" || rawRec._id === null) delete rawRec._id;
+
+    // Sanitize creation payload to prevent property injection
+    const dataRec: Record<string, unknown> = {};
+    for (const key of Object.keys(rawRec)) {
+      if (
+        key !== "__proto__" &&
+        key !== "constructor" &&
+        key !== "prototype" &&
+        (this.properties.includes(key) ||
+          key === "_id" ||
+          Boolean((this.model.schema as any)?.path?.(key)))
+      ) {
+        const val = rawRec[key];
+        if (val && typeof val === "object") {
+          if (Array.isArray(val)) {
+            dataRec[key] = val.map((v) =>
+              v && typeof v === "object" && v._id ? v._id.toString() : v,
+            );
+          } else if ((val as any)._id) {
+            dataRec[key] = (val as any)._id.toString();
+          } else {
+            dataRec[key] = val;
+          }
+        } else {
+          dataRec[key] = val;
+        }
+      }
+    }
 
     const doc = await this.model.create(dataRec);
     const id = doc._id.toString();
@@ -743,8 +819,8 @@ export class AutoUpdateServerManager<
     );
     await object.waitForPreloaded();
 
-    // Fix 4: Copy virtual references from raw data payload
-    const cleanedData = (object as any).handleDataCleanup(dataRec);
+    // Copy virtual references from raw data payload
+    const cleanedData = (object as any).handleDataCleanup(rawRec);
     for (const key of object.properties) {
       if (
         cleanedData[key] !== undefined &&

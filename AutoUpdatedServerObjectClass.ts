@@ -1,3 +1,4 @@
+import _ from "lodash";
 import {
   AutoUpdatedClientObject,
   getMetadataRecursive,
@@ -30,6 +31,8 @@ export abstract class AutoUpdatedServerObject<
   protected entry: DocumentType<T> | null;
   declare public parentManager: AutoUpdateServerManager<T, any>;
   private saveLock: Promise<any> = Promise.resolve();
+  private loadPromise: Promise<void> | null = null;
+  private _isUpdating: boolean = false;
 
   constructor();
   constructor(
@@ -105,60 +108,82 @@ export abstract class AutoUpdatedServerObject<
     this.entry = null;
     this.parentManager = parentManager;
 
+    // Cache refProps statically on constructor
+    const classParamAny = classParam as any;
+    if (!classParamAny.__refPropsCache) {
+      classParamAny.__refPropsCache = this.properties.filter((prop) =>
+        getMetadataRecursive("isRef", this, prop),
+      );
+    }
+
     // Convert reference IDs to ObjectIds on the server side
     const dataRec = this.data as Record<string, unknown>;
-    for (const prop of this.properties) {
-      if (typeof prop !== "string") continue;
-      const isRef = getMetadataRecursive("isRef", this, prop);
-      if (isRef && dataRec[prop]) {
-        try {
-          if (Array.isArray(dataRec[prop])) {
-            dataRec[prop] = (dataRec[prop] as any[])
-              .map((item) => {
-                if (!item) return null;
-                const idStr = (item as any)._id
-                  ? (item as any)._id.toString()
-                  : item.toString();
-                if (idStr === {}.toString()) return null; // Avoid [object Object]
-                return ObjectId.isValid(idStr) ? new ObjectId(idStr) : item;
-              })
-              .filter((item) => item !== null);
-          } else {
-            const idStr = (dataRec[prop] as any)._id
-              ? (dataRec[prop] as any)._id.toString()
-              : (dataRec[prop] as any).toString();
-            if (idStr !== {}.toString() && ObjectId.isValid(idStr)) {
-              dataRec[prop] = new ObjectId(idStr);
-            }
+    for (const prop of classParamAny.__refPropsCache) {
+      if (typeof prop !== "string" || !dataRec[prop]) continue;
+      try {
+        if (Array.isArray(dataRec[prop])) {
+          dataRec[prop] = (dataRec[prop] as any[])
+            .map((item) => {
+              if (!item) return null;
+              const idStr = (item as any)._id
+                ? (item as any)._id.toString()
+                : item.toString();
+              if (idStr === {}.toString()) return null; // Avoid [object Object]
+              return ObjectId.isValid(idStr) ? new ObjectId(idStr) : item;
+            })
+            .filter((item) => item !== null);
+        } else {
+          const idStr = (dataRec[prop] as any)._id
+            ? (dataRec[prop] as any)._id.toString()
+            : (dataRec[prop] as any).toString();
+          if (idStr !== {}.toString() && ObjectId.isValid(idStr)) {
+            dataRec[prop] = new ObjectId(idStr);
           }
-        } catch (error: any) {
-          this.loggers.error(
-            `Failed to set reference ${prop} to ${dataRec[prop]}: ${error.message}`,
-          );
         }
+      } catch (error: any) {
+        this.loggers.error(
+          `Failed to set reference ${prop} to ${dataRec[prop]}: ${error.message}`,
+        );
       }
     }
   }
 
+  public async save(): Promise<void> {
+    this.saveLock = (this.saveLock ?? Promise.resolve())
+      .catch(() => {})
+      .then(async () => {
+        if (this.entry && (this.entry as any) !== this) {
+          await this.entry.save();
+        } else if (this.entry && typeof (this.entry as any).$__save === "function") {
+          await (this.entry as any).$__save();
+        }
+      });
+    await this.saveLock;
+  }
+
   public async loadFromDB(): Promise<void> {
-    const _id = this.data._id;
-    if (!_id) throw new Error("No id.");
+    if (this.loadPromise) return this.loadPromise;
+    this.loadPromise = (async () => {
+      const _id = this.data._id;
+      if (!_id) throw new Error("No id.");
 
-    // Use the model from the parent manager
-    this.entry = await this.parentManager.model.findById(_id);
+      // Use the model from the parent manager
+      this.entry = await this.parentManager.model.findById(_id);
 
-    if (!this.entry)
-      throw new Error(
-        `Object not found in DB: ${this.className} with ID ${_id}`,
-      );
+      if (!this.entry)
+        throw new Error(
+          `Object not found in DB: ${this.className} with ID ${_id}`,
+        );
 
-    this.data = this.handleDataCleanup({
-      ...this.data,
-      ...this.entry.toObject(),
-    });
-    this.isLoading = false;
-    this.generateSettersAndGetters();
-    this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
+      this.data = this.handleDataCleanup({
+        ...this.data,
+        ...this.entry.toObject(),
+      });
+      this.isLoading = false;
+      this.generateSettersAndGetters();
+      this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
+    })();
+    return this.loadPromise;
   }
 
   public loadFromDocument(document: DocumentType<T>): void {
@@ -172,11 +197,12 @@ export abstract class AutoUpdatedServerObject<
     this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
   }
 
+  /** Override extractedData to return shallow copy */
   public override get extractedData(): ExtractedData<
     T,
     IAutoUpdatedClientObject<any>
   > {
-    const dataToProcess = this.data;
+    const dataToProcess = _.cloneDeep(this.data);
     const extracted = processIsRefProperties(
       dataToProcess as any,
       this,
@@ -194,6 +220,14 @@ export abstract class AutoUpdatedServerObject<
     silent = false,
     noUpdate = false,
   ): Promise<{ success: boolean; msg: string }> {
+    if (
+      key === "__proto__" ||
+      key === "constructor" ||
+      key === "prototype"
+    ) {
+      return { success: false, msg: `Invalid property key: ${key}` };
+    }
+
     try {
       const _id = this.data._id;
       if (!_id)
@@ -204,13 +238,23 @@ export abstract class AutoUpdatedServerObject<
       this.entry ??= await this.parentManager.model.findById(_id);
       if (!this.entry) throw new Error("Object not found in DB.");
 
-      // Fix 1 & 5: Serialized save with error handling and decoupling of DB writing from noUpdate flag.
-      // We always save to DB if it's a persisted field, regardless of noUpdate or silent flags.
-      if ((this.entry as any)[key] !== undefined) {
+      // Check if property is part of properties or schema, regardless of current undefined value
+      const isPersisted =
+        this.properties.includes(key) ||
+        (this.entry as any)[key] !== undefined ||
+        Boolean((this.entry.schema as any)?.path?.(key));
+
+      if (isPersisted) {
         (this.entry as any)[key] = value;
-        this.saveLock = this.saveLock
+        this.saveLock = (this.saveLock ?? Promise.resolve())
           .catch(() => {})
-          .then(() => this.entry!.save());
+          .then(async () => {
+            if (this.entry && (this.entry as any) !== this) {
+              await this.entry.save();
+            } else if (this.entry && typeof (this.entry as any).$__save === "function") {
+              await (this.entry as any).$__save();
+            }
+          });
         await this.saveLock;
       }
 
@@ -239,6 +283,9 @@ export abstract class AutoUpdatedServerObject<
       return await this.parentManager.deleteObject(_id as any);
     }
 
+    // Wait for any pending saves to complete before deleting
+    await (this.saveLock ?? Promise.resolve()).catch(() => {});
+
     try {
       this.entry ??= await this.parentManager.model.findById(_id);
       if (this.entry) {
@@ -266,16 +313,21 @@ export abstract class AutoUpdatedServerObject<
     noUpdate: boolean = false,
     key: string,
   ): Promise<void> {
-    if (noUpdate) return;
-    if (this.parentManager.options?.onUpdate) {
-      await this.parentManager.options.onUpdate(
-        this as unknown as T,
-        async (key: string, val: any) => {
-          // Fix 5: Pass noUpdate=true to internal setter to prevent recursive onUpdate calls.
-          return this.setValue__(key, val, false, false, true);
-        },
-        key as any,
-      );
+    if (noUpdate || this._isUpdating) return;
+    this._isUpdating = true;
+    try {
+      if (this.parentManager.options?.onUpdate) {
+        await this.parentManager.options.onUpdate(
+          this as unknown as T,
+          async (key: string, val: any) => {
+            // Pass noUpdate=true to internal setter to prevent recursive onUpdate calls.
+            return this.setValue__(key, val, false, false, true);
+          },
+          key as any,
+        );
+      }
+    } finally {
+      this._isUpdating = false;
     }
   }
 

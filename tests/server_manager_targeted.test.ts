@@ -52,7 +52,11 @@ describe("AutoUpdateServerManagerClass Targeted Coverage", () => {
     );
 
     // Call preLoad and expect the error log
-    await manager.preLoad().catch(() => {});
+    try {
+      await manager.preLoad();
+    } catch (err) {
+      expect(err).toBeDefined();
+    }
     
     // Check that debug was called
     expect(loggers.debug).toHaveBeenCalled();
