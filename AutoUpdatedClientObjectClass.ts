@@ -3,322 +3,367 @@ import _ from "lodash";
 import {
   Constructor,
   EventEmitter3,
-  InstanceOf,
   IsData,
   LoggersType,
   PathValueOf,
-  ServerResponse,
   ServerUpdateRequest,
   Paths,
-  AutoUpdated,
+  ExtractedData,
+  EVENT_INTERNAL_PRE_LOADED,
+  EVENT_DELETE,
+  EVENT_GET,
+  EVENT_NEW,
+  EVENT_UPDATE,
+  globalCache,
+  ServerResponse,
+  MongoId,
+  IAutoUpdatedClientObject,
+  IAutoUpdatedClientObjectBase,
+  IAutoUpdateManager,
+  DEMCache,
 } from "./CommonTypes.js";
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
-import { AutoUpdateManager } from "./AutoUpdateManagerClass.js";
-type SocketType = Socket<any, any>;
-export async function createAutoUpdatedClass<C extends Constructor<any>>(
-  classParam: C,
-  className: string,
-  socket: SocketType,
-  data: IsData<InstanceType<C>> | string,
-  loggers: LoggersType,
-  parentManager: AutoUpdateManager<any>,
-  emitter: EventEmitter3,
-): Promise<any> {
-  if (typeof data !== "string" && data._id) {
-    processIsRefProperties(data, classParam.prototype, undefined, [], loggers);
-  }
-  const props = Reflect.getMetadata("props", classParam.prototype);
-  const instance = new AutoUpdatedClientObject<C>(
-    socket,
-    data,
-    loggers,
-    props,
-    className,
-    classParam,
-    parentManager,
-    emitter,
-  );
-  return instance as any;
-}
 
-export class AutoUpdatedClientObject<T> {
+export type DEMClientCallbacks<T extends object> = {
+  new: (obj: IAutoUpdatedClientObject<T>) => Promise<void> | void;
+  update: (
+    obj: IAutoUpdatedClientObject<T>,
+    key: string,
+  ) => Promise<void> | void;
+  delete: (obj: IAutoUpdatedClientObject<T>) => Promise<void> | void;
+  progress: (percent: number) => void;
+};
+
+type SocketType = Socket;
+
+export abstract class AutoUpdatedClientObject<
+  T extends IAutoUpdatedClientObjectBase,
+  M extends Record<string, IAutoUpdateManager<any>> = Record<
+    string,
+    IAutoUpdateManager<any>
+  >,
+> implements IAutoUpdatedClientObject<T> {
+  protected entry: unknown;
+
   protected readonly socket: SocketType;
   protected data: IsData<T>;
   protected readonly isServer: boolean = false;
-  protected readonly loggers: LoggersType = {
-    info: () => {},
-    debug: () => {},
-    error: () => {},
-    warn: () => {},
-  };
+  public abstract readonly _id: MongoId;
+  protected readonly loggers: LoggersType;
   protected isLoading = true;
-  protected readonly emitter: EventEmitter3;
-  public readonly properties: (keyof T)[];
-  public readonly className: string;
-  public parentManager: AutoUpdateManager<any>;
+  public loadError?: string;
   protected isLoadingReferences = true;
-  public readonly classProp: Constructor<T>;
-  private readonly EmitterID = new ObjectId().toHexString();
-  protected readonly toChangeOnParents: { key: string; value: any }[] = [];
-  private readonly loadShit = async (): Promise<void> => {
-    if (this.isLoaded) {
-      try {
+  protected checkedMissingProperties: Record<string, boolean> = {};
+  protected readonly emitter: EventEmitter3;
+  public readonly properties: string[];
+  public readonly classParam: Constructor<T>;
+  public readonly className: string;
+  public parentManager: IAutoUpdateManager<T> & {
+    cache: DEMCache;
+    managers: M;
+  };
+  protected readonly EmitterID = (() => {
+    try {
+      return new ObjectId().toHexString();
+    } catch {
+      return Math.random().toString(36).substring(2) + Date.now().toString(36);
+    }
+  })();
+  protected readonly toChangeOnParents: { key: string; value: unknown }[] = [];
+  public callbacks: DEMClientCallbacks<T>;
+
+  private readonly loadReferencesAsync = async (): Promise<void> => {
+    try {
+      if (!this.isLoaded) {
+        await this.waitForPreloaded();
+      }
+      this.generateSettersAndGetters();
+      if (this.isServer) {
         await this.loadForceReferences();
         for (const thing of this.toChangeOnParents) {
-          await this.setValue__(thing.key, thing.value);
+          await this.setValue__(thing.key, thing.value, true, false, false, true);
         }
-      } catch (error: any) {
-        this.loggers.error("Error loading references");
-        this.loggers.error(error.message);
-        this.loggers.error(error.stack);
       }
-      this.isLoadingReferences = false;
-      return;
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      this.emitter.once(
-        "pre-loaded" + this.EmitterID,
-        (failed: boolean, reason: string) => {
-          if (failed) {
-            reject(new Error(reason));
-          } else resolve();
-        },
+    } catch (error: unknown) {
+      // Fix 3: Enhanced diagnostics with stack trace
+      this.loggers.error?.(
+        "Error loading references: " +
+          (error instanceof Error ? error.message + "\n" + error.stack : String(error)),
       );
-    });
-    try {
-      await this.loadForceReferences();
-      for (const thing of this.toChangeOnParents) {
-        await this.setValue__(thing.key, thing.value);
-      }
+    } finally {
       this.isLoadingReferences = false;
-    } catch (error: any) {
-      this.isLoadingReferences = false;
-      this.loggers.error("Error loading references");
-      this.loggers.error(error.message);
-      this.loggers.error(error.stack);
     }
   };
 
   constructor(
-    socket: SocketType,
-    data: string | IsData<T>,
-    loggers: LoggersType,
-    properties: (keyof T)[],
-    className: string,
-    classProperty: Constructor<T>,
-    parentManager: AutoUpdateManager<any>,
-    emitter: EventEmitter3,
-    isServer = false,
+    classParam?: Constructor<T>,
+    socket?: SocketType,
+    data?: string | IsData<T>,
+    loggers?: LoggersType,
+    className?: string,
+    parentManager?: IAutoUpdateManager<IAutoUpdatedClientObject<any>>,
+    callback?: DEMClientCallbacks<T>,
+    emitter?: EventEmitter3,
+    isServer: boolean = false,
   ) {
+    if (
+      !classParam ||
+      !socket ||
+      !data ||
+      !loggers ||
+      !className ||
+      !parentManager ||
+      !emitter
+    ) {
+      this.classParam = classParam!;
+      this.socket = socket!;
+      this.data = data as any;
+      this.loggers = loggers!;
+      this.className = className!;
+      this.parentManager = parentManager as any;
+      this.callbacks = callback!;
+      this.emitter = emitter!;
+      this.properties = undefined as any;
+
+      if (
+        !classParam &&
+        !socket &&
+        !data &&
+        !loggers &&
+        !className &&
+        !parentManager &&
+        !callback &&
+        !emitter
+      )
+        return;
+      else throw new Error("Missing arguments???");
+    }
+
+    this.classParam = classParam;
+    this.socket = socket;
     this.isServer = isServer;
     this.emitter = emitter;
-    this.classProp = classProperty;
     this.isLoadingReferences = true;
     this.isLoading = true;
-    this.parentManager = parentManager;
+    this.parentManager = parentManager as any;
     this.className = className;
-    this.properties = properties;
-    this.loggers.debug = (s: string) =>
-      loggers.debug(
-        "[DEM - " +
-          this.className +
-          ": " +
-          (this.data?._id ?? "not loaded") +
-          "] " +
-          s,
-      );
-    this.loggers.info = (s: string) =>
-      loggers.info(
-        "[DEM - " +
-          this.className +
-          ": " +
-          (this.data?._id ?? "not loaded") +
-          "] " +
-          s,
-      );
-    this.loggers.error = (s: string) =>
-      loggers.error(
-        "[DEM - " +
-          this.className +
-          ": " +
-          (this.data?._id ?? "not loaded") +
-          "] " +
-          s,
-      );
-    this.loggers.warn = (s: string) =>
-      loggers.warn(
-        "[DEM - " +
-          this.className +
-          ": " +
-          (this.data?._id ?? "not loaded") +
-          "] " +
-          s,
-      );
-    this.socket = socket;
+
+    if (classParam) {
+      const meta = setupClassAccessors(classParam);
+      this.properties = meta.properties;
+    } else {
+      this.properties = [];
+    }
+    
+    this.callbacks = callback!;
+
+    this.loggers = {
+      debug: (s: string) =>
+        loggers.debug?.(
+          `[DEM - ${this.className}: ${
+            this.data?._id ?? this._id ?? "not loaded"
+          }] ${s}`,
+        ),
+      info: (s: string) =>
+        loggers.info?.(
+          `[DEM - ${this.className}: ${
+            this.data?._id ?? this._id ?? "not loaded"
+          }] ${s}`,
+        ),
+      warn: (s: string) =>
+        loggers.warn?.(
+          `[DEM - ${this.className}: ${
+            this.data?._id ?? this._id ?? "not loaded"
+          }] ${s}`,
+        ),
+      error: (s: string) =>
+        loggers.error?.(
+          `[DEM - ${this.className}: ${
+            this.data?._id ?? this._id ?? "not loaded"
+          }] ${s}`,
+        ),
+    };
+
     if (typeof data === "string") {
+      this.data = { _id: data } as any;
       if (this.isServer) {
         this.isLoading = false;
-        this.data = { _id: data } as IsData<T>;
+        this.generateSettersAndGetters();
         return;
       }
-      if (!data || data === "" || data === "undefined") {
-        this.loggers.error(
-          "Cannot create a new AutoUpdatedClientClass with an empty string for ID. Data typeof: " +
-            typeof data +
-            " Data: " +
-            data,
-        );
-        throw new Error(
-          "Cannot create a new AutoUpdatedClientClass with an empty string for ID.",
-        );
-      }
-      this.loggers.debug(
-        "Getting new object from server " + this.className + " - " + data,
-      );
       this.socket.emit(
-        "get" + this.className + data,
+        EVENT_GET + this.className + data,
         null,
         (res: ServerResponse<T>) => {
           if (!res.success) {
             this.isLoading = false;
-            this.loggers.error(
+            this.loadError = res.message;
+            this.loggers.error?.(
               "Could not load data from server: " + res.message,
             );
-            this.emitter.emit("pre-loaded" + this.EmitterID);
+            this.emitter.emit(
+              EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
+              true,
+              res.message,
+            );
             return;
           }
-          this.data = res.data as IsData<T>;
+          this.data = this.handleDataCleanup(res.data as any);
+          this.generateSettersAndGetters();
           this.isLoading = false;
-          this.emitter.emit("pre-loaded" + this.EmitterID);
+          this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
           this.openSockets();
         },
       );
-      this.data = { _id: data } as IsData<T>;
     } else {
       this.isLoading = true;
-      this.data = data as any;
-      const dataKeys = Object.keys(data);
-      for (const key of this.properties) {
-        if (typeof key !== "string")
-          throw new Error(
-            "Only string keys allowed. Not this shit: " + String(key),
-          );
-        if (!dataKeys.includes(key) && key !== "_id")
-          this.loggers.warn(
-            "Property " +
-              key +
-              " not found in data. If should be null/undefined, please say so implicitly.",
-          );
-        dataKeys.splice(dataKeys.indexOf(key), 1);
-        const isRef = getMetadataRecursive(
-          "isRef",
-          this.classProp.prototype,
-          key,
-        );
-        if (isRef) {
-          if (Array.isArray(this.data[key])) {
-            this.data[key] = this.data[key].map(
-              (obj: any) => obj._id?.toString() ?? obj?.toString(),
-            ) as any;
-          } else {
-            this.data[key] =
-              (this.data[key] as any)?._id?.toString() ??
-              (this.data[key] as any)?.toString();
-          }
-        }
-      }
-      if (dataKeys.includes("__v")) dataKeys.splice(dataKeys.indexOf("__v"), 1);
-      if (dataKeys.length > 0)
-        this.loggers.warn(
-          (dataKeys.length > 1 ? "Properties " : "Property ") +
-            dataKeys.join(", ") +
-            (dataKeys.length > 1 ? " were " : " was ") +
-            "unexpected. These properties are not known by the class. Please check your level of skill issue. Known properties are:\n" +
-            this.properties.join("\n"),
-        );
+      this.data = this.handleDataCleanup(data as IsData<T>);
 
-      if ((!this.data._id || this.data._id === "") && !this.isServer)
-        this.handleNewObject(data as any);
-      else {
+      if ((!this.data._id || this.data._id === "") && !this.isServer) {
+        this.handleNewObject(this.data as IsData<T>);
+      } else {
         this.isLoading = false;
         if (!this.isServer) this.openSockets();
       }
     }
     this.generateSettersAndGetters();
-  }
 
-  protected handleNewObject(data: IsData<T>) {
-    this.isLoading = true;
-    if (!this.className)
-      throw new Error(
-        "Cannot create a new AutoUpdatedClientClass without a class name.",
-      );
-    this.loggers.debug(
-      this.className + " - Requesting new object creation on server",
-    );
-    for (const key of this.properties) {
-      if (typeof key !== "string")
-        throw new Error(
-          "Only string keys allowed. Not this shit: " + String(key),
-        );
-      let pointers = getMetadataRecursive(
-        "refsTo",
-        this.classProp.prototype,
-        key,
-      );
-      if (pointers?.length > 0) {
-        for (const pointer_ of pointers) {
-          const pointer = pointer_.split(":");
-          if (pointer.length != 2)
-            throw new Error(
-              "population ref incorrectly defined. Sould be 'ParentClass:PropName.Path'",
-            );
-        }
-        const temp = data[key];
-        delete data[key];
-        this.toChangeOnParents.push({ key: key, value: temp });
-      }
-    }
-    try {
-      data = _.cloneDeep(data);
-    } catch (error: any) {
-      this.loggers.error("Most likely cycled object: " + error.message);
-      this.loggers.error(error.stack);
-    }
-    this.socket.emit("new" + this.className, data, (res: ServerResponse<T>) => {
-      if (!res.success) {
-        this.isLoading = false;
-        this.loggers.error("Could not create data on server: " + res.message);
-        this.emitter.emit("pre-loaded" + this.EmitterID, true, res.message);
-        return;
-      }
-      this.data = res.data as IsData<T>;
-      this.isLoading = false;
-      this.loggers.debug("Created new object: " + this.data._id);
-      this.emitter.emit("pre-loaded" + this.EmitterID);
-      if (!this.isServer) this.openSockets();
+    Promise.resolve().then(() => {
+      this.generateSettersAndGetters();
     });
   }
 
-  public get extractedData(): {
-    [K in keyof T]: T[K];
-  } extends { prototype: infer U }
-    ? U
-    : {
-        [K in keyof T]: T[K];
-      } {
+  protected handleDataCleanup(data: IsData<T>): IsData<T> {
+    if (!data || typeof data !== "object") return data;
+
+    const meta = this.classParam ? setupClassAccessors(this.classParam) : null;
+    const refProps = meta ? meta.refProps : null;
+
+    const dataAsRecord = data as unknown as Record<string, unknown>;
+    for (const key of this.properties || []) {
+      const isRef = refProps ? refProps.has(key) : getMetadataRecursive("isRef", this, key);
+      const val = dataAsRecord[key];
+      if (isRef && val) {
+        if (Array.isArray(val)) {
+          dataAsRecord[key] = (val as unknown[]).map(
+            (obj: unknown) =>
+              (obj as { _id?: { toString(): string } | string })?._id?.toString() ??
+              (obj as { toString(): string })?.toString(),
+          );
+        } else if (typeof val === "object") {
+          dataAsRecord[key] =
+            (val as { _id?: { toString(): string } | string })?._id?.toString() ??
+            (val as { toString(): string })?.toString();
+        }
+      }
+    }
+    return data;
+  }
+
+  public async waitForPreloaded(timeoutMs: number = 15000): Promise<void> {
+    if (this.loadError) throw new Error(this.loadError);
+    if (this.isLoaded) return;
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const errorMsg = `Timeout waiting for object preloading (${this.className})`;
+        this.loadError = errorMsg;
+        this.isLoading = false;
+        reject(new Error(errorMsg));
+      }, timeoutMs);
+
+      this.emitter.once(
+        EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
+        (failed: boolean, reason: string) => {
+          clearTimeout(timer);
+          if (failed) reject(new Error(reason));
+          else resolve();
+        },
+      );
+    });
+  }
+
+  protected handleNewObject(data: IsData<T>): void {
+    this.isLoading = true;
+
+    if (!this.socket) {
+      const errorMsg = `Cannot create ${this.className}: Socket is missing.`;
+      this.loadError = errorMsg;
+      this.isLoading = false;
+      this.loggers.error?.(errorMsg);
+      this.emitter.emit(
+        EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
+        true,
+        errorMsg,
+      );
+      return;
+    }
+
+    let payload: IsData<T> = data;
+    try {
+      if (data && typeof data === "object") {
+        payload = JSON.parse(JSON.stringify(data));
+      }
+    } catch (err: unknown) {
+      this.loggers.warn?.(
+        `Failed to JSON-serialize creation payload for ${this.className}, falling back to raw data: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+
+    this.socket.emit(
+      EVENT_NEW + this.className,
+      payload,
+      (res: ServerResponse<T>) => {
+        if (this.loadError) return;
+        if (!res) {
+          const errorMsg = `No response received from server when creating ${this.className}`;
+          this.isLoading = false;
+          this.loadError = errorMsg;
+          this.loggers.error?.(errorMsg);
+          this.emitter.emit(
+            EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
+            true,
+            errorMsg,
+          );
+          return;
+        }
+        if (!res.success) {
+          this.isLoading = false;
+          this.loadError = res.message;
+          this.loggers.error?.(
+            "Could not create data on server: " + res.message,
+          );
+          this.emitter.emit(
+            EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
+            true,
+            res.message,
+          );
+          return;
+        }
+        this.data = res.data as unknown as IsData<T>;
+        this.generateSettersAndGetters();
+        this.isLoading = false;
+        this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
+        if (!this.isServer) this.openSockets();
+      },
+    );
+  }
+
+  public get extractedData(): ExtractedData<T, IAutoUpdatedClientObject<any>> {
     const extracted = processIsRefProperties(
       this.data,
-      this.classProp.prototype,
+      this,
       null,
       [],
       {},
       this.loggers,
     ).newData;
-
-    return _.cloneDeep(extracted);
+    return _.cloneDeep(extracted) as unknown as ExtractedData<
+      T,
+      IAutoUpdatedClientObject<any>
+    >;
   }
 
   public get isLoaded(): boolean {
@@ -326,537 +371,419 @@ export class AutoUpdatedClientObject<T> {
   }
 
   public async isPreLoadedAsync(): Promise<boolean> {
-    await this.loadShit();
+    await this.loadReferencesAsync();
     this.generateSettersAndGetters();
     return true;
   }
 
-  public loadMissingReferences(): void {
-    this.checkForMissingRefs();
+  public async loadMissingReferences(): Promise<void> {
+    if (!this.isServer) return;
+    this.checkedMissingProperties = {};
+    await this.checkForMissingRefs();
     this.generateSettersAndGetters();
   }
 
   private openSockets() {
-    const event = "update" + this.className + this.data._id.toString();
-    this.socket.on(event, async (update: ServerUpdateRequest<T>) => {
-      await this.handleUpdateRequest(update);
-    });
+    const id = this.data?._id ?? this._id;
+    const event = EVENT_UPDATE + this.className + id.toString();
+    this.socket.on(
+      event,
+      async (update: unknown, ack: (res: ServerResponse<unknown>) => void) => {
+        const res = await this.handleUpdateRequest(
+          update as { key: string; value: unknown },
+        );
+        if (ack && typeof ack === "function") ack(res);
+        return res;
+      },
+    );
   }
 
-  private async handleUpdateRequest(
-    update: ServerUpdateRequest<T>,
-  ): Promise<ServerResponse<undefined>> {
+  private async handleUpdateRequest(update: {
+    key: string;
+    value: unknown;
+  }): Promise<ServerResponse<unknown>> {
     try {
       await this.setValue__(update.key, update.value, true);
-      this.loggers.debug(`Applied patch ${update.key} set to ${update.value}`);
-
-      // Return success with the applied patch
+      if (this.isLoaded)
+        this.callbacks.update(
+          this as unknown as IAutoUpdatedClientObject<T>,
+          update.key,
+        );
       return { success: true, data: undefined, message: "" };
-    } catch (error: any) {
-      this.loggers.error(
-        `[${this.data._id}] Error applying patch: ` +
-          error.message +
-          "\n" +
-          error.stack,
+    } catch (error: unknown) {
+      this.loggers.error?.(
+        `[${this.data._id}] Error applying patch: ${error instanceof Error ? error.message : String(error)}`,
       );
       return {
         success: false,
-        message: "Error applying update: " + (error as Error).message,
+        message:
+          "Error applying update: " +
+          (error instanceof Error ? error.message : String(error)),
       };
     }
   }
 
-  private generateSettersAndGetters() {
-    for (const key of this.properties) {
-      if (typeof key !== "string") return;
+  private _gettersGenerated = false;
+  private writeQueue: Promise<unknown> = Promise.resolve();
 
-      const k = key as keyof IsData<T>;
-      const isRef = getMetadataRecursive(
-        "isRef",
-        this.classProp.prototype,
-        key,
-      );
+  public get updateEventName(): string {
+    const id = this.data?._id ?? this._id;
+    return EVENT_UPDATE + this.className + (id ? id.toString() : "");
+  }
 
-      Object.defineProperty(this, key, {
-        get: () => {
-          if (isRef) {
-            if (Array.isArray(this.data[k])) {
-              const filtered = this.data[k]
-                .map((id: string) => this.findReference(id))
-                .filter(Boolean);
-              if (
-                filtered.length !== this.data[k].length &&
-                this.parentManager.isLoaded
-              )
-                this.data[k] = filtered.map(
-                  (obj: any) => obj._id?.toString() ?? obj.toString(),
-                ) as any;
+  public getRawId(key: string): string | undefined {
+    if (!this.data) return undefined;
+    const val = (this.data as Record<string, unknown>)[key];
+    if (!val) return undefined;
+    if (typeof val === "string") return val;
+    if (typeof val === "object" && val !== null && (val as any)._id) {
+      return (val as any)._id.toString();
+    }
+    return String(val);
+  }
 
-              return filtered;
-            } else {
-              const result = this.findReference(this.data[k] as any);
-              if (!result && this.data[k] && this.parentManager.isLoaded)
-                this.data[k] = undefined!;
-              return result;
-            }
-          } else return this.data[k];
-        },
-        set: () => {
-          throw new Error(
-            `Cannot set ${key} this way, use "setValue" function.`,
-          );
-        },
-        enumerable: true,
-        configurable: true,
-      });
+  public generateSettersAndGetters(): void {
+    if (this.classParam) {
+      setupClassAccessors(this.classParam);
+    }
+    if (this.properties) {
+      for (const key of this.properties as string[]) {
+        if (typeof key !== "string") continue;
+        delete (this as Record<string, unknown>)[key];
+      }
     }
   }
 
-  protected findReference(id: string | ObjectId): any {
-    if (typeof id !== "string" && !ObjectId.isValid(id)) return id;
-    for (const manager of Object.values(this.parentManager.managers)) {
-      const result = manager.getObject(id.toString());
-      if (result) return result;
-    }
-    return undefined;
-  }
-
-  public async setValue<K extends Paths<InstanceOf<T>>>(
-    key: K,
-    val: PathValueOf<T, K>,
-  ): Promise<{ success: boolean; msg: string }> {
-    return await this.setValue__(key, val);
-  }
-
-  protected async setValue__(
-    key: any,
-    val: any,
-    silent: boolean = false,
-    noGet: boolean = false,
-    noUpdate: boolean = false,
-  ): Promise<{ success: boolean; msg: string }> {
-    let message = "Setting value " + key + " of " + this.className + " to ";
-    const isRef = getMetadataRecursive("isRef", this.classProp.prototype, key);
-    if (isRef)
-      val = Array.isArray(val)
-        ? val.map((v) => {
-            return v._id?.toString() ?? v;
-          })
-        : (val?._id ?? val);
-    message += JSON.stringify(val);
-    this.loggers.debug(message);
-    try {
-      if (val instanceof AutoUpdatedClientObject) val = val.extractedData._id;
-      const path = key.split(".");
-      let obj = this.data as any;
-      let lastClass = this as any;
-      let lastPath = key as string;
-      for (let i = 0; i < path.length - 1; i++) {
-        if (
-          typeof obj[path[i]] === "string" ||
-          ObjectId.isValid(obj[path[i]])
-        ) {
-          let temp;
-          try {
-            temp = this.resolveReference(obj[path[i]]?.toString()) as any;
-          } catch (error: any) {
-            message +=
-              "\n Error: likely undefined property on path: " +
-              path +
-              " on index: " +
-              i +
-              " with error: " +
-              error.message;
-          }
-          if (!temp) {
-            message +=
-              "\nLikely undefined property " +
-              path[i] +
-              " on path: " +
-              path +
-              " at index: " +
-              i;
-            this.loggers.warn(
-              "Failed to set value for " + this.className + "\n" + message,
-            );
-            return {
-              success: false,
-              msg: message,
-            };
-          }
-          lastClass = temp;
-          lastPath = path.slice(i + 1).join(".");
-          const res = await lastClass.setValue(lastPath, val);
-          if (!noUpdate) await this.onUpdate(noUpdate);
-          return res;
-        } else obj = obj[path[i]];
-      }
-
-      if (lastClass !== this || lastPath !== key) {
-        message +=
-          "\n What the actual fuckity fuck error on path: " +
-          path +
-          " on index: " +
-          (path.length - 1);
-        this.loggers.error(
-          "Failed to set value for " + this.className + "\n" + message,
-        );
-        return {
-          success: false,
-          msg: message,
-        };
-      }
-
-      let success;
-      try {
-        const pointer__ = getMetadataRecursive(
-          "refsTo",
-          this.classProp.prototype,
-          lastPath,
-        );
-        if (pointer__?.length > 0) {
-          const { obj, pointer } = getRightParent(pointer__, this) ?? {
-            parentObj: undefined,
-            pointer: undefined,
-          };
-          if (!obj || !pointer) {
-            message +=
-              "\nFailed to set value for " +
-              this.className +
-              " parent not found";
-            this.loggers.error(message);
-            return { success: false, msg: message };
-          }
-
-          let res;
-          if (this.isServer) {
-            const value = obj.getValue(pointer[1]);
-            if (Array.isArray(value)) {
-              res = await obj.setValue__(
-                pointer[1],
-                value.concat(this.data._id.toString()),
-                false,
-                false,
-                true,
-              );
-            } else
-              res = await obj.setValue__(
-                pointer[1],
-                this.data._id.toString(),
-                false,
-                false,
-                true,
-              );
-          } else
-            ({ res, val } = await this.preInnerSetValue(
-              noGet,
-              key,
-              val,
-              lastPath,
-              silent,
-              noUpdate,
-            ));
-          success = res.success;
-          message +=
-            "\nReport from inner setValue function: " +
-            res.msg.split("\n").join("\n  ");
-        } else {
-          const isRef = getMetadataRecursive(
-            "isRef",
-            this.classProp.prototype,
-            key,
-          );
-          if (isRef && this.isServer && ObjectId.isValid(val))
-            val = Array.isArray(val)
-              ? val.map((v) => new ObjectId(v as string | ObjectId))
-              : new ObjectId(val as string | ObjectId);
-          let res;
-          ({ res, val } = await this.preInnerSetValue(
-            noGet,
-            key,
-            val,
-            lastPath,
-            silent,
-            noUpdate,
-          ));
-          if (res.success) {
-            const originalValue = obj[path.at(-1)];
-            if (!Array.isArray(val) && Array.isArray(originalValue)) {
-              if (!originalValue.includes(val)) originalValue.push(val);
-              val = originalValue;
-            } else obj[path.at(-1)] = val;
-          }
-          success = res.success;
-          message += "\nReport from inner setValue function: \n " + res.msg;
-        }
-      } catch (error: any) {
-        success = false;
-        message += "\nError from inner setValue function: \n  " + error.message;
-      }
-
-      if (!success) {
-        this.loggers.warn(
-          "Failed to set value for " + this.className + "\n" + message,
-        );
-        return { success: false, msg: message };
-      }
-      const pathArr = lastPath.split(".");
-      if (pathArr.length === 1) {
-        (this.data as any)[key] = val;
+  public getValue<K extends Paths<T, IAutoUpdatedClientObject<any>>>(
+    key_: K,
+  ): PathValueOf<T, K>;
+  public getValue(key_: string): any;
+  public getValue(key_: string): any {
+    const key = key_ as string;
+    const parts = key.split(".");
+    let value: any = this;
+    for (const part of parts) {
+      if (value === undefined || value === null) return undefined as any;
+      const nextValue = (value as Record<string, unknown>)[part];
+      if (nextValue !== undefined) {
+        value = nextValue;
+      } else if (
+        (value as { data?: Record<string, unknown> }).data &&
+        (value as { data: Record<string, unknown> }).data[part] !== undefined
+      ) {
+        value = (value as { data: Record<string, unknown> }).data[part];
       } else {
-        const last = pathArr.splice(-1, 1);
-        let ref = this as any;
-        for (const p of pathArr) {
-          ref = ref[p];
-        }
-        ref[last.at(-1)!] = val;
-      }
-      if (!noUpdate) await this.onUpdate(noUpdate);
-      this.findAndLoadReferences(lastPath, val);
-      const isRef = getMetadataRecursive(
-        "isRef",
-        this.classProp.prototype,
-        path.at(-1),
-      );
-      if (isRef && this.parentManager.isLoaded) {
-        this.contactChildren();
-      }
-      return {
-        success: true,
-        msg: "Successfully set " + key + " to " + val,
-      };
-    } catch (error: any) {
-      this.loggers.error(
-        "An error occurred setting value for " +
-          this.className +
-          "\n" +
-          message +
-          "\n Random error here: " +
-          error.message +
-          "\n" +
-          error.stack,
-      );
-      this.loggers.error(error);
-      return {
-        success: false,
-        msg:
-          message +
-          "\n Random error here: " +
-          error.message +
-          "\n" +
-          error.stack,
-      };
-    }
-  }
-
-  private async preInnerSetValue(
-    noGet: boolean,
-    key: any,
-    val: any,
-    lastPath: string,
-    silent: boolean,
-    noUpdate: boolean,
-  ) {
-    if (
-      !noGet &&
-      this.isServer &&
-      this.getValue(key) &&
-      Array.isArray(this.getValue(key)) &&
-      !Array.isArray(val)
-    ) {
-      val = this.getValue(key).concat(val);
-    }
-    const res = await this.setValueInternal(lastPath, val, silent, noUpdate);
-    if (
-      !noGet &&
-      !this.isServer &&
-      this.getValue(key) &&
-      Array.isArray(this.getValue(key)) &&
-      !Array.isArray(val)
-    ) {
-      val = [
-        ...new Set(
-          this.getValue(key)
-            .concat(val)
-            .map((v: any) => v.toString()),
-        ),
-      ];
-    }
-    return { res, val };
-  }
-
-  private findAndLoadReferences(lastPath: string, value: any) {
-    const isRef = getMetadataRecursive(
-      "isRef",
-      this.classProp.prototype,
-      lastPath,
-    );
-    if (isRef) {
-      for (const id of Array.isArray(value) ? value : [value]) {
-        let result;
-        for (const manager of Object.values(this.parentManager.managers)) {
-          result = manager.getObject(id?.toString());
-          if (result) break;
-        }
-        if (!result) {
-          this.loggers.warn(
-            "Failed to update childerns parent for " +
-              this.className +
-              " updating " +
-              id +
-              "'s parent to " +
-              this.data._id,
-          );
-          continue;
-        }
-        result.loadMissingReferences();
-      }
-    }
-  }
-
-  public getValue(key: Paths<T>) {
-    let value: any;
-
-    for (const part of key.split(".")) {
-      try {
-        if (value) value = value[part];
-        else value = (this as any)[part];
-      } catch (error: any) {
-        this.loggers.error(
-          "Error getting value for " +
-            this.className +
-            " on key " +
-            key +
-            " on index " +
-            part +
-            ":" +
-            error.message,
-        );
+        return undefined as any;
       }
     }
     return value;
   }
 
-  protected async setValueInternal(
+  public findReference(
+    id: string | ObjectId,
     key: string,
-    value: any,
-    silent: boolean = false,
-    noUpdate: boolean = false,
-  ): Promise<{ success: boolean; msg: string }> {
-    const update: ServerUpdateRequest<T> = this.makeUpdate(key, value);
-    const promise = new Promise<{ success: boolean; msg: string }>(
-      (resolve) => {
-        if (silent) {
-          if (noUpdate) return;
-          return this.onUpdate(true).then(() => {
-            return resolve({ success: true, msg: "Success - silent" });
-          });
+  ): IAutoUpdatedClientObject<any> | undefined {
+    if (!id) return undefined;
+    const idStr = id.toString();
+    const cached = globalCache.objects[idStr];
+    if (cached?.object) return cached.object as IAutoUpdatedClientObject<any>;
+
+    const cacheKey = `${this.className}:${key}`;
+    const cachedManager = this.parentManager?.cache?.references?.[cacheKey];
+    if (cachedManager) {
+      const res = cachedManager.getObject(idStr);
+      if (res) return res as IAutoUpdatedClientObject<any>;
+    }
+
+    if (this.parentManager?.managers) {
+      for (const manager of Object.values(this.parentManager.managers)) {
+        const result = manager.getObject(idStr);
+        if (result) {
+          if (this.parentManager.cache?.references) {
+            this.parentManager.cache.references[cacheKey] = manager;
+          }
+          return result as IAutoUpdatedClientObject<any>;
         }
-        try {
-          this.socket.emit(
-            "update" + this.className + this.data._id,
-            update,
-            async (res: ServerResponse<never>) => {
-              if (!res.success) {
-                this.loggers.error("Error sending update: " + res.message);
-                resolve({ success: false, msg: res.message });
-                return;
-              }
-              if (!noUpdate) await this.onUpdate(noUpdate);
-              resolve({
-                success: res.success,
-                msg: res.message ?? "Success",
-              });
-            },
-          );
-        } catch (error: any) {
-          this.loggers.error("Error sending update:" + error.message);
-          this.loggers.error(error.stack);
-          resolve({ success: false, msg: error.message });
-        }
-      },
-    );
-    return promise;
+      }
+    }
+    return undefined;
   }
 
-  protected makeUpdate(key: string, value: any): ServerUpdateRequest<T> {
-    try {
-      const id = this.data._id.toString();
-      return { _id: id, key, value } as any;
-    } catch (error: any) {
-      this.loggers.error(
-        "Probably missing the fucking identifier ['_id'] again: " +
-          error.message,
+  public async setValue<K extends string>(
+    key: K,
+    val: PathValueOf<IsData<T>, K>,
+  ): Promise<{ success: boolean; msg: string }> {
+    return await this.setValue__(key as string, val);
+  }
+
+  protected async setValue__(
+    key: string,
+    val: unknown,
+    silent = false,
+    noGet = false,
+    noUpdate = false,
+    isParentUpdate = false,
+  ): Promise<{ success: boolean; msg: string }> {
+    this.writeQueue = this.writeQueue
+      .catch(() => {})
+      .then(() =>
+        this.setValueQueueInternal(
+          key,
+          val,
+          silent,
+          noGet,
+          noUpdate,
+          isParentUpdate,
+        ),
       );
-      throw error;
+    return this.writeQueue as Promise<{ success: boolean; msg: string }>;
+  }
+
+  private async setValueQueueInternal(
+    key: string,
+    val: unknown,
+    silent = false,
+    noGet = false,
+    noUpdate = false,
+    isParentUpdate = false,
+  ): Promise<{ success: boolean; msg: string }> {
+    const rootProp = (key as string).split(".")[0];
+    if (
+      key === "__proto__" ||
+      key === "constructor" ||
+      key === "prototype" ||
+      (this.properties && !this.properties.includes(rootProp) && rootProp !== "_id")
+    ) {
+      return { success: false, msg: `Invalid property key: ${key}` };
+    }
+    try {
+      const isRef = getMetadataRecursive("isRef", this, key);
+      const pointer = getMetadataRecursive("refsTo", this, key);
+      if (pointer && !isParentUpdate && !silent && !this.isServer) {
+        throw new Error("Cannot set value of a reference pointer directly.");
+      }
+      let valueToStore = val;
+      if (isRef) {
+        valueToStore = Array.isArray(val)
+          ? val.map(
+              (v: unknown) =>
+                (
+                  v as { _id?: { toString(): string } | string }
+                )?._id?.toString() ??
+                (v as { toString(): string })?.toString() ??
+                v,
+            )
+          : ((
+              val as { _id?: { toString(): string } | string }
+            )?._id?.toString() ??
+            (val as { toString(): string })?.toString() ??
+            val);
+      }
+      const currentVal = this.getValue(key as any);
+      const currentValId = Array.isArray(currentVal)
+        ? (currentVal as any[]).map(
+            (v: unknown) =>
+              (
+                v as { _id?: { toString(): string } | string }
+              )?._id?.toString() ??
+              (v as { toString(): string })?.toString() ??
+              v,
+          )
+        : ((
+            currentVal as { _id?: { toString(): string } | string }
+          )?._id?.toString() ??
+          (currentVal as { toString(): string })?.toString());
+
+      if (_.isEqual(currentValId, valueToStore))
+        return { success: true, msg: "Successfully set " + key + " to " + val };
+
+      const path = (key as string).split(".");
+      if (path.length > 1) {
+        let obj = this.data as Record<string, unknown>;
+        for (let i = 0; i < path.length - 1; i++) {
+          const currentKey = path[i];
+          const valAtKey = obj[currentKey];
+          if (
+            typeof valAtKey === "string" ||
+            (valAtKey && ObjectId.isValid(valAtKey as any))
+          ) {
+            const ref = await this.resolveReference(String(valAtKey));
+            if (!ref)
+              throw new Error("Could not resolve reference on path: " + key);
+            return await ref.setValue(
+              path.slice(i + 1).join(".") as any,
+              val as any,
+            );
+          }
+          obj = obj[currentKey] as Record<string, unknown>;
+        }
+      }
+
+      const res = await this.setValueInternal(
+        key,
+        valueToStore,
+        silent,
+        noUpdate,
+      );
+      if (res.success) {
+        const pathArr = (key as string).split(".");
+        let obj = this.data as Record<string, unknown>;
+        for (let i = 0; i < pathArr.length - 1; i++) {
+          obj = obj[pathArr[i]] as Record<string, unknown>;
+        }
+        obj[pathArr[pathArr.length - 1]] = valueToStore;
+        if (this.isServer) {
+          await this.findAndLoadReferences(key, valueToStore);
+          if (isRef && this.parentManager.isLoaded) await this.contactChildren();
+        }
+        if (this.isLoaded) {
+          this.callbacks.update(
+            this as unknown as IAutoUpdatedClientObject<T>,
+            key,
+          );
+          await this.onUpdate(noUpdate, key);
+        }
+      }
+      return {
+        ...res,
+        msg: res.msg ?? "Successfully set " + key + " to " + val,
+      };
+    } catch (error: unknown) {
+      this.loggers.error?.(
+        `Error setting value ${key}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return {
+        success: false,
+        msg: error instanceof Error ? error.message : String(error),
+      };
     }
   }
 
-  public async onUpdate(noUpdate: boolean) {
-    return;
+  protected async setValueInternal(
+    key: string,
+    value: unknown,
+    silent = false,
+    noUpdate = false,
+  ): Promise<{ success: boolean; msg: string }> {
+    if (silent) return { success: true, msg: "Silent" };
+    return new Promise((resolve) => {
+      const id = this.data?._id ?? this._id;
+      this.socket.emit(
+        EVENT_UPDATE + this.className + id,
+        { _id: id.toString(), key, value },
+        (res: ServerResponse<undefined>) => {
+          resolve({
+            success: res.success,
+            msg: res.message ?? (res.success ? "Success" : "Error"),
+          });
+        },
+      );
+    });
   }
 
-  // return a properly typed AutoUpdatedClientClass (or null)
-  // inside AutoUpdatedClientClass
-  protected resolveReference(id: string): AutoUpdatedClientObject<any> | null {
-    if (!this.parentManager) throw new Error("No Manager");
+  protected makeUpdate(key: string, value: unknown): ServerUpdateRequest<T> {
+    const id = this.data?._id ?? this._id;
+    if (!id) {
+      this.loggers.error?.(
+        `Probably missing the identifier ['_id'] again: ${key} = ${value}`,
+      );
+      throw new Error(
+        `Cannot make update for ${this.className} because _id is missing.`,
+      );
+    }
+    return { _id: id.toString(), key, value };
+  }
+
+  protected async resolveReference(
+    id: string,
+  ): Promise<IAutoUpdatedClientObject<any> | null> {
     for (const manager of Object.values(this.parentManager.managers)) {
-      const data = manager.getObject(id);
-      if (data) return data;
+      const obj = manager.getObject(id);
+      if (obj) return obj as IAutoUpdatedClientObject<any>;
     }
     return null;
   }
 
+  private async findAndLoadReferences(lastPath: string, value: unknown) {
+    const isRef = getMetadataRecursive("isRef", this, lastPath);
+    if (isRef) {
+      for (const id of Array.isArray(value) ? value : [value]) {
+        if (!id) continue;
+        let result: IAutoUpdatedClientObject<any> | undefined;
+        for (const manager of Object.values(this.parentManager.managers)) {
+          result = manager.getObject(id?.toString()) as
+            | IAutoUpdatedClientObject<any>
+            | undefined;
+          if (result) break;
+        }
+        if (result && result.parentManager.isLoaded && typeof result.loadMissingReferences === "function") {
+          await result.loadMissingReferences();
+        }
+      }
+    }
+  }
+
+  protected async wipeSelf(): Promise<void> {
+    if ((this.data as unknown as { Wiped: boolean }).Wiped) return;
+    const id = this.data?._id ?? this._id;
+    const _id = id ? id.toString() : "unknown";
+    for (const key of Object.keys(this.data as Record<string, unknown>)) {
+      delete (this.data as Record<string, unknown>)[key];
+    }
+    (this.data as unknown as { Wiped: boolean }) = { Wiped: true };
+    this.loggers.info?.(`[${_id}] ${this.className} object wiped`);
+  }
+
+  public destroyImmediate() {
+    this.wipeSelf();
+  }
+
   private async loadForceReferences(
-    obj: any = this.data,
-    proto: any = this.classProp.prototype,
-    alreadySeen: any[] = [],
+    obj: Record<string, unknown> = this.data as unknown as Record<
+      string,
+      unknown
+    >,
+    proto: object = this,
+    alreadySeen: unknown[] = [],
   ) {
-    const props = Reflect.getMetadata("props", proto) || [];
-
+    const meta = this.classParam ? setupClassAccessors(this.classParam) : null;
+    const props =
+      obj === this.data && this.properties
+        ? this.properties
+        : (Reflect.getMetadata("props", proto) as string[]) ||
+          (Reflect.getMetadata("props", Object.getPrototypeOf(proto)) as string[]) ||
+          [];
     for (const key of props) {
-      if (typeof key !== "string") return;
-      const isRef = Reflect.getMetadata("isRef", proto, key);
-      const pointer = getRightParent(
-        Reflect.getMetadata("refsTo", proto, key),
-        this,
-        true,
-      );
-      if (pointer && obj === this.data && obj[key])
-        await this.createdWithParent(pointer, obj[key]);
-      if (isRef) {
-        await this.handleLoad(obj, key, alreadySeen);
+      if (typeof key !== "string") continue;
+      const pointer =
+        meta?.refsToMap.get(key) ||
+        (Reflect.getMetadata("refsTo", proto, key) as string) ||
+        (proto ? (Reflect.getMetadata("refsTo", Object.getPrototypeOf(proto), key) as string) : undefined);
+      if (
+        pointer &&
+        obj === (this.data) &&
+        obj[key] &&
+        !alreadySeen.includes(obj)
+      ) {
+        await this.createdWithParent(
+          pointer.split(":"),
+          obj[key] as Record<string, unknown>,
+        );
       }
 
-      await this.checkRecursiveReferenceLoading(obj, key, alreadySeen);
-    }
-  }
+      if (obj[key] && !alreadySeen.includes(obj[key]))
+        alreadySeen.push(obj[key]);
 
-  private async checkRecursiveReferenceLoading(
-    obj: any,
-    key: string,
-    alreadySeen: any[],
-  ) {
-    const val = obj ? obj[key] : null;
-    if (val && typeof val === "object") {
-      const nestedProto = Object.getPrototypeOf(val);
-      if (nestedProto && !alreadySeen.includes(val)) {
-        alreadySeen.push(val);
-        await this.loadForceReferences(val, nestedProto, alreadySeen);
-      }
-    }
-  }
-
-  private async handleLoad(obj: any, key: string, alreadySeen: any[]) {
-    if (!this.parentManager) throw new Error("No manager");
-    const refId = obj[key];
-    if (refId) {
-      for (const manager of Object.values(this.parentManager.managers)) {
-        const result = manager.getObject(refId);
-        if (result && !alreadySeen.includes(refId)) {
-          alreadySeen.push(refId);
-          await result.loadForceReferences(undefined, undefined, alreadySeen);
-          break;
+      const val = obj[key];
+      if (val && typeof val === "object") {
+        const nestedProto = Object.getPrototypeOf(val);
+        if (nestedProto && !alreadySeen.includes(val)) {
+          alreadySeen.push(val);
+          await this.loadForceReferences(
+            val as Record<string, unknown>,
+            nestedProto,
+            alreadySeen,
+          );
         }
       }
     }
@@ -864,232 +791,223 @@ export class AutoUpdatedClientObject<T> {
 
   protected async createdWithParent(
     pointer: string[],
-    parent: AutoUpdatedClientObject<any> | string,
-  ) {
-    if (pointer.length !== 2) {
-      throw new Error(
-        "Invalid pointer: " +
-          JSON.stringify(pointer) +
-          " for " +
-          this.className +
-          ", poiter must be 'className:pathToParentProperty'",
-      );
+    parent: Record<string, unknown>,
+  ): Promise<void> {
+    if (pointer.length !== 2) return;
+    const parentId =
+      (parent._id as { toString(): string })?.toString() ?? parent.toString();
+    
+    this.loggers.debug(`createdWithParent: pointer=${pointer.join(":")}, parentId=${parentId}`);
+
+    const manager = this.parentManager.managers[pointer[0]];
+    if (!manager) {
+      this.loggers.warn(`createdWithParent: Manager not found for ${pointer[0]}. Available managers: ${Object.keys(this.parentManager.managers).join(", ")}`);
+      return;
     }
-    if (!parent)
-      throw new Error(
-        "Invalid pointer: " +
-          JSON.stringify(pointer) +
-          " for " +
-          this.className +
-          ", parent is null",
-      );
-    const obj = this.parentManager.managers[pointer[0]]?.getObject(
-      (parent as any)._id?.toString() ?? (parent as any).toString(),
+
+    const obj = manager.getObject(parentId) as
+      | IAutoUpdatedClientObject<any>
+      | undefined;
+    if (!obj) {
+      this.loggers.warn(`createdWithParent: Parent object not found for ID ${parentId} in manager ${pointer[0]}`);
+      return;
+    }
+    const val = obj.getValue(pointer[1] as any);
+    const myId = this.data._id.toString();
+    const valLog = Array.isArray(val)
+      ? `[${val.map((v: any) => v?._id?.toString() ?? v?.toString()).join(", ")}]`
+      : (val as any)?._id?.toString() ?? String(val);
+    this.loggers.debug?.(
+      `createdWithParent: Current parent value for ${pointer[1]} is ${valLog}, myId=${myId}`,
     );
-    const val = obj?.getValue(pointer[1]);
-    if (!val) return;
     if (Array.isArray(val)) {
-      const originalLength = val.length;
-      const filtred = val.filter(Boolean);
-      if (filtred.length !== originalLength) {
-        await obj?.setValue(pointer[1], filtred);
-        this.loggers.warn(
-          "Array value changed from " +
-            originalLength +
-            " to " +
-            filtred.length +
-            " - some values were undefined",
-        );
+      const ids = val.map(
+        (v: unknown) =>
+          (v as { _id?: { toString(): string } | string })?._id?.toString() ??
+          (v as { toString(): string })?.toString(),
+      );
+      if (!ids.includes(myId)) {
+        this.loggers.debug?.(`createdWithParent: Adding myId to parent array`);
+        await (
+          obj as unknown as {
+            setValue__(
+              key: string,
+              val: unknown,
+              silent?: boolean,
+              noGet?: boolean,
+              noUpdate?: boolean,
+              isParentUpdate?: boolean,
+            ): Promise<void>;
+          }
+        ).setValue__(pointer[1], [...val, myId], false, false, false, true);
       }
-      if (
-        filtred
-          .map((id: AutoUpdated<any>) => id?._id.toString())
-          .includes(this.data._id)
-      )
-        obj?.contactChildren();
-      else
-        await obj?.setValue(pointer[1], [
-          ...new Set([...filtred, this.data._id]),
-        ]);
-    } else if (val?.toString() === this.data?._id.toString())
-      obj?.contactChildren();
-    else await obj?.setValue(pointer[1], this.data?._id.toString());
+    } else if (
+      ((val as { _id?: { toString(): string } | string })?._id?.toString() ??
+        (val as { toString(): string })?.toString()) !== myId
+    ) {
+      this.loggers.debug?.(`createdWithParent: Setting myId to parent field`);
+      await (
+        obj as unknown as {
+          setValue__(
+            key: string,
+            val: unknown,
+            silent?: boolean,
+            noGet?: boolean,
+            noUpdate?: boolean,
+            isParentUpdate?: boolean,
+          ): Promise<void>;
+        }
+      ).setValue__(pointer[1], myId, false, false, false, true);
+    }
   }
 
   public async destroy(
-    once: boolean = false,
+    once = false,
   ): Promise<{ success: boolean; message: string }> {
-    if (!once) {
-      return await this.parentManager.deleteObject(this.data._id);
-    }
-    const res = await new Promise<{ success: boolean; message: string }>(
-      (resolve) => {
-        this.socket.emit(
-          "delete" + this.className,
-          this.data._id,
-          (res: ServerResponse<undefined>) => {
-            if (!res.success) {
-              this.loggers.error(
-                "Error deleting object from database - " +
-                  this.className +
-                  " - " +
-                  this.data._id,
-              );
-              this.loggers.error(res.message);
-              resolve({
-                success: false,
-                message: res.message,
-              });
-              return;
-            }
-            this.socket.removeAllListeners(
-              "update" + this.className + this.data._id,
-            );
-            this.socket.removeAllListeners("delete" + this.className);
-            this.wipeSelf();
-            resolve({
-              success: true,
-              message: "Deleted",
-            });
-          },
-        );
-      },
-    );
-    return res;
-  }
-
-  private checkForMissingRefs() {
-    for (const prop of this.properties) {
-      let pointer = getRightParent(
-        getMetadataRecursive(
-          "refsTo",
-          this.classProp.prototype,
-          prop.toString(),
-        ),
-        this,
-        true,
+    if (!once)
+      return await this.parentManager.deleteObject(this.data._id.toString());
+    return new Promise((resolve) => {
+      this.socket.emit(
+        EVENT_DELETE + this.className,
+        this.data._id,
+        (res: ServerResponse<undefined>) => {
+          resolve({ success: res.success, message: res.message ?? "" });
+        },
       );
-      if (pointer) {
-        if (pointer.length != 2)
-          throw new Error(
-            "population rf incorrectly defined. Sould be 'ParentClass:PropName'",
-          );
-        this.findMissingObjectReference(prop, pointer);
+    });
+  }
+
+  private async checkForMissingRefs() {
+    for (const prop of this.properties as string[]) {
+      const pointer = getMetadataRecursive(
+        "refsTo",
+        this,
+        prop.toString(),
+      ) as string;
+      if (pointer && !this.getValue(prop as any)) {
+        const parts = pointer.split(":");
+        if (parts.length === 2)
+          await this.findMissingObjectReference(prop, parts);
       }
     }
   }
-  private findMissingObjectReference(prop: any, pointer: string[]) {
-    const ac = this.parentManager.managers[pointer[0]];
-    if (!ac)
-      throw new Error(`No AutoUpdateManager found for class ${pointer[0]}`);
 
-    for (const obj of ac.objectsAsArray) {
-      let eData = obj.extractedData;
-      let found;
-      for (const pathPart of pointer[1].split(".")) {
-        if (
-          !eData[pathPart] ||
-          (Array.isArray(eData[pathPart]) &&
-            !eData[pathPart]
-              .map((id) => id.toString())
-              .includes((this as any)._id.toString())) ||
-          (!Array.isArray(eData[pathPart]) &&
-            eData[pathPart].toString() !== this.data._id.toString())
-        ) {
-          found = false;
-          break;
-        }
-        found = eData = eData[pathPart];
-      }
-      if (found) {
-        (this.data as any)[prop] = (obj as any)._id;
+  private async findMissingObjectReference(prop: string, pointer: string[]) {
+    if (this.checkedMissingProperties[prop]) return;
+    this.checkedMissingProperties[prop] = true;
+    const ac = (
+      this.parentManager.managers as Record<
+        string,
+        IAutoUpdateManager<IAutoUpdatedClientObject<any>>
+      >
+    )[pointer[0]];
+    if (!ac) return;
+    const targetId = this.data._id.toString();
+    const allObjects = Object.values(
+      ac.objectsAsArray,
+    ) as IAutoUpdatedClientObject<any>[];
+    for (const obj of allObjects) {
+      if (!obj.isLoaded) await obj.waitForPreloaded();
+      const val = obj.getValue(pointer[1] as any);
+      if (!val) continue;
+      const ids = Array.isArray(val)
+        ? val.map(
+            (v: unknown) =>
+              (
+                v as { _id?: { toString(): string } | string }
+              )?._id?.toString() ?? (v as { toString(): string }).toString(),
+          )
+        : [
+            (
+              val as { _id?: { toString(): string } | string }
+            )._id?.toString() ?? (val as { toString(): string }).toString(),
+          ];
+      if (ids.includes(targetId)) {
+        (this.data as Record<string, unknown>)[prop] = obj._id;
         return;
       }
     }
   }
-  protected wipeSelf() {
-    if ((this.data as any).Wiped) return;
-    const _id = this.data._id.toString();
-    for (const key of Object.keys(this.data)) {
-      delete (this.data as any)[key];
-    }
-    this.data = { Wiped: true } as any;
-    this.loggers.info(`[${_id}] ${this.className} object wiped`);
-  }
 
-  public contactChildren() {
-    for (const prop of this.properties) {
-      const pointer = getRightParent(
-        getMetadataRecursive(
-          "refsTo",
-          this.classProp.prototype,
-          prop.toString(),
-        ),
-        this,
-        true,
-      );
-      const isRef = getMetadataRecursive(
-        "isRef",
-        this.classProp.prototype,
-        prop.toString(),
-      );
-      if (isRef && !pointer) {
-        if (!this.getValue(prop as any)) continue;
-        if (Array.isArray(this.getValue(prop as any))) {
-          for (const child of this.getValue(prop as any)) {
-            try {
-              child?.loadMissingReferences();
-            } catch (error: any) {
-              this.loggers.error(error.message);
-            }
-          }
-        } else this.getValue(prop as any)?.loadMissingReferences();
+  public async contactChildren(): Promise<void> {
+    if (!this.isServer) return;
+    for (const prop of this.properties as string[]) {
+      const isRef = getMetadataRecursive("isRef", this, prop.toString());
+      const pointer = getMetadataRecursive("refsTo", this, prop.toString());
+      if (!isRef || pointer) continue;
+      const obj = this.getValue(prop as any);
+      if (!obj) continue;
+      const children = Array.isArray(obj) ? obj : [obj];
+      for (const child of children as any[]) {
+        if (
+          child &&
+          typeof (child as { loadMissingReferences?: () => Promise<void> })
+            .loadMissingReferences === "function"
+        ) {
+          await (
+            child as { loadMissingReferences(): Promise<void> }
+          ).loadMissingReferences();
+        }
       }
     }
+    this.generateSettersAndGetters();
+  }
+
+  protected async onUpdate(noUpdate: boolean = false, key?: string): Promise<void> {
+    // Placeholder for server-side override
+  }
+
+  protected async onDeletion(): Promise<void> {
+    // Placeholder for server-side override
   }
 }
 
 export function processIsRefProperties(
-  instance: any,
-  target: any,
-  prefix: string | null = null,
-  allProps: string[] = [],
-  newData = {} as any,
-  loggers = console as LoggersType,
-) {
-  const props: string[] = Reflect.getMetadata("props", target) || [];
-
+  instance: Record<string, unknown>,
+  target: object,
+  prefix: string | null,
+  allProps: string[],
+  newData: Record<string, unknown>,
+  loggers: LoggersType,
+): { allProps: string[]; newData: Record<string, unknown> } {
+  const props = (Reflect.getMetadata("props", target) as string[]) || [];
   for (const prop of props) {
     const path = prefix ? `${prefix}.${prop}` : prop;
     allProps.push(path);
-    newData[prop] = ObjectId.isValid(instance[prop])
-      ? instance[prop]?.toString()
-      : instance[prop];
+    newData[prop] =
+      instance[prop] && ObjectId.isValid(instance[prop] as any)
+        ? (instance[prop] as { toString(): string })?.toString()
+        : instance[prop];
     if (Reflect.getMetadata("isRef", target, prop)) {
       if (Array.isArray(instance[prop]))
-        newData[prop] = instance[prop]
+        newData[prop] = (instance[prop] as unknown[])
           .map(
-            (item: any) =>
-              item?._id?.toString() ?? item?.toString() ?? undefined,
+            (item: unknown) =>
+              (
+                item as { _id?: { toString(): string } | string }
+              )?._id?.toString() ??
+              (item as { toString(): string })?.toString(),
           )
           .filter(Boolean);
       else
         newData[prop] =
-          instance[prop]?._id?.toString() ??
-          instance[prop]?.toString() ??
-          undefined;
+          (
+            instance[prop] as { _id?: { toString(): string } | string }
+          )?._id?.toString() ??
+          (instance[prop] as { toString(): string })?.toString();
     }
-
-    const type = Reflect.getMetadata("design:type", target, prop);
+    const type = Reflect.getMetadata("design:type", target, prop) as {
+      prototype?: object;
+    };
     if (type?.prototype) {
       const nestedProps = Reflect.getMetadata("props", type.prototype);
       if (nestedProps && instance[prop]) {
         newData[prop] = processIsRefProperties(
-          instance[prop],
+          instance[prop] as Record<string, unknown>,
           type.prototype,
           path,
           allProps,
-          undefined,
+          {},
           loggers,
         ).newData;
       }
@@ -1098,68 +1016,100 @@ export function processIsRefProperties(
   return { allProps, newData };
 }
 
+export function setupClassAccessors(classParam: Constructor<any>): {
+  properties: string[];
+  refProps: Set<string>;
+  refsToMap: Map<string, string>;
+} {
+  if (!classParam) {
+    return { properties: [], refProps: new Set(), refsToMap: new Map() };
+  }
+  if ((classParam as any).__metaCache) {
+    return (classParam as any).__metaCache;
+  }
+
+  const allProps = new Set<string>();
+  const refProps = new Set<string>();
+  const refsToMap = new Map<string, string>();
+
+  let proto_ = classParam.prototype;
+  while (proto_ && proto_ !== Object.prototype) {
+    const props =
+      Reflect.getMetadata("props", proto_) ||
+      Reflect.getOwnMetadata("props", proto_) ||
+      [];
+    for (const p of props) {
+      if (typeof p === "string") {
+        allProps.add(p);
+        const isRef = Reflect.getMetadata("isRef", proto_, p) || Reflect.getOwnMetadata("isRef", proto_, p);
+        if (isRef) refProps.add(p);
+        const refsTo = Reflect.getMetadata("refsTo", proto_, p) || Reflect.getOwnMetadata("refsTo", proto_, p);
+        if (refsTo) refsToMap.set(p, refsTo);
+      }
+    }
+    proto_ = Object.getPrototypeOf(proto_);
+  }
+
+  const properties = Array.from(allProps);
+
+  for (const key of properties) {
+    const isRef = refProps.has(key);
+    Object.defineProperty(classParam.prototype, key, {
+      get(this: AutoUpdatedClientObject<any>) {
+        if (!this.data) return undefined;
+        let val = (this.data as Record<string, unknown>)[key];
+        if (val === null) val = undefined;
+        if (isRef && val) {
+          if (Array.isArray(val)) {
+            return val
+              .map((id: string | ObjectId) => this.findReference(id, key))
+              .filter(Boolean);
+          } else {
+            return this.findReference(val as string | ObjectId, key);
+          }
+        }
+        return val;
+      },
+      set(this: AutoUpdatedClientObject<any>, v: unknown) {
+        if (this.data) {
+          let valueToSet = v;
+          if (isRef && v) {
+            if (Array.isArray(v)) {
+              valueToSet = v.map((item) =>
+                item && (item as any)._id
+                  ? (item as any)._id.toString()
+                  : item?.toString(),
+              );
+            } else {
+              valueToSet = (v as any)._id
+                ? (v as any)._id.toString()
+                : (v as any).toString();
+            }
+          }
+          (this.data as Record<string, unknown>)[key] = valueToSet;
+        }
+      },
+      enumerable: true,
+      configurable: true,
+    });
+  }
+
+  const meta = { properties, refProps, refsToMap };
+  (classParam as any).__metaCache = meta;
+  (classParam as any).__propsCache = properties;
+  (classParam as any).__refPropsCache = Array.from(refProps);
+  return meta;
+}
+
 export function getMetadataRecursive(
   metaKey: string,
-  proto: any,
+  proto: object | null,
   prop: string,
-) {
+): unknown {
   while (proto) {
     const meta = Reflect.getMetadata(metaKey, proto, prop);
     if (meta) return meta;
     proto = Object.getPrototypeOf(proto);
-  }
-  return undefined;
-}
-
-export function getRightParent(
-  pointers: string[],
-  object: AutoUpdatedClientObject<any>,
-  getOnlyPointer: true,
-): string[] | undefined;
-export function getRightParent(
-  pointers: string[],
-  object: AutoUpdatedClientObject<any>,
-  getOnlyPointer?: false,
-): { obj: AutoUpdatedClientObject<any>; pointer: string[] } | undefined;
-export function getRightParent(
-  pointers: string[],
-  object: AutoUpdatedClientObject<any>,
-  getOnlyPointer: boolean = false,
-):
-  | { obj: AutoUpdatedClientObject<any>; pointer: string[] }
-  | string[]
-  | undefined {
-  const findParentObj = (pointer: string[]) => {
-    const path = pointer[1].split(".");
-    return object.parentManager.managers[pointer[0]].objectsAsArray.find(
-      (obj) =>
-        Array.isArray(obj.getValue(path[0]))
-          ? obj.getValue(path[0]).find((o:any) => (o._id?.toString() ?? o?.toString()) === (object as any)._id.toString())
-          : obj.getValue(path[0]).toString() === (object as any)._id.toString(),
-    );
-  };
-
-  if (!pointers || pointers.length === 0) return undefined;
-  if (pointers.length === 1) {
-    const pointer = pointers[0].split(":");
-    if (pointer.length !== 2)
-      throw new Error(
-        "population ref incorrectly defined. Sould be 'ParentClass:PropName.Path'",
-      );
-    if (getOnlyPointer) return pointer;
-    const found = findParentObj(pointer);
-    return found ? { obj: found, pointer: pointer } : undefined;
-  }
-
-  for (const pointer_ of pointers) {
-    const pointer = pointer_.split(":");
-    if (pointer.length !== 2)
-      throw new Error(
-        "population ref incorrectly defined. Sould be 'ParentClass:PropName.Path'",
-      );
-    const found = findParentObj(pointer);
-    if (found)
-      return getOnlyPointer ? pointer : { obj: found, pointer: pointer };
   }
   return undefined;
 }

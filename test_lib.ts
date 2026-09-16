@@ -4,59 +4,70 @@ import {
 } from "./AutoUpdateServerManagerClass.js";
 import { Server as SocketServer } from "socket.io";
 import { Server } from "node:http";
-import { Status } from "./TestTypes.js";
 import mongoose from "mongoose";
-import { io } from "socket.io-client";
-import { AUCManagerFactory } from "./AutoUpdateClientManagerClass.js";
-import { Test as ClientTest, Test2 as ClientTest2 } from "./ClientTypes.js";
-import { Test2 as ServerTest2, Test as ServerTest } from "./ServerTypes.js";
-import { logger } from "@typegoose/typegoose/lib/logSettings.js";
+import { io as socketIOClient } from "socket.io-client";
+import {
+  AUCManagerFactory,
+} from "./AutoUpdateClientManagerClass.js";
+import {
+  Constructor,
+  IAutoUpdatedClientObjectBase,
+} from "./CommonTypes.js";
+import * as ServerClasses from "./tests/testData/ServerClasses/index.js";
+import * as ClientClasses from "./tests/testData/ClientClasses/index.js";
+
+import * as ServerTypes from "./ServerTypes.js";
+import * as ClientTypes from "./ClientTypes.js";
+
+import { Company } from "./tests/testData/ClientClasses/Company.js";
+import { Construction } from "./tests/testData/ClientClasses/Construction.js";
+import { Subordinate } from "./tests/testData/ClientClasses/Subordinate.js";
+
+mongoose.set("debug", true);
 
 export const initServerManagers = async () => {
   const server = new Server();
   server.listen(3001);
-  const io = new SocketServer(server, { cors: { origin: "*" } });
+  const io = new SocketServer(server, {
+    cors: {
+      origin: process.env.ALLOWED_ORIGIN || "http://localhost:3000",
+    },
+  });
 
   io.use(async (socket, next) => {
     if (!socket.handshake.auth.token) next(new Error("Invalid token"));
     next();
   });
 
-  await mongoose.connect("mongodb://localhost:27017/GeoDB", {
-    timeoutMS: 5000,
-  });
+  if (mongoose.connection.readyState === 0) {
+    await mongoose.connect("mongodb://localhost:27017/GeoDB_Test", {
+      serverSelectionTimeoutMS: 5000,
+    });
+  }
+
   const managers = await AUSManagerFactory(
     {
-      Test2: {
-        class: ServerTest2,
-      },
       Test: {
-        class: ServerTest,
+        class: ServerTypes.Test,
+      },
+      Company: {
+        class: ServerClasses.Company,
+      },
+      Construction: {
+        class: ServerClasses.Construction,
+      },
+      Subordinate: {
+        class: ServerClasses.Subordinate,
         options: {
-          onUpdate: async (obj, set) => {
-            if (obj.status === Status.ACTIVE && !obj.active) {
-              await set("status", Status.INACTIVE);
-            } else if (obj.status === Status.INACTIVE && obj.active) {
-              await set("status", Status.ACTIVE);
-            }
-          },
           accessDefinitions: {
             startupMiddleware: async (objects, managers, socket) => {
               const returns =
                 socket.handshake.auth.token == "Client1"
                   ? objects
-                  : objects.filter(
-                      (obj) =>
-                        obj.description &&
-                        obj.description !== "TestObj3" &&
-                        obj.description !== "TestObj4",
-                    );
-              logger.error(
-                objects.map((obj) => obj.description ?? "" + obj._id),
-              );
-              logger.error(
-                returns.map((obj) => obj.description ?? "" + obj._id),
-              );
+                  : objects.filter((obj) => {
+                      const name = (obj as any).name;
+                      return name && name !== "Redacted" && name !== "Secret";
+                    });
               return returns;
             },
             eventMiddleware: async (event, managers, socket) => {
@@ -67,6 +78,9 @@ export const initServerManagers = async () => {
                 throw new Error("Fail");
             },
           },
+          onUpdate: async (obj, set, key) => {
+            
+          }
         },
       },
     },
@@ -78,28 +92,101 @@ export const initServerManagers = async () => {
     },
     io,
   );
-  return managers;
+  return { managers: managers, io, server };
 };
 
 export const initClientManagers = async (id: string) => {
-  const socket = io("http://localhost:3001", {
+  const socket = socketIOClient("http://localhost:3001", {
     auth: {
       token: id,
     },
+    reconnection: false,
   });
 
   const managers = await AUCManagerFactory(
     {
-      Test: ClientTest,
-      Test2: ClientTest2,
+      Test: ClientTypes.Test,
+      Subordinate: Subordinate,
+      Company: Company,
+      Construction: Construction,
     },
     {
       debug: (msg: string) => console.log("CLIENT " + msg),
       error: (msg: string) => console.error("CLIENT " + msg),
       info: (msg: string) => console.log("CLIENT " + msg),
-      warn: (msg: string) => console.warn("CLIENT " + msg),
+      warn: (msg: string) => console.log("CLIENT " + msg),
     },
     socket,
   );
-  return managers;
+  return { managers: managers, socket };
+};
+
+export const initFullServerManagers = async (port: number = 3002) => {
+  const server = new Server();
+  server.listen(port);
+  const io = new SocketServer(server, { cors: { origin: "*" } });
+
+  io.use(async (socket, next) => {
+    next();
+  });
+
+  if (mongoose.connection.readyState === 0) {
+    await mongoose.connect("mongodb://localhost:27017/GeoDB_Test", {
+      serverSelectionTimeoutMS: 5000,
+    });
+  }
+
+  const defs: any = {};
+  for (const [name, cls] of Object.entries(ServerClasses)) {
+    if (
+      typeof cls === "function" &&
+      cls.prototype instanceof (ServerClasses as any).AutoUpdatedServerObject
+    ) {
+      defs[name] = { class: cls as any };
+    }
+  }
+
+  const managers = await AUSManagerFactory(
+    defs,
+    {
+      info: (s: string) => console.log("SERVER " + s),
+      warn: (s: string) => console.warn("SERVER " + s),
+      error: (s: string) => console.error("SERVER " + s),
+      debug: (s: string) => console.log("SERVER " + s),
+    },
+    io,
+    true,
+  );
+  return { managers, io, server };
+};
+
+export const initFullClientManagers = async (port: number = 3002) => {
+  const socket = socketIOClient(`http://localhost:${port}`, {
+    auth: {
+      token: "FullClient",
+    },
+    reconnection: false,
+  });
+
+  const defs: Record<string, Constructor<IAutoUpdatedClientObjectBase>> = {};
+  for (const [name, cls] of Object.entries(ClientClasses)) {
+    if (
+      typeof cls === "function" &&
+      cls.prototype instanceof (ClientClasses as any).AutoUpdatedClientObject
+    ) {
+      defs[name] = cls as Constructor<IAutoUpdatedClientObjectBase>;
+    }
+  }
+
+  const managers = await AUCManagerFactory(
+    defs,
+    {
+      debug: (msg: string) => console.log("CLIENT " + msg),
+      error: (msg: string) => console.error("CLIENT " + msg),
+      info: (msg: string) => console.log("CLIENT " + msg),
+      warn: (msg: string) => console.log("CLIENT " + msg),
+    },
+    socket,
+  );
+  return { managers, socket };
 };

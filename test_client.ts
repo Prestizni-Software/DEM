@@ -1,27 +1,31 @@
-import { Status } from "./TestTypes.js";
+import {  Pure } from "./CommonTypes.js";
 import { initClientManagers } from "./test_lib.js";
+import { Company } from "./tests/testData/ClientClasses/Company";
+
+const { managers } = await initClientManagers("test"+Math.random().toString(36).substring(7));
 
 
-const managers = await initClientManagers("test"+Math.random().toString(36).substring(7));
+const obj = managers.Company.objectsAsArray[0] as Company;
+const obj2 = managers.Company.objectsAsArray[1]as Company;
+
+if (obj) {
+    managers.Company.getObject(obj._id);
+    obj.getValue("fullName")
+}
+
+type y = Pure<Company>;
 
 
-const obj = managers.Test.objectsAsArray[0];
-const obj2 = managers.Test.objectsAsArray[1];
+if (!obj || !obj2) {
+    // No objects found
+} else {
+    await obj.setValue("fullName", "New Company Name");
+    await obj2.setValue("fullName", obj.fullName);
+    await obj.setValue("fullName", "Another Name");
+    await obj.destroy();
+}
 
-if (!obj || !obj2) throw new Error("No obj");
-await obj.parent?.parent?.parent?.setValue("active", true);
-console.log(obj.ref?.obj?.obj._id);
-await obj2.setValue("parent", obj2);
-await obj.setValue("active", false);
-await obj.setValue("active", true);
-
-await obj.destroy();
-managers.Test.createObject({
-  active: true,
-  status: Status.INACTIVE,
-  description: "ObjClient",
-  ref: null,
-  refarr: [],
-  obj: null,
-  parent: null,
+managers.Company.createObject({
+  fullName: "New Company",
+  abbr: "NC",
 });
