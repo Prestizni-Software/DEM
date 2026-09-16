@@ -245,14 +245,19 @@ export abstract class AutoUpdatedServerObject<
         Boolean((this.entry.schema as any)?.path?.(key));
 
       if (isPersisted) {
-        (this.entry as any)[key] = value;
         this.saveLock = (this.saveLock ?? Promise.resolve())
           .catch(() => {})
           .then(async () => {
-            if (this.entry && (this.entry as any) !== this) {
-              await this.entry.save();
-            } else if (this.entry && typeof (this.entry as any).$__save === "function") {
-              await (this.entry as any).$__save();
+            if (typeof this.parentManager.model?.updateOne === "function") {
+              await this.parentManager.model.updateOne(
+                { _id },
+                { $set: { [key]: value } },
+              );
+            } else if (this.entry && typeof (this.entry as any).save === "function") {
+              await (this.entry as any).save();
+            }
+            if (this.entry) {
+              (this.entry as any)[key] = value;
             }
           });
         await this.saveLock;
@@ -320,8 +325,8 @@ export abstract class AutoUpdatedServerObject<
         await this.parentManager.options.onUpdate(
           this as unknown as T,
           async (key: string, val: any) => {
-            // Pass noUpdate=true to internal setter to prevent recursive onUpdate calls.
-            return this.setValue__(key, val, false, false, true);
+            // Bypass writeQueue chaining to prevent recursive deadlock while in onUpdate
+            return (this as any).setValueQueueInternal(key, val, false, false, true);
           },
           key as any,
         );

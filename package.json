@@ -21,8 +21,11 @@
     "release": "npm run release_client && npm run release_server",
     "release_client": "node scripts/release_client.js",
     "release_server": "node scripts/release_server.js",
-    "test": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js tests/ --detectOpenHandles --forceExit --coverage",
-    "test_for_AI": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js tests/ --detectOpenHandles --forceExit --silent --verbose=false",
+    "test": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js tests/ --testPathIgnorePatterns=tests/issue_regression.test.ts --detectOpenHandles --forceExit",
+    "test:basic": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js tests/ --testPathIgnorePatterns=\"(issue_regression|performance)\" --detectOpenHandles --forceExit",
+    "test:perf": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js tests/performance.test.ts --detectOpenHandles --forceExit",
+    "test:optional": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js tests/issue_regression.test.ts --detectOpenHandles --forceExit",
+    "test_for_AI": "node --no-warnings --experimental-vm-modules node_modules/jest/bin/jest.js tests/ --testPathIgnorePatterns=tests/issue_regression.test.ts --detectOpenHandles --forceExit --silent --verbose=false",
     "fix_all": "npm --prefix ../client audit fix && npm --prefix ../server audit fix && npm audit fix"
   },
   "dependencies": {

@@ -109,8 +109,11 @@ export abstract class AutoUpdateManager<
   ): Promise<{ success: boolean; message: string }> {
     const _idStr = _id.toString();
     const o = this.objects_[_idStr];
-    const res = await o?.destroy(true);
-    if (res?.success) {
+    let res: { success: boolean; message: string } | undefined;
+    if (o && typeof o.destroy === "function") {
+      res = await o.destroy(true);
+    }
+    if (res?.success || !o || typeof o?.destroy !== "function") {
       delete this.objects_[_idStr];
       delete globalCache.objects[_idStr];
     }

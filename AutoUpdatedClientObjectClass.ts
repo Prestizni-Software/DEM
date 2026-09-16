@@ -149,22 +149,11 @@ export abstract class AutoUpdatedClientObject<
     this.parentManager = parentManager as any;
     this.className = className;
 
-    const staticPropsCache = (classParam as any).__propsCache;
-    if (staticPropsCache) {
-      this.properties = staticPropsCache;
+    if (classParam) {
+      const meta = setupClassAccessors(classParam);
+      this.properties = meta.properties;
     } else {
-      const allProps = new Set<string>();
-      let proto_ = classParam.prototype;
-      while (proto_ && proto_ !== Object.prototype) {
-        const props =
-          Reflect.getMetadata("props", proto_) ||
-          Reflect.getOwnMetadata("props", proto_) ||
-          [];
-        for (const p of props) allProps.add(p);
-        proto_ = Object.getPrototypeOf(proto_);
-      }
-      this.properties = Array.from(allProps);
-      (classParam as any).__propsCache = this.properties;
+      this.properties = [];
     }
     
     this.callbacks = callback!;
@@ -248,32 +237,28 @@ export abstract class AutoUpdatedClientObject<
   protected handleDataCleanup(data: IsData<T>): IsData<T> {
     if (!data || typeof data !== "object") return data;
 
-    // 1. Deep cleanup for any DEM objects embedded in the structure
-    const cleaned = _.cloneDeepWith(data, (value) => {
-      if (value && typeof value === "object" && value._id && value.className) {
-        return (value._id.toString?.() ?? String(value._id));
-      }
-    });
+    const meta = this.classParam ? setupClassAccessors(this.classParam) : null;
+    const refProps = meta ? meta.refProps : null;
 
-    // 2. Property-specific reference cleanup (ensures all isRef properties are IDs)
+    const dataAsRecord = data as unknown as Record<string, unknown>;
     for (const key of this.properties || []) {
-      const isRef = getMetadataRecursive("isRef", this, key);
-      const dataAsRecord = cleaned as unknown as Record<string, unknown>;
-      if (isRef && dataAsRecord[key]) {
-        if (Array.isArray(dataAsRecord[key])) {
-          dataAsRecord[key] = (dataAsRecord[key] as unknown[]).map(
+      const isRef = refProps ? refProps.has(key) : getMetadataRecursive("isRef", this, key);
+      const val = dataAsRecord[key];
+      if (isRef && val) {
+        if (Array.isArray(val)) {
+          dataAsRecord[key] = (val as unknown[]).map(
             (obj: unknown) =>
               (obj as { _id?: { toString(): string } | string })?._id?.toString() ??
               (obj as { toString(): string })?.toString(),
           );
-        } else {
+        } else if (typeof val === "object") {
           dataAsRecord[key] =
-            (dataAsRecord[key] as { _id?: { toString(): string } | string })?._id?.toString() ??
-            (dataAsRecord[key] as { toString(): string })?.toString();
+            (val as { _id?: { toString(): string } | string })?._id?.toString() ??
+            (val as { toString(): string })?.toString();
         }
       }
     }
-    return cleaned;
+    return data;
   }
 
   public async waitForPreloaded(timeoutMs: number = 15000): Promise<void> {
@@ -457,54 +442,15 @@ export abstract class AutoUpdatedClientObject<
     return String(val);
   }
 
-  private _definedProps = new Set<string>();
-
-  protected generateSettersAndGetters(): void {
-    if (!this.properties) return;
-    for (const key of this.properties as string[]) {
-      if (typeof key !== "string" || this._definedProps.has(key)) continue;
-      this._definedProps.add(key);
-      const isRef = getMetadataRecursive("isRef", this, key);
-
-      delete (this as Record<string, unknown>)[key];
-      Object.defineProperty(this, key, {
-        get: () => {
-          if (!this.data) return undefined;
-          let val = (this.data as Record<string, unknown>)[key];
-          if (val === null) val = undefined;
-          if (isRef && val) {
-            if (Array.isArray(val)) {
-              return val
-                .map((id: string | ObjectId) => this.findReference(id, key))
-                .filter(Boolean);
-            } else {
-              return this.findReference(val as string | ObjectId, key);
-            }
-          }
-          return val;
-        },
-        set: (v: unknown) => {
-          if (this.data) {
-            let valueToSet = v;
-            if (isRef && v) {
-              if (Array.isArray(v)) {
-                valueToSet = v.map((item) =>
-                  item && (item as any)._id
-                    ? (item as any)._id.toString()
-                    : item?.toString(),
-                );
-              } else {
-                valueToSet = (v as any)._id
-                  ? (v as any)._id.toString()
-                  : (v as any).toString();
-              }
-            }
-            (this.data as Record<string, unknown>)[key] = valueToSet;
-          }
-        },
-        enumerable: true,
-        configurable: true,
-      });
+  public generateSettersAndGetters(): void {
+    if (this.classParam) {
+      setupClassAccessors(this.classParam);
+    }
+    if (this.properties) {
+      for (const key of this.properties as string[]) {
+        if (typeof key !== "string") continue;
+        delete (this as Record<string, unknown>)[key];
+      }
     }
   }
 
@@ -533,22 +479,31 @@ export abstract class AutoUpdatedClientObject<
     return value;
   }
 
-  protected findReference(
+  public findReference(
     id: string | ObjectId,
     key: string,
   ): IAutoUpdatedClientObject<any> | undefined {
     if (!id) return undefined;
     const idStr = id.toString();
+    const cached = globalCache.objects[idStr];
+    if (cached?.object) return cached.object as IAutoUpdatedClientObject<any>;
+
     const cacheKey = `${this.className}:${key}`;
-    if (this.parentManager.cache.references[cacheKey])
-      return (
-        this.parentManager.cache.references[cacheKey]?.getObject(idStr) ?? undefined
-      );
-    for (const manager of Object.values(this.parentManager.managers)) {
-      const result = manager.getObject(idStr);
-      if (result) {
-        this.parentManager.cache.references[cacheKey] = manager;
-        return result as IAutoUpdatedClientObject<any>;
+    const cachedManager = this.parentManager?.cache?.references?.[cacheKey];
+    if (cachedManager) {
+      const res = cachedManager.getObject(idStr);
+      if (res) return res as IAutoUpdatedClientObject<any>;
+    }
+
+    if (this.parentManager?.managers) {
+      for (const manager of Object.values(this.parentManager.managers)) {
+        const result = manager.getObject(idStr);
+        if (result) {
+          if (this.parentManager.cache?.references) {
+            this.parentManager.cache.references[cacheKey] = manager;
+          }
+          return result as IAutoUpdatedClientObject<any>;
+        }
       }
     }
     return undefined;
@@ -791,11 +746,19 @@ export abstract class AutoUpdatedClientObject<
     proto: object = this,
     alreadySeen: unknown[] = [],
   ) {
-    const props = (Reflect.getMetadata("props", proto) as string[]) || [];
+    const meta = this.classParam ? setupClassAccessors(this.classParam) : null;
+    const props =
+      obj === this.data && this.properties
+        ? this.properties
+        : (Reflect.getMetadata("props", proto) as string[]) ||
+          (Reflect.getMetadata("props", Object.getPrototypeOf(proto)) as string[]) ||
+          [];
     for (const key of props) {
       if (typeof key !== "string") continue;
-      const pointer = Reflect.getMetadata("refsTo", proto, key) as string;
-      const isRef = Reflect.getMetadata("isRef", proto, key) as boolean;
+      const pointer =
+        meta?.refsToMap.get(key) ||
+        (Reflect.getMetadata("refsTo", proto, key) as string) ||
+        (proto ? (Reflect.getMetadata("refsTo", Object.getPrototypeOf(proto), key) as string) : undefined);
       if (
         pointer &&
         obj === (this.data) &&
@@ -1051,6 +1014,91 @@ export function processIsRefProperties(
     }
   }
   return { allProps, newData };
+}
+
+export function setupClassAccessors(classParam: Constructor<any>): {
+  properties: string[];
+  refProps: Set<string>;
+  refsToMap: Map<string, string>;
+} {
+  if (!classParam) {
+    return { properties: [], refProps: new Set(), refsToMap: new Map() };
+  }
+  if ((classParam as any).__metaCache) {
+    return (classParam as any).__metaCache;
+  }
+
+  const allProps = new Set<string>();
+  const refProps = new Set<string>();
+  const refsToMap = new Map<string, string>();
+
+  let proto_ = classParam.prototype;
+  while (proto_ && proto_ !== Object.prototype) {
+    const props =
+      Reflect.getMetadata("props", proto_) ||
+      Reflect.getOwnMetadata("props", proto_) ||
+      [];
+    for (const p of props) {
+      if (typeof p === "string") {
+        allProps.add(p);
+        const isRef = Reflect.getMetadata("isRef", proto_, p) || Reflect.getOwnMetadata("isRef", proto_, p);
+        if (isRef) refProps.add(p);
+        const refsTo = Reflect.getMetadata("refsTo", proto_, p) || Reflect.getOwnMetadata("refsTo", proto_, p);
+        if (refsTo) refsToMap.set(p, refsTo);
+      }
+    }
+    proto_ = Object.getPrototypeOf(proto_);
+  }
+
+  const properties = Array.from(allProps);
+
+  for (const key of properties) {
+    const isRef = refProps.has(key);
+    Object.defineProperty(classParam.prototype, key, {
+      get(this: AutoUpdatedClientObject<any>) {
+        if (!this.data) return undefined;
+        let val = (this.data as Record<string, unknown>)[key];
+        if (val === null) val = undefined;
+        if (isRef && val) {
+          if (Array.isArray(val)) {
+            return val
+              .map((id: string | ObjectId) => this.findReference(id, key))
+              .filter(Boolean);
+          } else {
+            return this.findReference(val as string | ObjectId, key);
+          }
+        }
+        return val;
+      },
+      set(this: AutoUpdatedClientObject<any>, v: unknown) {
+        if (this.data) {
+          let valueToSet = v;
+          if (isRef && v) {
+            if (Array.isArray(v)) {
+              valueToSet = v.map((item) =>
+                item && (item as any)._id
+                  ? (item as any)._id.toString()
+                  : item?.toString(),
+              );
+            } else {
+              valueToSet = (v as any)._id
+                ? (v as any)._id.toString()
+                : (v as any).toString();
+            }
+          }
+          (this.data as Record<string, unknown>)[key] = valueToSet;
+        }
+      },
+      enumerable: true,
+      configurable: true,
+    });
+  }
+
+  const meta = { properties, refProps, refsToMap };
+  (classParam as any).__metaCache = meta;
+  (classParam as any).__propsCache = properties;
+  (classParam as any).__refPropsCache = Array.from(refProps);
+  return meta;
 }
 
 export function getMetadataRecursive(
