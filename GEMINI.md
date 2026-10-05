@@ -13,6 +13,7 @@ Welcome to the DEM Project. This file serves as the root of the project's memory
     - If tests fail, run `npm test` for more info and fix the failing tests.
 5.  **Type Safety**: NEVER (only if very necessary) use `as any`. All types should be working correctly.
 6.  **Test Coverage**: When adding or fixing a feature, check for existing tests. If none exist, create them.
+7.  **Issue Reproduction & Test-Driven Fixes**: All issues must first be reproduced via a test. Only after reproduction succeeds (failing test reproducing the bug), start working on the fix until the test passes. If at any time (even during active work) a test is found to be invalid or flawed, stop work immediately and notify the user.
 
 ## Version Control Workflow
 
