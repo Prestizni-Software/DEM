@@ -1,9 +1,8 @@
-import fs from "fs";
 import path from "path";
-import { execSync } from "child_process";
+import { releasePackage } from "./release.js";
 
 const serverDir = path.resolve("..", "server");
-const files = [
+const serverFiles = [
   "tsconfig.json",
   "AutoUpdatedClientObjectClass.ts",
   "AutoUpdateManagerClass.ts",
@@ -14,14 +13,12 @@ const files = [
   "AutoUpdatedServerObjectClass.ts",
 ];
 
-for (const file of files) {
-  const src = path.resolve(file);
-  const dest = path.join(serverDir, file);
-  if (fs.existsSync(src)) {
-    fs.copyFileSync(src, dest);
-  }
-}
+const args = process.argv.slice(2);
+const releaseType = args.find((a) => ["patch", "minor", "major"].includes(a)) || "patch";
+const syncOnly = args.includes("sync");
+const dryRun = args.includes("--dry-run");
 
-if (fs.existsSync(serverDir)) {
-  execSync("npm run release", { cwd: serverDir, stdio: "inherit" });
-}
+releasePackage(serverDir, serverFiles, "@prestizni-software/server-dem", releaseType, {
+  syncOnly,
+  dryRun,
+});
