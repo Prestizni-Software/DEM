@@ -521,16 +521,32 @@ export class AutoUpdateServerManager<
         ) => void,
       ) => {
         try {
-          const allowedObjects = this.options?.accessDefinitions?.startupMiddleware
-            ? await this.options.accessDefinitions.startupMiddleware(
-                this.objectsAsArray,
-                this.managers as any,
-                socket,
-              )
-            : this.objectsAsArray;
+          let ids: string[];
+          let objects: any[];
 
-          const ids = allowedObjects.map((obj) => obj._id.toString()).filter(Boolean);
-          const objects = allowedObjects.map((obj) => (obj as any).extractedData).filter(Boolean);
+          if (!this.options?.accessDefinitions?.startupMiddleware && this.startupPayloadCache) {
+            ids = this.startupPayloadCache.ids;
+            objects = this.startupPayloadCache.objects ?? [];
+          } else {
+            const allowedObjects = this.options?.accessDefinitions?.startupMiddleware
+              ? await this.options.accessDefinitions.startupMiddleware(
+                  this.objectsAsArray,
+                  this.managers as any,
+                  socket,
+                )
+              : this.objectsAsArray;
+
+            ids = allowedObjects.map((obj) => obj._id.toString()).filter(Boolean);
+            objects = allowedObjects.map((obj) => (obj as any).extractedData).filter(Boolean);
+
+            if (!this.options?.accessDefinitions?.startupMiddleware) {
+              this.startupPayloadCache = {
+                ids,
+                objects,
+                properties: this.properties as string[],
+              };
+            }
+          }
 
           this.loggers.debug(
             "Sending startup data for manager " + this.className,

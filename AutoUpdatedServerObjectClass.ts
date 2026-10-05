@@ -116,34 +116,28 @@ export abstract class AutoUpdatedServerObject<
       );
     }
 
-    // Convert reference IDs to ObjectIds on the server side
+    // Convert reference IDs to ObjectIds on the server side in-place
     const dataRec = this.data as Record<string, unknown>;
-    for (const prop of classParamAny.__refPropsCache) {
-      if (typeof prop !== "string" || !dataRec[prop]) continue;
-      try {
-        if (Array.isArray(dataRec[prop])) {
-          dataRec[prop] = (dataRec[prop] as any[])
-            .map((item) => {
-              if (!item) return null;
-              const idStr = (item as any)._id
-                ? (item as any)._id.toString()
-                : item.toString();
-              if (idStr === {}.toString()) return null; // Avoid [object Object]
-              return ObjectId.isValid(idStr) ? new ObjectId(idStr) : item;
-            })
-            .filter((item) => item !== null);
-        } else {
-          const idStr = (dataRec[prop] as any)._id
-            ? (dataRec[prop] as any)._id.toString()
-            : (dataRec[prop] as any).toString();
+    if (dataRec && typeof dataRec === "object") {
+      for (const prop of classParamAny.__refPropsCache) {
+        const val = dataRec[prop];
+        if (!val) continue;
+        if (Array.isArray(val)) {
+          for (let i = 0; i < val.length; i++) {
+            const item = val[i];
+            if (item && !(item instanceof ObjectId)) {
+              const idStr = (item as any)._id ? (item as any)._id.toString() : item.toString();
+              if (idStr !== {}.toString() && ObjectId.isValid(idStr)) {
+                val[i] = new ObjectId(idStr);
+              }
+            }
+          }
+        } else if (!(val instanceof ObjectId)) {
+          const idStr = (val as any)._id ? (val as any)._id.toString() : (val as any).toString();
           if (idStr !== {}.toString() && ObjectId.isValid(idStr)) {
             dataRec[prop] = new ObjectId(idStr);
           }
         }
-      } catch (error: any) {
-        this.loggers.error(
-          `Failed to set reference ${prop} to ${dataRec[prop]}: ${error.message}`,
-        );
       }
     }
   }
@@ -175,10 +169,8 @@ export abstract class AutoUpdatedServerObject<
           `Object not found in DB: ${this.className} with ID ${_id}`,
         );
 
-      this.data = this.handleDataCleanup({
-        ...this.data,
-        ...this.entry.toObject(),
-      });
+      const docObj = typeof (this.entry as any).toObject === "function" ? (this.entry as any).toObject() : this.entry;
+      this.data = this.handleDataCleanup(docObj);
       this.isLoading = false;
       this.generateSettersAndGetters();
       this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
@@ -188,30 +180,39 @@ export abstract class AutoUpdatedServerObject<
 
   public loadFromDocument(document: DocumentType<T>): void {
     this.entry = document;
-    this.data = this.handleDataCleanup({
-      ...this.data,
-      ...this.entry.toObject(),
-    });
+    const docObj = typeof (document as any).toObject === "function" ? (document as any).toObject() : document;
+    this.data = this.handleDataCleanup(docObj);
     this.isLoading = false;
     this.generateSettersAndGetters();
     this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
   }
 
-  /** Override extractedData to return shallow copy */
+  private _cachedExtractedData: ExtractedData<
+    T,
+    IAutoUpdatedClientObject<any>
+  > | null = null;
+
+  public override handleDataCleanup(data: IsData<T>): IsData<T> {
+    this._cachedExtractedData = null;
+    return super.handleDataCleanup(data);
+  }
+
+  /** Override extractedData to return processed copy with cache */
   public override get extractedData(): ExtractedData<
     T,
     IAutoUpdatedClientObject<any>
   > {
-    const dataToProcess = _.cloneDeep(this.data);
+    if (this._cachedExtractedData) return this._cachedExtractedData;
     const extracted = processIsRefProperties(
-      dataToProcess as any,
+      this.data as any,
       this,
       null,
       [],
       {},
       this.loggers,
-    ).newData;
-    return extracted as any;
+    ).newData as ExtractedData<T, IAutoUpdatedClientObject<any>>;
+    this._cachedExtractedData = extracted;
+    return extracted;
   }
 
   protected override async setValueInternal(
@@ -263,6 +264,7 @@ export abstract class AutoUpdatedServerObject<
         await this.saveLock;
       }
 
+      this._cachedExtractedData = null;
       if (!silent) {
         const update = this.makeUpdate(key, value);
         const event = EVENT_UPDATE + this.className + _id.toString();

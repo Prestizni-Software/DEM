@@ -454,8 +454,9 @@ export abstract class AutoUpdatedClientObject<
     }
     if (this.properties) {
       for (const key of this.properties as string[]) {
-        if (typeof key !== "string") continue;
-        delete (this as Record<string, unknown>)[key];
+        if (typeof key === "string" && Object.hasOwn(this, key)) {
+          delete (this as Record<string, unknown>)[key];
+        }
       }
     }
   }
@@ -750,7 +751,7 @@ export abstract class AutoUpdatedClientObject<
       unknown
     >,
     proto: object = this,
-    alreadySeen: unknown[] = [],
+    alreadySeen: Set<unknown> = new Set(),
   ) {
     const meta = this.classParam ? setupClassAccessors(this.classParam) : null;
     const props =
@@ -769,7 +770,7 @@ export abstract class AutoUpdatedClientObject<
         pointer &&
         obj === (this.data) &&
         obj[key] &&
-        !alreadySeen.includes(obj)
+        !alreadySeen.has(obj)
       ) {
         await this.createdWithParent(
           pointer.split(":"),
@@ -777,14 +778,19 @@ export abstract class AutoUpdatedClientObject<
         );
       }
 
-      if (obj[key] && !alreadySeen.includes(obj[key]))
-        alreadySeen.push(obj[key]);
+      if (obj[key] && !alreadySeen.has(obj[key]))
+        alreadySeen.add(obj[key]);
 
       const val = obj[key];
-      if (val && typeof val === "object") {
+      if (
+        val &&
+        typeof val === "object" &&
+        !(val instanceof Date) &&
+        !(val instanceof ObjectId)
+      ) {
         const nestedProto = Object.getPrototypeOf(val);
-        if (nestedProto && !alreadySeen.includes(val)) {
-          alreadySeen.push(val);
+        if (nestedProto && !alreadySeen.has(val)) {
+          alreadySeen.add(val);
           await this.loadForceReferences(
             val as Record<string, unknown>,
             nestedProto,
@@ -802,12 +808,10 @@ export abstract class AutoUpdatedClientObject<
     if (pointer.length !== 2) return;
     const parentId =
       (parent._id as { toString(): string })?.toString() ?? parent.toString();
-    
-    this.loggers.debug(`createdWithParent: pointer=${pointer.join(":")}, parentId=${parentId}`);
 
     const manager = this.parentManager.managers[pointer[0]];
     if (!manager) {
-      this.loggers.warn(`createdWithParent: Manager not found for ${pointer[0]}. Available managers: ${Object.keys(this.parentManager.managers).join(", ")}`);
+      this.loggers.warn?.(`createdWithParent: Manager not found for ${pointer[0]}.`);
       return;
     }
 
@@ -815,24 +819,25 @@ export abstract class AutoUpdatedClientObject<
       | IAutoUpdatedClientObject<any>
       | undefined;
     if (!obj) {
-      this.loggers.warn(`createdWithParent: Parent object not found for ID ${parentId} in manager ${pointer[0]}`);
+      this.loggers.warn?.(`createdWithParent: Parent object not found for ID ${parentId} in manager ${pointer[0]}`);
       return;
     }
-    const val = obj.getValue(pointer[1] as any);
-    const myId = this.data._id.toString();
-    const valLog = Array.isArray(val)
-      ? `[${val.map((v: any) => v?._id?.toString() ?? v?.toString()).join(", ")}]`
-      : (val as any)?._id?.toString() ?? String(val);
-    this.loggers.debug?.(
-      `createdWithParent: Current parent value for ${pointer[1]} is ${valLog}, myId=${myId}`,
-    );
-    if (Array.isArray(val)) {
-      const ids = val.map(
-        (v: unknown) =>
-          (v as { _id?: { toString(): string } | string })?._id?.toString() ??
-          (v as { toString(): string })?.toString(),
-      );
-      if (!ids.includes(myId)) {
+
+    const myId = (this.data._id as any)?.toString?.() ?? String(this.data._id);
+    const rawData = (obj as any).data as Record<string, unknown> | undefined;
+    const rawVal = rawData ? rawData[pointer[1]] : undefined;
+
+    if (Array.isArray(rawVal)) {
+      let alreadyIncluded = false;
+      for (let i = 0; i < rawVal.length; i++) {
+        const item = rawVal[i];
+        const idStr = (item as any)?._id?.toString?.() ?? item?.toString?.();
+        if (idStr === myId) {
+          alreadyIncluded = true;
+          break;
+        }
+      }
+      if (!alreadyIncluded) {
         this.loggers.debug?.(`createdWithParent: Adding myId to parent array`);
         await (
           obj as unknown as {
@@ -845,25 +850,25 @@ export abstract class AutoUpdatedClientObject<
               isParentUpdate?: boolean,
             ): Promise<void>;
           }
-        ).setValue__(pointer[1], [...val, myId], false, false, false, true);
+        ).setValue__(pointer[1], [...rawVal, myId], false, false, false, true);
       }
-    } else if (
-      ((val as { _id?: { toString(): string } | string })?._id?.toString() ??
-        (val as { toString(): string })?.toString()) !== myId
-    ) {
-      this.loggers.debug?.(`createdWithParent: Setting myId to parent field`);
-      await (
-        obj as unknown as {
-          setValue__(
-            key: string,
-            val: unknown,
-            silent?: boolean,
-            noGet?: boolean,
-            noUpdate?: boolean,
-            isParentUpdate?: boolean,
-          ): Promise<void>;
-        }
-      ).setValue__(pointer[1], myId, false, false, false, true);
+    } else {
+      const currentIdStr = (rawVal as any)?._id?.toString?.() ?? rawVal?.toString?.();
+      if (currentIdStr !== myId) {
+        this.loggers.debug?.(`createdWithParent: Setting myId to parent field`);
+        await (
+          obj as unknown as {
+            setValue__(
+              key: string,
+              val: unknown,
+              silent?: boolean,
+              noGet?: boolean,
+              noUpdate?: boolean,
+              isParentUpdate?: boolean,
+            ): Promise<void>;
+          }
+        ).setValue__(pointer[1], myId, false, false, false, true);
+      }
     }
   }
 
@@ -890,7 +895,7 @@ export abstract class AutoUpdatedClientObject<
         this,
         prop.toString(),
       ) as string;
-      if (pointer && !this.getValue(prop as any)) {
+      if (pointer && !(this.data as Record<string, unknown>)?.[prop]) {
         const parts = pointer.split(":");
         if (parts.length === 2)
           await this.findMissingObjectReference(prop, parts);
@@ -909,29 +914,28 @@ export abstract class AutoUpdatedClientObject<
       >
     )[pointer[0]];
     if (!ac) return;
-    const targetId = this.data._id.toString();
-    const allObjects = Object.values(
-      ac.objectsAsArray,
-    ) as IAutoUpdatedClientObject<any>[];
-    for (const obj of allObjects) {
-      if (!obj.isLoaded) await obj.waitForPreloaded();
-      const val = obj.getValue(pointer[1] as any);
+    const targetId = (this.data._id as any)?.toString?.() ?? String(this.data._id);
+    const allObjects = ac.objectsAsArray;
+    for (let i = 0; i < allObjects.length; i++) {
+      const obj = allObjects[i];
+      const rawData = (obj as any).data as Record<string, unknown> | undefined;
+      if (!rawData) continue;
+      const val = rawData[pointer[1]];
       if (!val) continue;
-      const ids = Array.isArray(val)
-        ? val.map(
-            (v: unknown) =>
-              (
-                v as { _id?: { toString(): string } | string }
-              )?._id?.toString() ?? (v as { toString(): string }).toString(),
-          )
-        : [
-            (
-              val as { _id?: { toString(): string } | string }
-            )._id?.toString() ?? (val as { toString(): string }).toString(),
-          ];
-      if (ids.includes(targetId)) {
-        (this.data as Record<string, unknown>)[prop] = obj._id;
-        return;
+      if (Array.isArray(val)) {
+        for (let j = 0; j < val.length; j++) {
+          const id = (val[j] as any)?._id?.toString?.() ?? val[j]?.toString?.();
+          if (id === targetId) {
+            (this.data as Record<string, unknown>)[prop] = obj._id;
+            return;
+          }
+        }
+      } else {
+        const id = (val as any)?._id?.toString?.() ?? val?.toString?.();
+        if (id === targetId) {
+          (this.data as Record<string, unknown>)[prop] = obj._id;
+          return;
+        }
       }
     }
   }
