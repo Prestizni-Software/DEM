@@ -1,6 +1,6 @@
-import type { Config } from '@jest/types';
+import type { JestConfigWithTsJest } from 'ts-jest';
 
-const config: Config.InitialOptions = {
+const config: JestConfigWithTsJest = {
     globals: {
         "ts-jest": {
             useESM: true
