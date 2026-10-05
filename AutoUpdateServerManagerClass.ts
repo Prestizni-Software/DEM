@@ -13,6 +13,9 @@ import {
   EVENT_DELETE,
   EVENT_GET,
   EVENT_STARTUP,
+  EVENT_VERSION,
+  DEM_VERSION,
+  DEM_PROTOCOL_VERSION,
   EventEmitter3,
   MongoId,
   IAutoUpdatedClientObjectBase,
@@ -380,14 +383,18 @@ export async function AUSManagerFactory<
   );
 
   socket.on("connection", async (socket: Socket) => {
-    loggers.debug?.(`Client connected: ${socket.id}`);
+    loggers.debug?.(`Client connected: ${socket?.id}`);
+    socket?.emit?.(EVENT_VERSION, {
+      version: DEM_VERSION,
+      protocolVersion: DEM_PROTOCOL_VERSION,
+    });
     for (const manager of Object.values(
       managers,
     ) as AutoUpdateServerManager<any>[]) {
       manager.registerSocket(socket);
     }
-    socket.on("disconnect", () => {
-      loggers.debug?.(`Client disconnected: ${socket.id}`);
+    socket?.on?.("disconnect", () => {
+      loggers.debug?.(`Client disconnected: ${socket?.id}`);
     });
   });
 
@@ -504,7 +511,13 @@ export class AutoUpdateServerManager<
       async (
         _: unknown,
         ack?: (
-          res: ServerResponse<{ ids: string[]; objects?: any[]; properties: string[] }>,
+          res: ServerResponse<{
+            ids: string[];
+            objects?: any[];
+            properties: string[];
+            version?: string;
+            protocolVersion?: string;
+          }>,
         ) => void,
       ) => {
         try {
@@ -524,7 +537,13 @@ export class AutoUpdateServerManager<
           );
           if (typeof ack === "function") {
             ack({
-              data: { ids, objects, properties: this.properties as string[] },
+              data: {
+                ids,
+                objects,
+                properties: this.properties as string[],
+                version: DEM_VERSION,
+                protocolVersion: DEM_PROTOCOL_VERSION,
+              },
               success: true,
             });
           }

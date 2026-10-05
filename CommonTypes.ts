@@ -281,6 +281,229 @@ export const EVENT_DELETE = "delete";
 export const EVENT_NEW = "new";
 export const EVENT_GET = "get";
 export const EVENT_STARTUP = "startup";
+export const EVENT_VERSION = "dem_version";
+
+/**
+ * Current version of the DEM library.
+ */
+export const DEM_VERSION = "0.6.5";
+
+/**
+ * DEM socket protocol version.
+ */
+export const DEM_PROTOCOL_VERSION = "1.0.0";
+
+/**
+ * Configuration options for DEM client-server version verification.
+ */
+export interface DEMVersionOptions {
+  /**
+   * If true, requires exact or strict compatibility between client and server versions.
+   * In strict mode, minor or major mismatches reject the connection.
+   * Default: false (allows minor/patch differences, warning on differences).
+   */
+  strictVersionMatch?: boolean;
+
+  /**
+   * Optional minimum server version required by the client.
+   * e.g., "0.6.0"
+   */
+  minServerVersion?: string;
+
+  /**
+   * Optional custom validator callback.
+   * Return true for compatible, false or error message string if incompatible.
+   */
+  validateVersion?: (
+    clientVersion: string,
+    serverVersion: string,
+  ) => boolean | string;
+
+  /**
+   * Optional callback triggered when a version mismatch or notice is detected.
+   */
+  onVersionMismatch?: (
+    clientVersion: string,
+    serverVersion: string,
+    message: string,
+  ) => void;
+}
+
+/**
+ * Result of a DEM version verification check.
+ */
+export interface DEMVersionVerificationResult {
+  compatible: boolean;
+  clientVersion: string;
+  serverVersion: string;
+  status:
+    | "match"
+    | "compatible_minor"
+    | "compatible_patch"
+    | "mismatch_major"
+    | "mismatch_minor"
+    | "below_min_version"
+    | "custom_rejected"
+    | "unknown";
+  message: string;
+}
+
+export interface ParsedSemVer {
+  major: number;
+  minor: number;
+  patch: number;
+  prerelease?: string;
+}
+
+/**
+ * Parses a semantic version string (e.g. "0.6.5", "v1.2.3-alpha").
+ */
+export function parseSemVer(version: string): ParsedSemVer | null {
+  if (!version || typeof version !== "string") return null;
+  const cleaned = version.trim().replace(/^v/, "");
+  const match = cleaned.match(/^(\d+)\.(\d+)(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?/);
+  if (!match) return null;
+  return {
+    major: parseInt(match[1], 10),
+    minor: parseInt(match[2], 10),
+    patch: match[3] !== undefined ? parseInt(match[3], 10) : 0,
+    prerelease: match[4] || undefined,
+  };
+}
+
+/**
+ * Compares two semantic version strings.
+ * Returns -1 if v1 < v2, 0 if v1 === v2, 1 if v1 > v2.
+ */
+export function compareSemVer(v1: string, v2: string): number {
+  const p1 = parseSemVer(v1);
+  const p2 = parseSemVer(v2);
+  if (!p1 && !p2) return 0;
+  if (!p1) return -1;
+  if (!p2) return 1;
+
+  if (p1.major !== p2.major) return p1.major > p2.major ? 1 : -1;
+  if (p1.minor !== p2.minor) return p1.minor > p2.minor ? 1 : -1;
+  if (p1.patch !== p2.patch) return p1.patch > p2.patch ? 1 : -1;
+  return 0;
+}
+
+/**
+ * Verifies compatibility between client and server DEM versions.
+ */
+export function verifyDEMVersion(
+  clientVersion: string,
+  serverVersion: string,
+  options?: DEMVersionOptions,
+): DEMVersionVerificationResult {
+  const cParsed = parseSemVer(clientVersion);
+  const sParsed = parseSemVer(serverVersion);
+
+  if (options?.validateVersion) {
+    const customRes = options.validateVersion(clientVersion, serverVersion);
+    if (customRes === true) {
+      return {
+        compatible: true,
+        clientVersion,
+        serverVersion,
+        status: "match",
+        message: `Custom version validator accepted client ${clientVersion} and server ${serverVersion}.`,
+      };
+    }
+    const msg =
+      typeof customRes === "string"
+        ? customRes
+        : `Custom version validator rejected client ${clientVersion} with server ${serverVersion}.`;
+    return {
+      compatible: false,
+      clientVersion,
+      serverVersion,
+      status: "custom_rejected",
+      message: msg,
+    };
+  }
+
+  if (!cParsed || !sParsed) {
+    const isExact = clientVersion === serverVersion;
+    return {
+      compatible: isExact || !options?.strictVersionMatch,
+      clientVersion,
+      serverVersion,
+      status: isExact ? "match" : "unknown",
+      message: isExact
+        ? `DEM versions match (${clientVersion}).`
+        : `Non-semver DEM versions encountered: client '${clientVersion}', server '${serverVersion}'.`,
+    };
+  }
+
+  // Check minimum server version requirement if specified
+  if (options?.minServerVersion) {
+    if (compareSemVer(serverVersion, options.minServerVersion) < 0) {
+      return {
+        compatible: false,
+        clientVersion,
+        serverVersion,
+        status: "below_min_version",
+        message: `Server DEM version ${serverVersion} is lower than required minimum ${options.minServerVersion}.`,
+      };
+    }
+  }
+
+  // Exact match
+  if (
+    cParsed.major === sParsed.major &&
+    cParsed.minor === sParsed.minor &&
+    cParsed.patch === sParsed.patch
+  ) {
+    return {
+      compatible: true,
+      clientVersion,
+      serverVersion,
+      status: "match",
+      message: `DEM versions match (${clientVersion}).`,
+    };
+  }
+
+  // Major version mismatch (incompatible by SemVer rules)
+  if (cParsed.major !== sParsed.major) {
+    return {
+      compatible: false,
+      clientVersion,
+      serverVersion,
+      status: "mismatch_major",
+      message: `Incompatible major DEM version: Client is ${clientVersion}, Server is ${serverVersion}.`,
+    };
+  }
+
+  // Minor version difference
+  if (cParsed.minor !== sParsed.minor) {
+    if (options?.strictVersionMatch) {
+      return {
+        compatible: false,
+        clientVersion,
+        serverVersion,
+        status: "mismatch_minor",
+        message: `Strict version check failed: Client minor version (${clientVersion}) differs from Server (${serverVersion}).`,
+      };
+    }
+    return {
+      compatible: true,
+      clientVersion,
+      serverVersion,
+      status: "compatible_minor",
+      message: `DEM minor version notice: Client (${clientVersion}) differs from Server (${serverVersion}). Functionality is compatible.`,
+    };
+  }
+
+  // Patch version difference
+  return {
+    compatible: true,
+    clientVersion,
+    serverVersion,
+    status: "compatible_patch",
+    message: `DEM patch version notice: Client (${clientVersion}) and Server (${serverVersion}).`,
+  };
+}
 
 export function safeStringify(obj: unknown): string {
   try {

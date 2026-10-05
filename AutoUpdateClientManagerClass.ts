@@ -11,6 +11,11 @@ import {
   MongoId,
   IAutoUpdateManager,
   EVENT_UPDATE,
+  EVENT_VERSION,
+  DEM_VERSION,
+  DEM_PROTOCOL_VERSION,
+  DEMVersionOptions,
+  verifyDEMVersion,
 } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
 
@@ -36,6 +41,7 @@ export async function AUCManagerFactory<
       DEMClientCallbacks<IAutoUpdatedClientObjectBase>
     >
   > = {},
+  versionOptions?: DEMVersionOptions,
 ): Promise<WrappedInstances<T>> {
   const defaultCallbacks: DEMClientCallbacks<IAutoUpdatedClientObjectBase> = {
     new: callbacks.new ?? ((_x: IAutoUpdatedClientObjectBase) => {}),
@@ -83,6 +89,7 @@ export async function AUCManagerFactory<
           ...callbacks[key],
           progress: innerProgressUpdater,
         },
+        versionOptions,
       );
       managers[key] = c as any;
     } catch (error: unknown) {
@@ -172,6 +179,7 @@ export class AutoUpdateClientManager<
   readonly managers: M;
   callbacks: DEMClientCallbacks<any>;
   public readonly socket: Socket;
+  public readonly versionOptions?: DEMVersionOptions;
   totalObjects: number = 0;
   loadedObjects: number = 0;
   private pendingMissingFetches = new Map<string, Promise<T>>();
@@ -185,6 +193,7 @@ export class AutoUpdateClientManager<
     managers: M,
     emitter: EventEmitter,
     callbacks: DEMClientCallbacks<any>,
+    versionOptions?: DEMVersionOptions,
   ) {
     if (!classParam) throw new Error("Missing required argument: classParam");
     if (!className) throw new Error("Missing required argument: className");
@@ -193,6 +202,7 @@ export class AutoUpdateClientManager<
     this.socket = socket;
     this.managers = managers;
     this.callbacks = callbacks;
+    this.versionOptions = versionOptions;
 
     this.socket?.on?.("reconnect", async () => {
       this.loggers.info?.("Socket reconnected, reloading manager data from server...");
@@ -286,7 +296,13 @@ export class AutoUpdateClientManager<
         "startup" + this.className,
         null,
         async (
-          res: ServerResponse<{ ids: string[]; objects?: any[]; properties: string[] }>,
+          res: ServerResponse<{
+            ids: string[];
+            objects?: any[];
+            properties: string[];
+            version?: string;
+            protocolVersion?: string;
+          }>,
         ) => {
           clearTimeout(timer);
           if (!res || !res.success) {
@@ -298,6 +314,48 @@ export class AutoUpdateClientManager<
           }
 
           const data = res.data;
+
+          // DEM Version Verification
+          if (data.version) {
+            const verResult = verifyDEMVersion(
+              DEM_VERSION,
+              data.version,
+              this.versionOptions,
+            );
+            if (!verResult.compatible) {
+              const errMsg =
+                verResult.message ||
+                `DEM Version Incompatibility: Client (${DEM_VERSION}) is incompatible with Server (${data.version})`;
+              this.loggers.error?.(errMsg);
+              this.versionOptions?.onVersionMismatch?.(
+                DEM_VERSION,
+                data.version,
+                errMsg,
+              );
+              if (this.versionOptions?.strictVersionMatch) {
+                reject(new Error(errMsg));
+                return;
+              }
+            } else if (verResult.status !== "match") {
+              this.loggers.warn?.(verResult.message);
+              this.versionOptions?.onVersionMismatch?.(
+                DEM_VERSION,
+                data.version,
+                verResult.message,
+              );
+            }
+          } else {
+            this.loggers.debug?.(
+              `Connected to DEM server for ${this.className} without version payload.`,
+            );
+            if (this.versionOptions?.strictVersionMatch) {
+              const errMsg = `Strict DEM version match required for ${this.className}, but server did not provide a version.`;
+              this.loggers.error?.(errMsg);
+              reject(new Error(errMsg));
+              return;
+            }
+          }
+
           const serverPropsCopy = [...data.properties];
           let extraProperties: string[] = [];
           for (const property of this.properties) {
