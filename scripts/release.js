@@ -62,7 +62,7 @@ function syncPackage(targetDir, files, packageName) {
 }
 
 export function releasePackage(targetDir, files, packageName, releaseType = "patch", options = {}) {
-  const { syncOnly = false, dryRun = false, skipTests = false } = options;
+  const { syncOnly = false, dryRun = false, skipTests = false, skipPublish = false } = options;
 
   log(`\n========================================`);
   log(`Starting release workflow for ${packageName}`);
@@ -105,10 +105,18 @@ export function releasePackage(targetDir, files, packageName, releaseType = "pat
   log(`Pushing git tags to origin...`);
   runCommand("git push --follow-tags", targetDir);
 
-  log(`Publishing ${packageName} to npm...`);
-  runCommand("npm publish --access public", targetDir);
+  if (skipPublish) {
+    logSuccess(`Skipping npm publish as requested for ${packageName}.`);
+    return;
+  }
 
-  logSuccess(`Successfully released and published ${packageName}!`);
+  log(`Publishing ${packageName} to npm...`);
+  try {
+    runCommand("npm publish --access public", targetDir);
+    logSuccess(`Successfully released and published ${packageName}!`);
+  } catch (err) {
+    logError(`npm publish failed for ${packageName}. Please make sure you are logged in (npm login) and run 'npm publish --access public' in ${targetDir}.`);
+  }
 }
 
 // CLI entry point
@@ -117,11 +125,13 @@ const target = args[0] || "all"; // all | client | server
 const releaseType = args.find((a) => ["patch", "minor", "major"].includes(a)) || "patch";
 const syncOnly = args.includes("sync");
 const dryRun = args.includes("--dry-run");
+const skipPublish = args.includes("--no-publish") || args.includes("--skip-publish");
 
 if (target === "client" || target === "all") {
   releasePackage(clientDir, clientFiles, "@prestizni-software/client-dem", releaseType, {
     syncOnly,
     dryRun,
+    skipPublish,
     skipTests: target === "all" && target !== "client",
   });
 }
@@ -130,6 +140,7 @@ if (target === "server" || target === "all") {
   releasePackage(serverDir, serverFiles, "@prestizni-software/server-dem", releaseType, {
     syncOnly,
     dryRun,
+    skipPublish,
     skipTests: target === "all",
   });
 }
