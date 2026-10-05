@@ -215,6 +215,56 @@ export abstract class AutoUpdatedServerObject<
     return extracted;
   }
 
+  public override async setValue<K extends string>(
+    key: K,
+    val: any,
+  ): Promise<{ success: boolean; msg: string }> {
+    if (
+      this._isUpdating &&
+      typeof (this as any).setValueQueueInternal === "function"
+    ) {
+      return (this as any).setValueQueueInternal(
+        key,
+        val,
+        false,
+        false,
+        true,
+      );
+    }
+    return await super.setValue(key as any, val);
+  }
+
+  protected override async setValue__(
+    key: string,
+    val: unknown,
+    silent = false,
+    noGet = false,
+    noUpdate = false,
+    isParentUpdate = false,
+  ): Promise<{ success: boolean; msg: string }> {
+    if (
+      this._isUpdating &&
+      typeof (this as any).setValueQueueInternal === "function"
+    ) {
+      return (this as any).setValueQueueInternal(
+        key,
+        val,
+        silent,
+        noGet,
+        noUpdate,
+        isParentUpdate,
+      );
+    }
+    return await super.setValue__(
+      key,
+      val,
+      silent,
+      noGet,
+      noUpdate,
+      isParentUpdate,
+    );
+  }
+
   protected override async setValueInternal(
     key: string,
     value: unknown,
@@ -264,11 +314,21 @@ export abstract class AutoUpdatedServerObject<
         await this.saveLock;
       }
 
+      (this.data as any)[key] = value;
       this._cachedExtractedData = null;
       if (!silent) {
         const update = this.makeUpdate(key, value);
         const event = EVENT_UPDATE + this.className + _id.toString();
         (this.socket as any).emit(event, update);
+        if (
+          this.parentManager &&
+          typeof (this.parentManager as any).checkPermissionBoundaries ===
+            "function"
+        ) {
+          await (this.parentManager as any).checkPermissionBoundaries(
+            this as unknown as T,
+          );
+        }
       }
 
       return { success: true, msg: "Success" };
@@ -335,6 +395,15 @@ export abstract class AutoUpdatedServerObject<
       }
     } finally {
       this._isUpdating = false;
+      if (
+        this.parentManager &&
+        typeof (this.parentManager as any).checkPermissionBoundaries ===
+          "function"
+      ) {
+        await (this.parentManager as any).checkPermissionBoundaries(
+          this as unknown as T,
+        );
+      }
     }
   }
 

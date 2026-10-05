@@ -228,6 +228,7 @@ export class AutoUpdateClientManager<
     this.socket.off("delete" + this.className);
 
     this.socket.on("new" + this.className, async (id: string) => {
+      if (this.getObject(id)) return;
       this.loggers.debug(
         "Applying new object from manager " + this.className + " - " + id,
       );
@@ -250,6 +251,7 @@ export class AutoUpdateClientManager<
     });
 
     this.socket.on("delete" + this.className, async (id: string) => {
+      if (!this.getObject(id)) return;
       this.loggers.debug(
         "Applying object deletion from manager " + this.className + " - " + id,
       );

@@ -419,7 +419,8 @@ export class AutoUpdateServerManager<
   M extends Record<string, IAutoUpdateManager<any>> = any,
 > extends AutoUpdateManager<T, M> {
   public readonly model: ReturnModelType<any, BeAnObject>;
-  private readonly clientSockets = new Set<Socket>();
+  public readonly clientSockets = new Set<Socket>();
+  private readonly knownObjectIdsBySocket = new Map<Socket, Set<string>>();
   public readonly options?: AUSOption<
     T,
     Record<string, IAutoUpdatedClientObject<any>>
@@ -538,6 +539,8 @@ export class AutoUpdateServerManager<
 
             ids = allowedObjects.map((obj) => obj._id.toString()).filter(Boolean);
             objects = allowedObjects.map((obj) => (obj as any).extractedData).filter(Boolean);
+
+            this.knownObjectIdsBySocket.set(socket, new Set(ids));
 
             if (!this.options?.accessDefinitions?.startupMiddleware) {
               this.startupPayloadCache = {
@@ -749,6 +752,7 @@ export class AutoUpdateServerManager<
 
     socket.on("disconnect", () => {
       this.clientSockets.delete(socket);
+      this.knownObjectIdsBySocket.delete(socket);
     });
   }
 
@@ -772,6 +776,13 @@ export class AutoUpdateServerManager<
     _id: MongoId,
   ): Promise<{ success: boolean; message: string }> {
     this._cachedObjectsArray = null;
+    const idStr = _id.toString();
+    for (const socket of this.clientSockets) {
+      const known = this.knownObjectIdsBySocket.get(socket);
+      if (known) {
+        known.delete(idStr);
+      }
+    }
     return super.deleteObject(_id);
   }
 
@@ -899,6 +910,12 @@ export class AutoUpdateServerManager<
           : [object as any];
 
         if (theTruth.length > 0) {
+          let known = this.knownObjectIdsBySocket.get(socket);
+          if (!known) {
+            known = new Set();
+            this.knownObjectIdsBySocket.set(socket, known);
+          }
+          known.add(id);
           this.loggers.debug("Emitting new object " + (object as any)._id);
           socket.emit("new" + this.className, (object as any)._id.toString());
         }
@@ -915,5 +932,46 @@ export class AutoUpdateServerManager<
       }
     }
     return object as any as T;
+  }
+
+  public async checkPermissionBoundaries(object: T): Promise<void> {
+    if (!this.options?.accessDefinitions?.startupMiddleware) return;
+    const id = object._id.toString();
+    for (const socket of this.clientSockets) {
+      try {
+        const theTruth = await this.options.accessDefinitions.startupMiddleware(
+          [object],
+          this.managers as any,
+          socket,
+        );
+        const hasAccess = theTruth && theTruth.length > 0;
+        let known = this.knownObjectIdsBySocket.get(socket);
+        if (!known) {
+          known = new Set();
+          this.knownObjectIdsBySocket.set(socket, known);
+        }
+        const hadAccess = known.has(id);
+
+        if (hasAccess && !hadAccess) {
+          known.add(id);
+          this.loggers.debug(
+            `Granting dynamic access to ${this.className} ${id} for socket ${socket.id}`,
+          );
+          socket.emit("new" + this.className, id);
+        } else if (!hasAccess && hadAccess) {
+          known.delete(id);
+          this.loggers.debug(
+            `Revoking dynamic access to ${this.className} ${id} for socket ${socket.id}`,
+          );
+          socket.emit("delete" + this.className, id);
+        }
+      } catch (error: unknown) {
+        this.loggers.error(
+          `Error checking permission boundaries for ${this.className} ${id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
   }
 }
