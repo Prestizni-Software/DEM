@@ -54,7 +54,7 @@ export abstract class AutoUpdatedClientObject<
   protected isLoading = true;
   public loadError?: string;
   protected isLoadingReferences = true;
-  protected checkedMissingProperties: Record<string, boolean> = {};
+  protected checkedMissingProperties?: Record<string, boolean>;
   protected readonly emitter: EventEmitter3;
   public readonly properties: string[];
   public readonly classParam: Constructor<T>;
@@ -63,14 +63,9 @@ export abstract class AutoUpdatedClientObject<
     cache: DEMCache;
     managers: M;
   };
-  protected readonly EmitterID = (() => {
-    try {
-      return new ObjectId().toHexString();
-    } catch {
-      return Math.random().toString(36).substring(2) + Date.now().toString(36);
-    }
-  })();
-  protected readonly toChangeOnParents: { key: string; value: unknown }[] = [];
+  private static _emitterCounter = 0;
+  protected readonly EmitterID: string = `dem_e_${++AutoUpdatedClientObject._emitterCounter}`;
+  protected toChangeOnParents?: { key: string; value: unknown }[];
   public callbacks: DEMClientCallbacks<T>;
 
   private readonly loadReferencesAsync = async (): Promise<void> => {
@@ -81,8 +76,10 @@ export abstract class AutoUpdatedClientObject<
       this.generateSettersAndGetters();
       if (this.isServer) {
         await this.loadForceReferences();
-        for (const thing of this.toChangeOnParents) {
-          await this.setValue__(thing.key, thing.value, true, false, false, true);
+        if (this.toChangeOnParents) {
+          for (const thing of this.toChangeOnParents) {
+            await this.setValue__(thing.key, thing.value, true, false, false, true);
+          }
         }
       }
     } catch (error: unknown) {
@@ -239,23 +236,32 @@ export abstract class AutoUpdatedClientObject<
 
     const meta = this.classParam ? setupClassAccessors(this.classParam) : null;
     const refProps = meta ? meta.refProps : null;
+    if (!refProps || refProps.size === 0) return data;
 
     const dataAsRecord = data as unknown as Record<string, unknown>;
-    for (const key of this.properties || []) {
-      const isRef = refProps ? refProps.has(key) : getMetadataRecursive("isRef", this, key);
+    for (const key of refProps) {
       const val = dataAsRecord[key];
-      if (isRef && val) {
-        if (Array.isArray(val)) {
+      if (!val) continue;
+      if (Array.isArray(val)) {
+        let needsNormalization = false;
+        for (let i = 0; i < val.length; i++) {
+          const item = val[i];
+          if (item && typeof item === "object") {
+            needsNormalization = true;
+            break;
+          }
+        }
+        if (needsNormalization) {
           dataAsRecord[key] = (val as unknown[]).map(
             (obj: unknown) =>
               (obj as { _id?: { toString(): string } | string })?._id?.toString() ??
               (obj as { toString(): string })?.toString(),
           );
-        } else if (typeof val === "object") {
-          dataAsRecord[key] =
-            (val as { _id?: { toString(): string } | string })?._id?.toString() ??
-            (val as { toString(): string })?.toString();
         }
+      } else if (typeof val === "object") {
+        dataAsRecord[key] =
+          (val as { _id?: { toString(): string } | string })?._id?.toString() ??
+          (val as { toString(): string })?.toString();
       }
     }
     return data;
@@ -484,7 +490,7 @@ export abstract class AutoUpdatedClientObject<
     key: string,
   ): IAutoUpdatedClientObject<any> | undefined {
     if (!id) return undefined;
-    const idStr = id.toString();
+    const idStr = typeof id === "string" ? id : id.toString();
     const cached = globalCache.objects[idStr];
     if (cached?.object) return cached.object as IAutoUpdatedClientObject<any>;
 
@@ -893,6 +899,7 @@ export abstract class AutoUpdatedClientObject<
   }
 
   private async findMissingObjectReference(prop: string, pointer: string[]) {
+    this.checkedMissingProperties ??= {};
     if (this.checkedMissingProperties[prop]) return;
     this.checkedMissingProperties[prop] = true;
     const ac = (
@@ -1061,9 +1068,15 @@ export function setupClassAccessors(classParam: Constructor<any>): {
         if (val === null) val = undefined;
         if (isRef && val) {
           if (Array.isArray(val)) {
-            return val
-              .map((id: string | ObjectId) => this.findReference(id, key))
-              .filter(Boolean);
+            const result: IAutoUpdatedClientObject<any>[] = [];
+            for (let i = 0; i < val.length; i++) {
+              const item = val[i];
+              if (item) {
+                const ref = this.findReference(item, key);
+                if (ref) result.push(ref);
+              }
+            }
+            return result;
           } else {
             return this.findReference(val as string | ObjectId, key);
           }

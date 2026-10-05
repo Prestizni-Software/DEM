@@ -420,6 +420,7 @@ export class AutoUpdateServerManager<
   protected objects_: { [_id: string]: T } = {};
   public readonly managers: M;
   public startupPayloadCache: { ids: string[]; objects?: any[]; properties: string[] } | null = null;
+  private _cachedObjectsArray: T[] | null = null;
 
   constructor(
     classParam: Constructor<T>,
@@ -474,6 +475,7 @@ export class AutoUpdateServerManager<
     );
 
     this.startupPayloadCache = null;
+    this._cachedObjectsArray = null;
 
     this.loggers.debug(
       "Loaded manager DB " +
@@ -725,7 +727,17 @@ export class AutoUpdateServerManager<
   }
 
   public get objectsAsArray(): T[] {
-    return Object.values(this.objects_) as any;
+    if (!this._cachedObjectsArray) {
+      this._cachedObjectsArray = Object.values(this.objects_) as any;
+    }
+    return this._cachedObjectsArray!;
+  }
+
+  public override async deleteObject(
+    _id: MongoId,
+  ): Promise<{ success: boolean; message: string }> {
+    this._cachedObjectsArray = null;
+    return super.deleteObject(_id);
   }
 
   private pendingMissingFetches = new Map<string, Promise<T>>();
@@ -753,6 +765,7 @@ export class AutoUpdateServerManager<
         );
         await object.waitForPreloaded();
         this.objects_[object._id.toString()] = object as any as T;
+        this._cachedObjectsArray = null;
         globalCache.objects[object._id.toString()] = {
           className: this.className,
           object: object as IAutoUpdatedClientObjectBase,
@@ -831,6 +844,7 @@ export class AutoUpdateServerManager<
     }
 
     this.objects_[id] = object as any as T;
+    this._cachedObjectsArray = null;
     globalCache.objects[id] = {
       className: this.className,
       object: object as IAutoUpdatedClientObjectBase,

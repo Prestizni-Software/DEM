@@ -175,6 +175,7 @@ export class AutoUpdateClientManager<
   totalObjects: number = 0;
   loadedObjects: number = 0;
   private pendingMissingFetches = new Map<string, Promise<T>>();
+  private _cachedObjectsArray: T[] | null = null;
 
   constructor(
     classParam: Constructor<T>,
@@ -267,6 +268,7 @@ export class AutoUpdateClientManager<
   ): Promise<{ success: boolean; message: string }> {
     const _idStr = _id.toString();
     this.socket.off(EVENT_UPDATE + this.className + _idStr);
+    this._cachedObjectsArray = null;
     return super.deleteObject(_id);
   }
 
@@ -338,6 +340,7 @@ export class AutoUpdateClientManager<
             delete globalCache.objects[oldId];
           }
           this.objects_ = {};
+          this._cachedObjectsArray = null;
 
           this.totalObjects = data.ids.length;
           this.loadedObjects = 0;
@@ -476,7 +479,10 @@ export class AutoUpdateClientManager<
   }
 
   public get objectsAsArray(): T[] {
-    return Object.values(this.objects_);
+    if (!this._cachedObjectsArray) {
+      this._cachedObjectsArray = Object.values(this.objects_);
+    }
+    return this._cachedObjectsArray!;
   }
 
   async handleGetMissingObject(_id: MongoId): Promise<T> {
@@ -505,6 +511,7 @@ export class AutoUpdateClientManager<
         await object.waitForPreloaded();
         if ((object as any).loadError) throw new Error((object as any).loadError);
         this.objects_[object._id.toString()] = object;
+        this._cachedObjectsArray = null;
         globalCache.objects[object._id.toString()] = {
           className: this.className,
           object: object,
@@ -544,6 +551,7 @@ export class AutoUpdateClientManager<
       }
       createdId = id;
       this.objects_[id] = object;
+      this._cachedObjectsArray = null;
       globalCache.objects[id] = {
         className: this.className,
         object: object,
@@ -557,6 +565,7 @@ export class AutoUpdateClientManager<
       if (createdId) {
         delete this.objects_[createdId];
         delete globalCache.objects[createdId];
+        this._cachedObjectsArray = null;
       }
       this.loggers.error(
         "Error creating new object from manager " + this.className,
