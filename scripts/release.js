@@ -97,6 +97,7 @@ export function releasePackage(targetDir, files, packageName, releaseType = "pat
   }
 
   // Step 4: Version bump & publish
+  runCommand("git add .", targetDir);
   const bumpCmd = `npx standard-version --release-as ${releaseType}`;
   log(`Bumping version and generating changelog with standard-version...`);
   runCommand(bumpCmd, targetDir);
