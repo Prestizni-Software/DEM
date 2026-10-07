@@ -1,17 +1,7 @@
 import path from "path";
-import { releasePackage } from "./release.js";
+import { releasePackage, serverFiles } from "./release.js";
 
 const serverDir = path.resolve("..", "server");
-const serverFiles = [
-  "tsconfig.json",
-  "AutoUpdatedClientObjectClass.ts",
-  "AutoUpdateManagerClass.ts",
-  "server.ts",
-  "CommonTypes.ts",
-  "CommonTypes_server.ts",
-  "AutoUpdateServerManagerClass.ts",
-  "AutoUpdatedServerObjectClass.ts",
-];
 
 const args = process.argv.slice(2);
 const releaseType = args.find((a) => ["patch", "minor", "major"].includes(a)) || "patch";

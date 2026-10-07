@@ -6,16 +6,17 @@ const rootDir = path.resolve(".");
 const clientDir = path.resolve("..", "client");
 const serverDir = path.resolve("..", "server");
 
-const clientFiles = [
+export const clientFiles = [
   "tsconfig.json",
   "AutoUpdateClientManagerClass.ts",
   "AutoUpdatedClientObjectClass.ts",
   "CommonTypes.ts",
   "AutoUpdateManagerClass.ts",
   "client.ts",
+  "sync",
 ];
 
-const serverFiles = [
+export const serverFiles = [
   "tsconfig.json",
   "AutoUpdatedClientObjectClass.ts",
   "AutoUpdateManagerClass.ts",
@@ -24,6 +25,7 @@ const serverFiles = [
   "CommonTypes_server.ts",
   "AutoUpdateServerManagerClass.ts",
   "AutoUpdatedServerObjectClass.ts",
+  "sync",
 ];
 
 function log(msg, symbol = "ℹ") {
@@ -53,12 +55,19 @@ function syncPackage(targetDir, files, packageName) {
     const src = path.join(rootDir, file);
     const dest = path.join(targetDir, file);
     if (fs.existsSync(src)) {
-      fs.copyFileSync(src, dest);
+      const stat = fs.statSync(src);
+      if (stat.isDirectory()) {
+        fs.mkdirSync(dest, { recursive: true });
+        fs.cpSync(src, dest, { recursive: true, force: true });
+      } else {
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.copyFileSync(src, dest);
+      }
     } else {
-      logError(`Source file ${file} does not exist in src!`);
+      logError(`Source item ${file} does not exist in src!`);
     }
   }
-  logSuccess(`Synced ${files.length} files to ${packageName}`);
+  logSuccess(`Synced ${files.length} items to ${packageName}`);
 }
 
 export function releasePackage(targetDir, files, packageName, releaseType = "patch", options = {}) {
