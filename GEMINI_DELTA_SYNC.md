@@ -117,3 +117,10 @@ const clientManagers = await AUCManagerFactory(
   2. Reconnection with 0 mutations returns `up-to-date` without re-creating objects.
   3. Reconnection with mutations applies creates, updates, and deletes with callback dispatch.
   4. Expired revision automatically triggers safe full sync fallback.
+- `tests/sync_real_data_stress.test.ts`: Real production stress test suite on 8,500+ objects across 11 classes:
+  1. **MemoryStorageAdapter Real Data Test**: Full sync ingestion of 8500+ objects, server mutations, reconnect delta reconciliation with 0 object reloads.
+  2. **LocalStorageAdapter Real Data Test**: Persistence to key-value storage backend, server mutations, reconnect delta reconciliation.
+  3. **IndexedDbStorageAdapter Real Data Test**: Persistence to async IndexedDB store, server mutations, reconnect delta reconciliation.
+  4. **Rapid Disconnect/Reconnect Stress Test**: 5 continuous rounds of client disconnects, concurrent server batch mutations across classes, and reconnections.
+  5. **Mid-Run Dynamic Limits Adjustment**: Dynamic update of `maxSizeBytes` and `maxAgeMs` via `updateOptions()`, immediate history eviction, and safe full-sync fallback.
+

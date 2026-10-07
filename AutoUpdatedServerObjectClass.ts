@@ -316,6 +316,9 @@ export abstract class AutoUpdatedServerObject<
 
       (this.data as any)[key] = value;
       this._cachedExtractedData = null;
+      if (this.parentManager) {
+        (this.parentManager as any).startupPayloadCache = null;
+      }
       if (!silent) {
         if (this.parentManager && (this.parentManager as any).changeTracker) {
           (this.parentManager as any).changeTracker.recordChange(

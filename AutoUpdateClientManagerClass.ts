@@ -324,12 +324,14 @@ export class AutoUpdateClientManager<
   }
 
   async loadFromServer(t?: { s: number; f: number }): Promise<void> {
+    let hasRestoredFromStorage = false;
     if (this.storageAdapter && Object.keys(this.objects_).length === 0) {
       const restored = await ClientStateReconciler.restoreFromStorage(
         this as any,
         this.storageAdapter,
       );
       if (restored.restored) {
+        hasRestoredFromStorage = true;
         this.lastRevision = restored.revision;
         this.loggers.debug?.(
           `Restored ${restored.count} objects from storage for ${this.className} (revision: ${this.lastRevision})`,
@@ -346,9 +348,10 @@ export class AutoUpdateClientManager<
         );
       }, 5000);
 
-      const startupPayload = this.deltaSyncEnabled
-        ? { lastRevision: this.lastRevision }
-        : null;
+      const startupPayload =
+        this.deltaSyncEnabled && hasRestoredFromStorage
+          ? { lastRevision: this.lastRevision }
+          : null;
 
       this.socket.emit(
         "startup" + this.className,

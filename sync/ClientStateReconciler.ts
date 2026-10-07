@@ -173,12 +173,12 @@ export class ClientStateReconciler {
           manager.callbacks?.new?.(instance);
         } else if (change.data) {
           // Object already exists, apply properties
-          this.patchObjectProperties(existing, change.data, manager.callbacks);
+          await this.patchObjectProperties(existing, change.data, manager.callbacks);
         }
       } else if (change.type === "update") {
         let existing = manager.getObject(id);
         if (existing && change.data) {
-          this.patchObjectProperties(existing, change.data, manager.callbacks);
+          await this.patchObjectProperties(existing, change.data, manager.callbacks);
         } else if (!existing && change.data) {
           // Object was updated but client did not have it, create it
           const instance = new manager.classParam(
@@ -211,21 +211,21 @@ export class ClientStateReconciler {
     }
   }
 
-  private static patchObjectProperties(
+  private static async patchObjectProperties(
     targetObj: any,
     patchData: Record<string, any>,
     callbacks?: any,
-  ): void {
+  ): Promise<void> {
     for (const key of Object.keys(patchData)) {
       if (key === "_id") continue;
       const val = patchData[key];
+      if (targetObj.data) {
+        targetObj.data[key] = val;
+      }
       if (typeof targetObj.setValue__ === "function") {
-        targetObj.setValue__(key, val, { silent: true, isDelta: true });
+        await targetObj.setValue__(key, val, true);
       } else {
         targetObj[key] = val;
-        if (targetObj.data) {
-          targetObj.data[key] = val;
-        }
       }
       callbacks?.update?.(targetObj, key);
     }

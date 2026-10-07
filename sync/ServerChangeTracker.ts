@@ -38,10 +38,10 @@ export class ServerChangeTracker<T = unknown> {
   private entries: ChangeEntry<T>[] = [];
   private totalEstimatedBytes = 0;
 
-  readonly maxAgeMs?: number;
-  readonly maxSizeBytes?: number;
-  readonly maxEntries?: number;
-  readonly pruneMode: PruneMode;
+  public maxAgeMs?: number;
+  public maxSizeBytes?: number;
+  public maxEntries?: number;
+  public pruneMode: PruneMode;
 
   constructor(
     public readonly className: string,
@@ -51,6 +51,17 @@ export class ServerChangeTracker<T = unknown> {
     this.maxSizeBytes = options?.maxSizeBytes;
     this.maxEntries = options?.maxEntries;
     this.pruneMode = options?.pruneMode ?? "either";
+  }
+
+  /**
+   * Dynamically updates limits (MB size, TTL age, entries, pruneMode) mid-run and triggers pruning.
+   */
+  public updateOptions(options: Partial<ChangeLogOptions>): void {
+    if (options.maxAgeMs !== undefined) this.maxAgeMs = options.maxAgeMs;
+    if (options.maxSizeBytes !== undefined) this.maxSizeBytes = options.maxSizeBytes;
+    if (options.maxEntries !== undefined) this.maxEntries = options.maxEntries;
+    if (options.pruneMode !== undefined) this.pruneMode = options.pruneMode;
+    this.prune();
   }
 
   public getCurrentRevision(): number {
