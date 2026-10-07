@@ -534,3 +534,12 @@ export class DEMGlobalCache {
 export type GlobalCache = DEMGlobalCache;
 
 export const globalCache = new DEMGlobalCache();
+
+export * from "./sync/types.js";
+export * from "./sync/storage/IClientStorageAdapter.js";
+export * from "./sync/storage/MemoryStorageAdapter.js";
+export * from "./sync/storage/LocalStorageAdapter.js";
+export * from "./sync/storage/IndexedDbStorageAdapter.js";
+export * from "./sync/ServerChangeTracker.js";
+export * from "./sync/ClientStateReconciler.js";
+

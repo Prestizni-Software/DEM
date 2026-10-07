@@ -18,6 +18,13 @@ import {
   verifyDEMVersion,
 } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
+import {
+  ClientStateReconciler,
+  IClientStorageAdapter,
+  ClientDeltaSyncOptions,
+  DeltaSyncPayload,
+  ChangeEntry,
+} from "./sync/index.js";
 
 export type WrappedInstances<
   T extends Record<string, Constructor<IAutoUpdatedClientObjectBase>>,
@@ -42,6 +49,7 @@ export async function AUCManagerFactory<
     >
   > = {},
   versionOptions?: DEMVersionOptions,
+  deltaSyncOptions?: ClientDeltaSyncOptions | boolean,
 ): Promise<WrappedInstances<T>> {
   const defaultCallbacks: DEMClientCallbacks<IAutoUpdatedClientObjectBase> = {
     new: callbacks.new ?? ((_x: IAutoUpdatedClientObjectBase) => {}),
@@ -90,6 +98,7 @@ export async function AUCManagerFactory<
           progress: innerProgressUpdater,
         },
         versionOptions,
+        deltaSyncOptions,
       );
       managers[key] = c as any;
     } catch (error: unknown) {
@@ -180,6 +189,10 @@ export class AutoUpdateClientManager<
   callbacks: DEMClientCallbacks<any>;
   public readonly socket: Socket;
   public readonly versionOptions?: DEMVersionOptions;
+  public readonly deltaSyncOptions?: ClientDeltaSyncOptions;
+  public readonly storageAdapter?: IClientStorageAdapter;
+  public readonly deltaSyncEnabled: boolean;
+  public lastRevision: number = 0;
   totalObjects: number = 0;
   loadedObjects: number = 0;
   private pendingMissingFetches = new Map<string, Promise<T>>();
@@ -194,6 +207,7 @@ export class AutoUpdateClientManager<
     emitter: EventEmitter,
     callbacks: DEMClientCallbacks<any>,
     versionOptions?: DEMVersionOptions,
+    deltaSyncOptions?: ClientDeltaSyncOptions | boolean,
   ) {
     if (!classParam) throw new Error("Missing required argument: classParam");
     if (!className) throw new Error("Missing required argument: className");
@@ -203,6 +217,16 @@ export class AutoUpdateClientManager<
     this.managers = managers;
     this.callbacks = callbacks;
     this.versionOptions = versionOptions;
+
+    if (deltaSyncOptions) {
+      this.deltaSyncEnabled = true;
+      if (typeof deltaSyncOptions === "object") {
+        this.deltaSyncOptions = deltaSyncOptions;
+        this.storageAdapter = deltaSyncOptions.storage;
+      }
+    } else {
+      this.deltaSyncEnabled = false;
+    }
 
     this.socket?.on?.("reconnect", async () => {
       this.loggers.info?.("Socket reconnected, reloading manager data from server...");
@@ -236,6 +260,13 @@ export class AutoUpdateClientManager<
         this.totalObjects += 1;
         await this.handleGetMissingObject(id);
         this.loadedObjects += 1;
+        if (this.storageAdapter) {
+          await ClientStateReconciler.persistToStorage(
+            this as any,
+            this.lastRevision,
+            this.storageAdapter,
+          );
+        }
       } catch (error: unknown) {
         this.loggers.error(
           "Error loading object " +
@@ -281,10 +312,31 @@ export class AutoUpdateClientManager<
     const _idStr = _id.toString();
     this.socket.off(EVENT_UPDATE + this.className + _idStr);
     this._cachedObjectsArray = null;
-    return super.deleteObject(_id);
+    const res = await super.deleteObject(_id);
+    if (this.storageAdapter) {
+      await ClientStateReconciler.persistToStorage(
+        this as any,
+        this.lastRevision,
+        this.storageAdapter,
+      );
+    }
+    return res;
   }
 
   async loadFromServer(t?: { s: number; f: number }): Promise<void> {
+    if (this.storageAdapter && Object.keys(this.objects_).length === 0) {
+      const restored = await ClientStateReconciler.restoreFromStorage(
+        this as any,
+        this.storageAdapter,
+      );
+      if (restored.restored) {
+        this.lastRevision = restored.revision;
+        this.loggers.debug?.(
+          `Restored ${restored.count} objects from storage for ${this.className} (revision: ${this.lastRevision})`,
+        );
+      }
+    }
+
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(
@@ -294,9 +346,13 @@ export class AutoUpdateClientManager<
         );
       }, 5000);
 
+      const startupPayload = this.deltaSyncEnabled
+        ? { lastRevision: this.lastRevision }
+        : null;
+
       this.socket.emit(
         "startup" + this.className,
-        null,
+        startupPayload,
         async (
           res: ServerResponse<{
             ids: string[];
@@ -304,6 +360,9 @@ export class AutoUpdateClientManager<
             properties: string[];
             version?: string;
             protocolVersion?: string;
+            status?: "up-to-date" | "delta" | "full";
+            revision?: number;
+            changes?: ChangeEntry<any>[];
           }>,
         ) => {
           clearTimeout(timer);
@@ -358,6 +417,32 @@ export class AutoUpdateClientManager<
             }
           }
 
+          if (data.status === "up-to-date") {
+            this.lastRevision = data.revision ?? this.lastRevision;
+            this.callbacks.progress?.(1);
+            this.startSocketListeners();
+            this.isLoaded_ = true;
+            if (t) t.f = Date.now();
+            resolve();
+            return;
+          }
+
+          if (data.status === "delta" && data.changes) {
+            this.lastRevision = data.revision ?? this.lastRevision;
+            await ClientStateReconciler.applyDelta(
+              this as any,
+              data as any,
+              this.storageAdapter,
+            );
+            this.callbacks.progress?.(1);
+            this.startSocketListeners();
+            this.isLoaded_ = true;
+            if (t) t.f = Date.now();
+            resolve();
+            return;
+          }
+
+          // Full sync handling
           const serverPropsCopy = [...data.properties];
           let extraProperties: string[] = [];
           for (const property of this.properties) {
@@ -395,7 +480,7 @@ export class AutoUpdateClientManager<
             this.loggers.debug(data.ids.join(", "));
           }
 
-          // Clear old objects before populating new ones on reconnection
+          // Clear old objects before populating new ones on full reload
           for (const oldId of Object.keys(this.objects_)) {
             delete globalCache.objects[oldId];
           }
@@ -404,11 +489,20 @@ export class AutoUpdateClientManager<
 
           this.totalObjects = data.ids.length;
           this.loadedObjects = 0;
+          this.lastRevision = data.revision ?? 0;
 
           if (data.ids.length === 0) {
             this.callbacks.progress?.(1);
             this.startSocketListeners();
             this.isLoaded_ = true;
+            if (this.storageAdapter) {
+              await ClientStateReconciler.persistToStorage(
+                this as any,
+                this.lastRevision,
+                this.storageAdapter,
+              );
+            }
+            if (t) t.f = Date.now();
             resolve();
             return;
           }
@@ -483,6 +577,14 @@ export class AutoUpdateClientManager<
           });
 
           await Promise.all(objectPromises);
+
+          if (this.storageAdapter) {
+            await ClientStateReconciler.persistToStorage(
+              this as any,
+              this.lastRevision,
+              this.storageAdapter,
+            );
+          }
 
           this.loggers.info(
             "Loaded " +

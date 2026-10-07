@@ -28,6 +28,11 @@ import * as machineId from "node-machine-id";
 import { getModelForClass } from "@typegoose/typegoose";
 import { Paths } from "./CommonTypes.js";
 import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
+import {
+  ServerChangeTracker,
+  ServerDeltaSyncOptions,
+  ChangeEntry,
+} from "./sync/index.js";
 
 export type WrappedInstances<
   T extends Record<string, IAutoUpdatedClientObject<any>>,
@@ -77,6 +82,7 @@ export type AUSOption<
     key: Paths<C, AutoUpdatedClientObject<any>>,
   ) => Promise<void>;
   onDeletion?: (obj: C) => Promise<void>;
+  deltaSync?: boolean | ServerDeltaSyncOptions;
 };
 
 export type ServerManagerDefinition<
@@ -429,6 +435,7 @@ export class AutoUpdateServerManager<
   public readonly managers: M;
   public startupPayloadCache: { ids: string[]; objects?: any[]; properties: string[] } | null = null;
   private _cachedObjectsArray: T[] | null = null;
+  public readonly changeTracker?: ServerChangeTracker;
 
   constructor(
     classParam: Constructor<T>,
@@ -444,6 +451,13 @@ export class AutoUpdateServerManager<
     this.managers = managers;
     this.model = model;
     this.options = options;
+
+    if (options?.deltaSync) {
+      const deltaOpts = typeof options.deltaSync === "object" ? options.deltaSync : {};
+      if (deltaOpts.enabled !== false) {
+        this.changeTracker = new ServerChangeTracker(this.className, deltaOpts);
+      }
+    }
   }
 
   public async preLoad(options?: { batchSize?: number }): Promise<void> {
@@ -510,7 +524,7 @@ export class AutoUpdateServerManager<
     socket.on(
       EVENT_STARTUP + this.className,
       async (
-        _: unknown,
+        req: unknown,
         ack?: (
           res: ServerResponse<{
             ids: string[];
@@ -518,10 +532,86 @@ export class AutoUpdateServerManager<
             properties: string[];
             version?: string;
             protocolVersion?: string;
+            status?: "up-to-date" | "delta" | "full";
+            revision?: number;
+            changes?: ChangeEntry<any>[];
           }>,
         ) => void,
       ) => {
         try {
+          const clientLastRev =
+            req && typeof req === "object" && typeof (req as any).lastRevision === "number"
+              ? (req as any).lastRevision
+              : undefined;
+
+          // Check if delta sync can be fulfilled
+          if (this.changeTracker && typeof clientLastRev === "number") {
+            let allowedIdsSet: Set<string> | undefined = undefined;
+            if (this.options?.accessDefinitions?.startupMiddleware) {
+              const allowedObjects = await this.options.accessDefinitions.startupMiddleware(
+                this.objectsAsArray,
+                this.managers as any,
+                socket,
+              );
+              allowedIdsSet = new Set(
+                allowedObjects.map((obj) => obj._id.toString()).filter(Boolean),
+              );
+              this.knownObjectIdsBySocket.set(socket, new Set(allowedIdsSet));
+            }
+
+            const changesResult = this.changeTracker.getChangesSince(
+              clientLastRev,
+              allowedIdsSet,
+            );
+
+            if (!changesResult.isExpired) {
+              if (changesResult.changes.length === 0) {
+                this.loggers.debug(
+                  "Client up to date for manager " +
+                    this.className +
+                    " at revision " +
+                    clientLastRev,
+                );
+                if (typeof ack === "function") {
+                  ack({
+                    data: {
+                      status: "up-to-date",
+                      revision: this.changeTracker.getCurrentRevision(),
+                      ids: [],
+                      properties: this.properties as string[],
+                      version: DEM_VERSION,
+                      protocolVersion: DEM_PROTOCOL_VERSION,
+                    },
+                    success: true,
+                  });
+                }
+                return;
+              } else {
+                this.loggers.debug(
+                  "Sending delta startup data (" +
+                    changesResult.changes.length +
+                    " changes) for manager " +
+                    this.className,
+                );
+                if (typeof ack === "function") {
+                  ack({
+                    data: {
+                      status: "delta",
+                      revision: this.changeTracker.getCurrentRevision(),
+                      changes: changesResult.changes,
+                      ids: [],
+                      properties: this.properties as string[],
+                      version: DEM_VERSION,
+                      protocolVersion: DEM_PROTOCOL_VERSION,
+                    },
+                    success: true,
+                  });
+                }
+                return;
+              }
+            }
+          }
+
           let ids: string[];
           let objects: any[];
 
@@ -557,6 +647,8 @@ export class AutoUpdateServerManager<
           if (typeof ack === "function") {
             ack({
               data: {
+                status: "full",
+                revision: this.changeTracker ? this.changeTracker.getCurrentRevision() : 0,
                 ids,
                 objects,
                 properties: this.properties as string[],
@@ -777,6 +869,9 @@ export class AutoUpdateServerManager<
   ): Promise<{ success: boolean; message: string }> {
     this._cachedObjectsArray = null;
     const idStr = _id.toString();
+    if (this.changeTracker) {
+      this.changeTracker.recordChange("delete", idStr);
+    }
     for (const socket of this.clientSockets) {
       const known = this.knownObjectIdsBySocket.get(socket);
       if (known) {
@@ -891,6 +986,7 @@ export class AutoUpdateServerManager<
 
     this.objects_[id] = object as any as T;
     this._cachedObjectsArray = null;
+    this.startupPayloadCache = null;
     globalCache.objects[id] = {
       className: this.className,
       object: object as IAutoUpdatedClientObjectBase,
@@ -898,6 +994,14 @@ export class AutoUpdateServerManager<
     await object.isPreLoadedAsync();
     await object.loadMissingReferences();
     await object.contactChildren();
+
+    if (this.changeTracker) {
+      this.changeTracker.recordChange(
+        "create",
+        id,
+        (object as any).extractedData || (object as any).data,
+      );
+    }
 
     for (const socket of this.clientSockets) {
       try {

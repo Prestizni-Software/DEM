@@ -317,6 +317,13 @@ export abstract class AutoUpdatedServerObject<
       (this.data as any)[key] = value;
       this._cachedExtractedData = null;
       if (!silent) {
+        if (this.parentManager && (this.parentManager as any).changeTracker) {
+          (this.parentManager as any).changeTracker.recordChange(
+            "update",
+            _id.toString(),
+            { [key]: value },
+          );
+        }
         const update = this.makeUpdate(key, value);
         const event = EVENT_UPDATE + this.className + _id.toString();
         (this.socket as any).emit(event, update);
