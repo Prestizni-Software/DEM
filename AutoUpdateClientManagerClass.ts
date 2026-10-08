@@ -35,6 +35,8 @@ export type WrappedInstances<
   >;
 };
 
+const inFlightFactories = new WeakMap<Socket, Promise<WrappedInstances<any>>>();
+
 export async function AUCManagerFactory<
   T extends Record<string, Constructor<IAutoUpdatedClientObjectBase>>,
 >(
@@ -51,130 +53,151 @@ export async function AUCManagerFactory<
   versionOptions?: DEMVersionOptions,
   deltaSyncOptions?: ClientDeltaSyncOptions | boolean,
 ): Promise<WrappedInstances<T>> {
-  const defaultCallbacks: DEMClientCallbacks<IAutoUpdatedClientObjectBase> = {
-    new: callbacks.new ?? ((_x: IAutoUpdatedClientObjectBase) => {}),
-    update:
-      callbacks.update ??
-      ((_x: IAutoUpdatedClientObjectBase, _y: string) => {}),
-    delete: callbacks.delete ?? ((_x: IAutoUpdatedClientObjectBase) => {}),
-    progress: callbacks.progress ?? ((_x: number) => {}),
-  };
-
-  if (!doDebug) {
-    loggers.debug = (_: string) => {};
-  }
-
-  let wholeProgress = 0;
-  let numberOfManagers = Object.keys(defs).length || 1;
-  const progressUpdater = callbacks.progress ?? ((_x: number) => {});
-
-  const innerProgressUpdater = (fraction: number) => {
-    progressUpdater(
-      wholeProgress + (numberOfManagers == 0 ? 1 : fraction / numberOfManagers),
+  if (socket && inFlightFactories.has(socket)) {
+    loggers.debug?.(
+      "[DEM:FACTORY] Concurrent AUCManagerFactory detected on socket, reusing in-flight initialization promise.",
     );
-    if (fraction == 1)
-      wholeProgress += numberOfManagers == 0 ? 1 : fraction / numberOfManagers;
-  };
-
-  const managers = {} as WrappedInstances<T>;
-  const startStartTime = Date.now();
-  let startTime = Date.now();
-  for (const key in defs) {
-    try {
-      const Model = defs[key];
-      if (typeof Model !== "function") {
-        throw new Error(`Invalid model constructor for manager: ${key}`);
-      }
-      const c = new AutoUpdateClientManager(
-        Model,
-        key,
-        socket,
-        loggers,
-        managers,
-        emitter,
-        {
-          ...defaultCallbacks,
-          ...callbacks[key],
-          progress: innerProgressUpdater,
-        },
-        versionOptions,
-        deltaSyncOptions,
-      );
-      managers[key] = c as any;
-    } catch (error: unknown) {
-      if (
-        error instanceof Error &&
-        error.message.includes(
-          "Local type does not match server type for manager",
-        )
-      )
-        throw error;
-      let message = `Creating manager for: ${key}`;
-      message += "\n Error creating manager: " + key;
-      message +=
-        "\n " + (error instanceof Error ? error.message : String(error));
-      loggers.error?.(message);
-      if (error instanceof Error && error.stack) loggers.error?.(error.stack);
-      continue;
-    }
+    return inFlightFactories.get(socket)!;
   }
 
-  loggers.debug?.("Created all managers in " + (Date.now() - startTime) + "ms");
-  startTime = Date.now();
+  const factoryPromise = (async () => {
+    const defaultCallbacks: DEMClientCallbacks<IAutoUpdatedClientObjectBase> = {
+      new: callbacks.new ?? ((_x: IAutoUpdatedClientObjectBase) => {}),
+      update:
+        callbacks.update ??
+        ((_x: IAutoUpdatedClientObjectBase, _y: string) => {}),
+      delete: callbacks.delete ?? ((_x: IAutoUpdatedClientObjectBase) => {}),
+      progress: callbacks.progress ?? ((_x: number) => {}),
+    };
 
-  const loadPromises = Object.keys(defs).map(async (key) => {
-    let temp2 = { s: Date.now(), f: 0 };
-    try {
-      const manager = managers[key];
-      if (!manager) {
-        loggers.warn?.(`Manager ${key} was not created due to previous error`);
-        return;
-      }
-      await manager.loadFromServer(temp2);
-      loggers.debug?.(
-        "Loaded data from server for manager: " +
-          key +
-          " in " +
-          (temp2.f - temp2.s) +
-          "ms",
+    if (!doDebug) {
+      loggers.debug = (_: string) => {};
+    }
+
+    let wholeProgress = 0;
+    let numberOfManagers = Object.keys(defs).length || 1;
+    const progressUpdater = callbacks.progress ?? ((_x: number) => {});
+
+    const innerProgressUpdater = (fraction: number) => {
+      progressUpdater(
+        wholeProgress + (numberOfManagers == 0 ? 1 : fraction / numberOfManagers),
       );
-    } catch (error: unknown) {
-      if (
-        error instanceof Error &&
-        error.message.includes(
-          "Local type does not match server type for manager",
+      if (fraction == 1)
+        wholeProgress += numberOfManagers == 0 ? 1 : fraction / numberOfManagers;
+    };
+
+    const managers = {} as WrappedInstances<T>;
+    const startStartTime = Date.now();
+    let startTime = Date.now();
+    for (const key in defs) {
+      try {
+        const Model = defs[key];
+        if (typeof Model !== "function") {
+          throw new Error(`Invalid model constructor for manager: ${key}`);
+        }
+        const c = new AutoUpdateClientManager(
+          Model,
+          key,
+          socket,
+          loggers,
+          managers,
+          emitter,
+          {
+            ...defaultCallbacks,
+            ...callbacks[key],
+            progress: innerProgressUpdater,
+          },
+          versionOptions,
+          deltaSyncOptions,
+        );
+        managers[key] = c as any;
+      } catch (error: unknown) {
+        if (
+          error instanceof Error &&
+          error.message.includes(
+            "Local type does not match server type for manager",
+          )
         )
-      )
-        throw error;
-      let message = "Error loading data from server for manager: " + key;
-      message +=
-        "\n " + (error instanceof Error ? error.message : String(error));
-      message += "\n Failed in " + (temp2.f - temp2.s) + "ms";
-      loggers.error?.(message);
-      if (error instanceof Error && error.stack)
-        loggers.error?.(message + "\n" + error.stack);
+          throw error;
+        let message = `Creating manager for: ${key}`;
+        message += "\n Error creating manager: " + key;
+        message +=
+          "\n " + (error instanceof Error ? error.message : String(error));
+        loggers.error?.(message);
+        if (error instanceof Error && error.stack) loggers.error?.(error.stack);
+        continue;
+      }
     }
-  });
 
-  await Promise.all(loadPromises);
+    loggers.debug?.("Created all managers in " + (Date.now() - startTime) + "ms");
+    startTime = Date.now();
 
-  // Generate getters and setters for all client objects now that everything is loaded
-  for (const manager of Object.values(managers)) {
-    for (const obj of (manager as any).objectsAsArray) {
-      (obj as any).generateSettersAndGetters();
+    const loadPromises = Object.keys(defs).map(async (key) => {
+      let temp2 = { s: Date.now(), f: 0 };
+      try {
+        const manager = managers[key];
+        if (!manager) {
+          loggers.warn?.(`Manager ${key} was not created due to previous error`);
+          return;
+        }
+        await manager.loadFromServer(temp2);
+        loggers.debug?.(
+          "Loaded data from server for manager: " +
+            key +
+            " in " +
+            (temp2.f - temp2.s) +
+            "ms",
+        );
+      } catch (error: unknown) {
+        if (
+          error instanceof Error &&
+          error.message.includes(
+            "Local type does not match server type for manager",
+          )
+        )
+          throw error;
+        let message = "Error loading data from server for manager: " + key;
+        message +=
+          "\n " + (error instanceof Error ? error.message : String(error));
+        message += "\n Failed in " + (temp2.f - temp2.s) + "ms";
+        loggers.error?.(message);
+        if (error instanceof Error && error.stack)
+          loggers.error?.(message + "\n" + error.stack);
+      }
+    });
+
+    await Promise.all(loadPromises);
+
+    // Generate getters and setters for all client objects now that everything is loaded
+    for (const manager of Object.values(managers)) {
+      for (const obj of (manager as any).objectsAsArray) {
+        (obj as any).generateSettersAndGetters();
+      }
     }
+
+    loggers.debug?.(
+      "Loaded data from server for all managers in " +
+        (Date.now() - startTime) +
+        "ms",
+    );
+    loggers.info?.(
+      "Loaded all managers in " + (Date.now() - startStartTime) + "ms",
+    );
+
+    return managers;
+  })();
+
+  if (socket) {
+    inFlightFactories.set(socket, factoryPromise);
   }
 
-  loggers.debug?.(
-    "Loaded data from server for all managers in " +
-      (Date.now() - startTime) +
-      "ms",
-  );
-  loggers.info?.(
-    "Loaded all managers in " + (Date.now() - startStartTime) + "ms",
-  );
-
-  return managers;
+  try {
+    return await factoryPromise;
+  } finally {
+    if (socket) {
+      inFlightFactories.delete(socket);
+    }
+  }
 }
 
 export class AutoUpdateClientManager<
@@ -197,6 +220,7 @@ export class AutoUpdateClientManager<
   loadedObjects: number = 0;
   private pendingMissingFetches = new Map<string, Promise<T>>();
   private _cachedObjectsArray: T[] | null = null;
+  private _reconnectHandler?: () => Promise<void>;
 
   constructor(
     classParam: Constructor<T>,
@@ -228,7 +252,7 @@ export class AutoUpdateClientManager<
       this.deltaSyncEnabled = false;
     }
 
-    this.socket?.on?.("reconnect", async () => {
+    this._reconnectHandler = async () => {
       this.loggers.info?.("Socket reconnected, reloading manager data from server...");
       try {
         await this.loadFromServer();
@@ -238,7 +262,8 @@ export class AutoUpdateClientManager<
             (err instanceof Error ? err.message : String(err)),
         );
       }
-    });
+    };
+    this.socket?.on?.("reconnect", this._reconnectHandler);
   }
 
   public normalizeProgress(loaded: number, total: number): number {
@@ -741,4 +766,18 @@ export class AutoUpdateClientManager<
       throw error;
     }
   }
+
+  public override close() {
+    if (this._reconnectHandler) {
+      this.socket?.off?.("reconnect", this._reconnectHandler);
+      this._reconnectHandler = undefined;
+    }
+    this.socket?.off?.("new" + this.className);
+    this.socket?.off?.("delete" + this.className);
+    for (const id of this.objectIDs) {
+      this.socket?.off?.(EVENT_UPDATE + this.className + id);
+    }
+    super.close();
+  }
 }
+

@@ -249,4 +249,45 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
     managersToClose.push(badManager);
     await expect(badManager.createObject({ name: "test" })).rejects.toThrow("Socket failure");
   });
+
+  test("AUCManagerFactory concurrent calls deduplication on same socket", async () => {
+    let startupEmitCount = 0;
+    (mockSocket.emit as unknown as jest.Mock).mockImplementation((event: string, _data: unknown, cb: (res: ServerResponse<unknown>) => void) => {
+      if (event === "startupTest") {
+        startupEmitCount++;
+        setTimeout(() => {
+          cb({ success: true, data: { ids: ["1"], properties: ["name"] }, message: "" });
+        }, 10);
+      }
+    });
+
+    const [managers1, managers2] = await Promise.all([
+      AUCManagerFactory({ Test: TestClientObject }, loggers, mockSocket, false, emitter),
+      AUCManagerFactory({ Test: TestClientObject }, loggers, mockSocket, false, emitter),
+    ]);
+
+    Object.values(managers1).forEach((m) => managersToClose.push(m));
+
+    expect(managers1).toBe(managers2);
+    expect(managers1.Test).toBe(managers2.Test);
+    expect(startupEmitCount).toBe(1);
+  });
+
+  test("AutoUpdateClientManager.close() removes reconnect and socket listeners", async () => {
+    const manager = new AutoUpdateClientManager(
+      TestClientObject, "Test", mockSocket, loggers, {}, emitter, callbacks
+    );
+    (manager as unknown as { startSocketListeners: () => void }).startSocketListeners();
+
+    expect(mockSocket.on).toHaveBeenCalledWith("reconnect", expect.any(Function));
+    expect(mockSocket.on).toHaveBeenCalledWith("newTest", expect.any(Function));
+    expect(mockSocket.on).toHaveBeenCalledWith("deleteTest", expect.any(Function));
+
+    manager.close();
+
+    expect(mockSocket.off).toHaveBeenCalledWith("reconnect", expect.any(Function));
+    expect(mockSocket.off).toHaveBeenCalledWith("newTest");
+    expect(mockSocket.off).toHaveBeenCalledWith("deleteTest");
+  });
 });
+
