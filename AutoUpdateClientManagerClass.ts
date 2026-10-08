@@ -74,16 +74,33 @@ export async function AUCManagerFactory<
       loggers.debug = (_: string) => {};
     }
 
-    let wholeProgress = 0;
-    let numberOfManagers = Object.keys(defs).length || 1;
+    const managerKeys = Object.keys(defs);
+    const numberOfManagers = managerKeys.length || 1;
     const progressUpdater = callbacks.progress ?? ((_x: number) => {});
 
-    const innerProgressUpdater = (fraction: number) => {
-      progressUpdater(
-        wholeProgress + (numberOfManagers == 0 ? 1 : fraction / numberOfManagers),
-      );
-      if (fraction == 1)
-        wholeProgress += numberOfManagers == 0 ? 1 : fraction / numberOfManagers;
+    // Immediately report initial 0 progress
+    progressUpdater(0);
+
+    const managerProgressMap = new Map<string, number>();
+    for (const key of managerKeys) {
+      managerProgressMap.set(key, 0);
+    }
+
+    let lastReportedProgress = 0;
+    const updateOverallProgress = (managerKey: string, fraction: number) => {
+      const clampedFraction = Math.max(0, Math.min(1, fraction));
+      managerProgressMap.set(managerKey, clampedFraction);
+
+      let sum = 0;
+      for (const val of managerProgressMap.values()) {
+        sum += val;
+      }
+      const overall = sum / numberOfManagers;
+
+      if (overall >= lastReportedProgress || overall === 1) {
+        lastReportedProgress = overall;
+        progressUpdater(overall);
+      }
     };
 
     const managers = {} as WrappedInstances<T>;
@@ -105,7 +122,10 @@ export async function AUCManagerFactory<
           {
             ...defaultCallbacks,
             ...callbacks[key],
-            progress: innerProgressUpdater,
+            progress: (fraction: number) => {
+              callbacks[key]?.progress?.(fraction);
+              updateOverallProgress(key, fraction);
+            },
           },
           versionOptions,
           deltaSyncOptions,
@@ -167,6 +187,11 @@ export async function AUCManagerFactory<
     });
 
     await Promise.all(loadPromises);
+
+    // Ensure 100% progress emitted when all loaders finish
+    if (lastReportedProgress < 1) {
+      progressUpdater(1);
+    }
 
     // Generate getters and setters for all client objects now that everything is loaded
     for (const manager of Object.values(managers)) {

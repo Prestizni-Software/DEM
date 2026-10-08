@@ -289,5 +289,63 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
     expect(mockSocket.off).toHaveBeenCalledWith("newTest");
     expect(mockSocket.off).toHaveBeenCalledWith("deleteTest");
   });
+
+  test("AUCManagerFactory smooth concurrent progress calculation across multiple managers", async () => {
+    const recordedProgress: number[] = [];
+    const progressFn = jest.fn((p: number) => {
+      recordedProgress.push(p);
+    });
+
+    class TestClassA extends AutoUpdatedClientObject<MockClientData> {
+      get _id() { return (this.data as MockClientData)?._id; }
+    }
+    class TestClassB extends AutoUpdatedClientObject<MockClientData> {
+      get _id() { return (this.data as MockClientData)?._id; }
+    }
+    Reflect.defineMetadata("props", ["_id"], TestClassA.prototype);
+    Reflect.defineMetadata("props", ["_id"], TestClassB.prototype);
+
+    (mockSocket.emit as unknown as jest.Mock).mockImplementation((event: string, _data: unknown, cb: (res: ServerResponse<unknown>) => void) => {
+      if (event === "startupTestA") {
+        cb({
+          success: true,
+          data: {
+            ids: ["a1", "a2"],
+            objects: [{ _id: "a1" }, { _id: "a2" }],
+            properties: ["_id"],
+          },
+          message: "",
+        });
+      } else if (event === "startupTestB") {
+        cb({
+          success: true,
+          data: {
+            ids: ["b1", "b2"],
+            objects: [{ _id: "b1" }, { _id: "b2" }],
+            properties: ["_id"],
+          },
+          message: "",
+        });
+      }
+    });
+
+    const managers = await AUCManagerFactory(
+      { TestA: TestClassA, TestB: TestClassB },
+      loggers,
+      mockSocket,
+      false,
+      emitter,
+      { progress: progressFn }
+    );
+    Object.values(managers).forEach((m) => managersToClose.push(m));
+
+    expect(recordedProgress[0]).toBe(0);
+    expect(recordedProgress[recordedProgress.length - 1]).toBe(1);
+    expect(recordedProgress.some((p) => p > 0 && p < 1)).toBe(true);
+    for (let i = 1; i < recordedProgress.length; i++) {
+      expect(recordedProgress[i]).toBeGreaterThanOrEqual(recordedProgress[i - 1]);
+    }
+  });
 });
+
 
