@@ -12,6 +12,7 @@ export const clientFiles = [
   "AutoUpdatedClientObjectClass.ts",
   "CommonTypes.ts",
   "AutoUpdateManagerClass.ts",
+  "DEMErrors.ts",
   "client.ts",
   "sync",
 ];
@@ -25,6 +26,7 @@ export const serverFiles = [
   "CommonTypes_server.ts",
   "AutoUpdateServerManagerClass.ts",
   "AutoUpdatedServerObjectClass.ts",
+  "DEMErrors.ts",
   "sync",
 ];
 

@@ -15,6 +15,8 @@ Welcome to the DEM Project. This file serves as the root of the project's memory
 6.  **Test Coverage**: When adding or fixing a feature, check for existing tests. If none exist, create them.
 7.  **Issue Reproduction & Test-Driven Fixes**: All issues must first be reproduced via a test. Only after reproduction succeeds (failing test reproducing the bug), start working on the fix until the test passes. If at any time (even during active work) a test is found to be invalid or flawed, stop work immediately and notify the user.
 
+8.  **Release Manifest Synchronization**: Whenever you add a new file to the codebase, update `scripts/release.js` immediately. Add the file to `clientFiles` or `serverFiles`.
+
 ## Version Control Workflow
 
 1.  **Pre-Work Commit**: Always commit all changes before starting new work with a clear description and the suffix `--pre GEMINI`.
