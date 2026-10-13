@@ -206,6 +206,12 @@ function preparePackageDist(clientVersion, serverVersion) {
     },
   };
 
+  // Clean packages directory first to avoid stale artifacts
+  fs.rmSync(distClientDir, { recursive: true, force: true });
+  fs.rmSync(distServerDir, { recursive: true, force: true });
+  fs.mkdirSync(distClientDir, { recursive: true });
+  fs.mkdirSync(distServerDir, { recursive: true });
+
   fs.writeFileSync(
     path.join(distClientDir, "package.json"),
     JSON.stringify(clientPkg, null, 2),
@@ -217,21 +223,66 @@ function preparePackageDist(clientVersion, serverVersion) {
     "utf-8",
   );
 
-  // Copy compiled dist files into both packages
+  // Client-allowed file prefixes / names
+  const clientAllowed = [
+    "client",
+    "AutoUpdateClientManagerClass",
+    "AutoUpdatedClientObjectClass",
+    "AutoUpdateManagerClass",
+    "CommonTypes",
+    "DEMErrors",
+    "version",
+    "sync",
+  ];
+
+  // Excluded from both packages (tests, build caches, test utilities)
+  const excludedItems = new Set([
+    "packages",
+    "tests",
+    "test_lib",
+    "test_client",
+    "test_server",
+    "types_test",
+    "TestTypes",
+    "repro_any",
+    "repro_paths",
+    "repro_paths_2",
+    "repro_paths_3",
+    "repro_paths_4",
+    "inspect_type",
+    "old_file",
+    "socket_test",
+    "test",
+    "jest.config",
+    "tsconfig.tsbuildinfo",
+  ]);
+
   const items = fs.readdirSync(distDir);
   for (const item of items) {
-    if (item === "packages") continue;
-    const srcPath = path.join(distDir, item);
-    const destClientPath = path.join(distClientDir, item);
-    const destServerPath = path.join(distServerDir, item);
+    if (excludedItems.has(item) || item.startsWith("test")) continue;
+    const baseName = item.split(".")[0];
+    if (excludedItems.has(baseName)) continue;
 
+    const srcPath = path.join(distDir, item);
+    const destServerPath = path.join(distServerDir, item);
     const stat = fs.statSync(srcPath);
+
+    // Copy to server package
     if (stat.isDirectory()) {
-      fs.cpSync(srcPath, destClientPath, { recursive: true });
       fs.cpSync(srcPath, destServerPath, { recursive: true });
     } else {
-      fs.copyFileSync(srcPath, destClientPath);
       fs.copyFileSync(srcPath, destServerPath);
+    }
+
+    // Copy to client package only if allowed
+    const isClientAllowed = clientAllowed.some((prefix) => item === prefix || item.startsWith(`${prefix}.`));
+    if (isClientAllowed) {
+      const destClientPath = path.join(distClientDir, item);
+      if (stat.isDirectory()) {
+        fs.cpSync(srcPath, destClientPath, { recursive: true });
+      } else {
+        fs.copyFileSync(srcPath, destClientPath);
+      }
     }
   }
 
@@ -313,8 +364,8 @@ export function release(target = "both", releaseType = "patch", options = {}) {
     return;
   }
 
-  // Step 6: Stage version.ts and dist/
-  runCommand("git add version.ts dist/", rootDir);
+  // Step 6: Stage version.ts (and package.json / package-lock.json if modified)
+  runCommand("git add version.ts package.json package-lock.json", rootDir);
 
   // Step 7: Construct release commit message
   const commitTitle = description
