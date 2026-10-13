@@ -15,29 +15,33 @@ All release logic is now consolidated directly within this single repository.
 
 The release script (`scripts/release.js`) executes the following operations:
 
-1. **Pre-Flight Verification**:
+1. **Authentication Verification**:
+   - Executes `npm whoami` to verify active login session.
+   - Executes `npm login` if authentication is missing.
+
+2. **Pre-Flight Verification**:
    - Compiles TypeScript using `npx tsc --noEmit`.
    - Runs full regression test suite using `npm run test_for_AI`.
    - Fails immediately if any type check or unit test fails.
 
-2. **Distribution Build**:
+3. **Distribution Build**:
    - Compiles distribution bundle into `dist/` using `npx tsc`.
 
-3. **Version Bump**:
+4. **Version Bump**:
    - Updates `version` in `package.json` according to semver (`patch`, `minor`, `major`, or custom version string).
 
-4. **Release Commit**:
+5. **Release Commit**:
    - Stages `package.json`, `package-lock.json`, and `dist/`.
    - Creates a dedicated commit containing only the version bump.
    - Formats the commit title as `Release v<version>: <description>` or `Release v<version>`.
 
-5. **Git Tagging**:
+6. **Git Tagging**:
    - Creates an annotated tag `v<version>`.
 
-6. **Origin Synchronization**:
+7. **Origin Synchronization**:
    - Pushes release commit and git tag to `origin/main`.
 
-7. **NPM Publication**:
+8. **NPM Publication**:
    - Publishes the package to the npm registry with public access.
 
 ---

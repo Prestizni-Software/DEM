@@ -55,6 +55,23 @@ function readCurrentVersion() {
 }
 
 /**
+ * Checks if the user is authenticated with npm.
+ * Executes 'npm login' when the user is not authenticated.
+ */
+function ensureNpmLogin() {
+  log("Checking npm authentication status (npm whoami)...");
+  try {
+    const user = execSync("npm whoami", { stdio: ["pipe", "pipe", "ignore"], encoding: "utf-8" }).trim();
+    logSuccess(`Authenticated to npm as: ${user}`);
+  } catch (error) {
+    log("User not logged in to npm. Executing: npm login");
+    execSync("npm login", { stdio: "inherit" });
+    const user = execSync("npm whoami", { stdio: ["pipe", "pipe", "ignore"], encoding: "utf-8" }).trim();
+    logSuccess(`Authenticated to npm as: ${user}`);
+  }
+}
+
+/**
  * Executes the complete single-repository release workflow:
  * 1. Executes verification protocol (npx tsc and npm run test_for_AI).
  * 2. Compiles TypeScript artifacts into dist/.
@@ -84,9 +101,12 @@ export function release(releaseType = "patch", options = {}) {
   if (description) {
     log(`Description: ${description}`);
   }
-  log(`========================================\n`);
+  // Step 1: Verify npm login status
+  if (!skipPublish && !dryRun) {
+    ensureNpmLogin();
+  }
 
-  // Step 1: Verification protocol (tests & compilation)
+  // Step 2: Verification protocol (tests & compilation)
   if (!skipTests) {
     log("Running TypeScript compilation check (npx tsc --noEmit)...");
     runCommand("npx tsc --noEmit", rootDir);
@@ -95,7 +115,7 @@ export function release(releaseType = "patch", options = {}) {
     logSuccess("All tests and verification checks passed!");
   }
 
-  // Step 2: Build distribution files
+  // Step 3: Build distribution files
   log("Building distribution files (dist/)...");
   runCommand("npx tsc", rootDir);
   logSuccess("Built dist/ successfully");
@@ -166,7 +186,8 @@ export function release(releaseType = "patch", options = {}) {
 
 // CLI entry point
 const args = process.argv.slice(2);
-if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, "/")}`) {
+const isMainModule = process.argv[1] && import.meta.url === `file:///${process.argv[1].replace(/\\/g, "/")}`;
+if (isMainModule) {
   const releaseTypeArg = args.find((a) =>
     ["patch", "minor", "major"].includes(a) || /^\d+\.\d+\.\d+/.test(a),
   ) || "patch";
