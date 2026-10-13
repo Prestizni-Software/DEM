@@ -1,42 +1,56 @@
-# Project Guidelines & Memory
+# AI Agent Guidelines & Operating Instructions
 
-Welcome to the DEM Project. This file serves as the root of the project's memory and operational guidelines.
+This file defines the mandatory operating guidelines and instructions for AI agents working on this codebase.
 
-## Core Mandates
+---
 
-1.  **GEMINI Files First**: Every time, look first through all `GEMINI` files before examining the code to find architectural information, workflows, or logic explanations.
-2.  **Continuous Learning**: When learning new information or not finding something in the `GEMINI` files, create an entry about it.
-3.  **Modular Memory**: If a finding is complex, create a dedicated `GEMINI_<TOPIC>.md` file and link it here in the Knowledge Index.
-4.  **Verification**: Whenever you change anything:
-    - Run `npx tsc` to verify that no compilation errors have been made.
-    - Run `npm run test_for_AI` to confirm all functionality was preserved.
-    - If tests fail, run `npm test` for more info and fix the failing tests.
-5.  **Type Safety**: NEVER (only if very necessary) use `as any`. All types should be working correctly.
-6.  **Test Coverage**: When adding or fixing a feature, check for existing tests. If none exist, create them.
-7.  **Issue Reproduction & Test-Driven Fixes**: All issues must first be reproduced via a test. Only after reproduction succeeds (failing test reproducing the bug), start working on the fix until the test passes. If at any time (even during active work) a test is found to be invalid or flawed, stop work immediately and notify the user.
+## 1. Core Mandates for AI Agents
 
-8.  **Release Manifest Synchronization**: Whenever you add a new file to the codebase, update `scripts/release.js` immediately. Add the file to `clientFiles` or `serverFiles`.
+1. **Consult Documentation First**:
+   - Inspect files in the `docs/` directory before examining or modifying unfamiliar code.
+   - Read the architectural guides to understand system invariants and protocols.
 
-## Version Control Workflow
+2. **Maintain Documentation**:
+   - Keep all documentation in `docs/` synchronized with code changes.
+   - Create a new document in `docs/` whenever you introduce a significant architectural change or feature.
+   - Update `docs/README.md` when adding a new document.
 
-1.  **Pre-Work Commit**: Always commit all changes before starting new work with a clear description and the suffix `--pre GEMINI`.
-    - Example: `git add .; git commit -m "Description of current state --pre GEMINI"`
-2.  **Final Commit**: After completing a task or after consultation, commit the changes with the suffix `--GEMINI`.
-    - Example: `git add .; git commit -m "Description of changes --GEMINI"`
+3. **Keep Release Scripts Synchronized**:
+   - Whenever you add a new file to the codebase, update `scripts/release.js` immediately.
+   - Add client-bound files to `clientFiles`.
+   - Add server-bound files to `serverFiles`.
 
-## Knowledge Index
+4. **Verification Protocol**:
+   - Run `npx tsc --noEmit` to verify type safety and compilation.
+   - Run `npm run test_for_AI` to ensure full test suite passes.
+   - If tests fail, run `npm test` for detailed diagnostics and fix failing tests.
 
-- [DEM Loading Process](./GEMINI_LOADING.md) - Detailed analysis of how objects and references are initialized and synchronized, including performance optimizations for recursion and parallelization.
-- [Client Population Bypass](./GEMINI_CLIENT_POPULATION.md) - Documentation on the architectural change to ship fully populated objects to the client and bypass client-side reference population logic.
-- [DEM Object Creation & Browser Safeguards](./GEMINI_CREATE_OBJECT.md) - Analysis of client-side createObject execution, socket ACK loss safeguards, payload serialization, and Edge browser failure modes.
-- [DEM Comprehensive Remediation & Progress Report](./GEMINI_PROGRESS_REPORT.md) - Full analysis, architectural audit, issue remediation (57 items), and test verification report.
-- [DEM Performance & Startup Optimization](./GEMINI_PERFORMANCE.md) - Analysis of profiler/HAR trace, 140x startup speedup (18s -> ~120ms), V8 Fast Shape prototype accessor compilation, and test suite categorization.
-- [Dynamic Permissions & WriteQueue Deadlock Prevention](./GEMINI_DYNAMIC_PERMISSIONS.md) - Synchronization across dynamic permission boundaries (startupMiddleware) and recursive writeQueue deadlock prevention in onUpdate.
-- [DEM Modular Delta Synchronization & Change-Tracking System](./GEMINI_DELTA_SYNC.md) - Modular change-tracking, monotonic revision sequence, pluggable storage adapters (Memory, LocalStorage, IndexedDB), configurable TTL/size pruning, and client delta reconciliation.
-- [DEM Server Database State Verification and Error Code Architecture](./GEMINI_ERRORS_AND_DB_STATE.md) - Server database state inspection prior to loading, standard DEMError class, error code catalog, and multi-channel host communication.
-- **Socket Middleware Event Validation**: Base socket listeners (`EVENT_UPDATE + className`, `EVENT_GET + className`) are intentionally registered in `AutoUpdateServerManagerClass.ts` to register prefixes into `socket.eventNames()`. The server middleware iterates through `socket.eventNames()` to validate and whitelist dynamic incoming events (e.g. `updateCompany<24-hex-id>`).
+5. **Type Safety Standard**:
+   - Never use `as any` unless strictly necessary.
+   - Maintain explicit types across all interfaces and functions.
 
-## General Rules
+6. **Test Coverage & Test-Driven Fixes**:
+   - All bug fixes must begin with a reproduction test.
+   - Ensure the test fails before applying the fix.
+   - Do not claim completion until the test passes.
+   - Add tests for new features.
+
+---
+
+## 2. Version Control Workflow
+
+1. **Pre-Work Commit**:
+   - Commit existing working state before starting modifications.
+   - Use the commit message format: `<Description> --pre GEMINI`.
+
+2. **Final Commit**:
+   - Commit completed work after verification passes.
+   - Use the commit message format: `<Description> --GEMINI`.
+
+---
+
+## 3. General Implementation Rules
+
 - Prefer Vanilla CSS for web components.
-- Do not stage or commit changes unless explicitly requested by the user (except for the mandatory --pre and --GEMINI commits).
-
+- Do not stage or commit files unless completing mandatory `--pre GEMINI` or `--GEMINI` workflow steps.
+- Socket listeners registered in `AutoUpdateServerManagerClass.ts` whitelist dynamic incoming events via `socket.eventNames()`. Do not remove them.
