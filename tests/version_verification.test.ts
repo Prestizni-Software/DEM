@@ -80,17 +80,11 @@ describe("DEM Version Verification System", () => {
       expect(res.status).toBe("compatible_patch");
     });
 
-    test("accepts compatible minor difference in default (loose) mode", () => {
+    test("rejects minor version difference as incompatible", () => {
       const res = verifyDEMVersion("0.7.0", "0.6.5");
-      expect(res.compatible).toBe(true);
-      expect(res.status).toBe("compatible_minor");
-    });
-
-    test("rejects minor difference when strictVersionMatch is true", () => {
-      const res = verifyDEMVersion("0.7.0", "0.6.5", { strictVersionMatch: true });
       expect(res.compatible).toBe(false);
       expect(res.status).toBe("mismatch_minor");
-      expect(res.message).toContain("Strict version check failed");
+      expect(res.message).toContain("Incompatible minor DEM version");
     });
 
     test("rejects incompatible major difference", () => {
@@ -177,7 +171,7 @@ describe("DEM Version Verification System", () => {
       expect(mockLoggers.error).not.toHaveBeenCalled();
     });
 
-    test("logs warning on minor version difference and triggers onVersionMismatch callback", async () => {
+    test("rejects startup on minor version difference and triggers onVersionMismatch callback", async () => {
       const onMismatch = jest.fn();
       const mockSocket = {
         emit: jest.fn((event: string, _data: any, cb: (res: any) => void) => {
@@ -209,50 +203,11 @@ describe("DEM Version Verification System", () => {
         },
       );
 
-      await expect(clientManager.loadFromServer()).resolves.toBeUndefined();
-      expect(mockLoggers.warn).toHaveBeenCalled();
-      expect(onMismatch).toHaveBeenCalledWith(
-        DEM_VERSION,
-        "0.5.0",
-        expect.stringContaining("DEM minor version notice"),
-      );
-    });
-
-    test("rejects startup when strictVersionMatch is enabled and versions differ", async () => {
-      const mockSocket = {
-        emit: jest.fn((event: string, _data: any, cb: (res: any) => void) => {
-          if (event.startsWith("startup")) {
-            cb({
-              success: true,
-              data: {
-                ids: [],
-                properties: ["_id", "name"],
-                version: "0.5.0",
-              },
-            });
-          }
-        }),
-        off: jest.fn(),
-        on: jest.fn(),
-      } as any;
-
-      const clientManager = new AutoUpdateClientManager(
-        MockClientItem as any,
-        "MockItem",
-        mockSocket,
-        mockLoggers as any,
-        {} as any,
-        new EventEmitter(),
-        {},
-        {
-          strictVersionMatch: true,
-        },
-      );
-
       await expect(clientManager.loadFromServer()).rejects.toThrow(
-        /Strict version check failed/,
+        /Incompatible minor DEM version/,
       );
       expect(mockLoggers.error).toHaveBeenCalled();
+      expect(onMismatch).toHaveBeenCalled();
     });
 
     test("allows connection to legacy server without version in loose mode, rejects in strict mode", async () => {

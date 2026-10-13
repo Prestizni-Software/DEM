@@ -44,14 +44,88 @@ function runCommand(cmd, cwd = rootDir) {
 }
 
 /**
- * Reads the current package version from package.json.
+ * Reads versions from src/version.ts.
  *
- * @returns Semantic version string.
+ * @returns Object with client and server versions.
  */
-function readCurrentVersion() {
-  const pkgPath = path.join(rootDir, "package.json");
-  const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
-  return pkg.version;
+export function readVersions() {
+  const versionFile = path.join(rootDir, "version.ts");
+  const content = fs.readFileSync(versionFile, "utf-8");
+  const clientMatch = content.match(/DEM_CLIENT_VERSION\s*=\s*"([^"]+)"/);
+  const serverMatch = content.match(/DEM_SERVER_VERSION\s*=\s*"([^"]+)"/);
+  return {
+    client: clientMatch ? clientMatch[1] : "0.7.5",
+    server: serverMatch ? serverMatch[1] : "0.7.4",
+  };
+}
+
+/**
+ * Updates versions in src/version.ts.
+ *
+ * @param newClientVersion - New client version string.
+ * @param newServerVersion - New server version string.
+ * @param minCompatibleClientVersion - Optional lowest compatible client version.
+ */
+export function writeVersions(newClientVersion, newServerVersion, minCompatibleClientVersion) {
+  const versionFile = path.join(rootDir, "version.ts");
+  const contentBefore = fs.existsSync(versionFile) ? fs.readFileSync(versionFile, "utf-8") : "";
+  const existingMinMatch = contentBefore.match(/DEM_MIN_COMPATIBLE_CLIENT_VERSION\s*=\s*"([^"]+)"/);
+  
+  const clientParts = newClientVersion.split(".");
+  const defaultMin = `${clientParts[0]}.${clientParts[1]}.0`;
+  const minClient = minCompatibleClientVersion || (existingMinMatch ? existingMinMatch[1] : defaultMin);
+
+  const content = `/**
+ * Current version of @prestizni-software/client-dem.
+ */
+export const DEM_CLIENT_VERSION = "${newClientVersion}";
+
+/**
+ * Current version of @prestizni-software/server-dem.
+ */
+export const DEM_SERVER_VERSION = "${newServerVersion}";
+
+/**
+ * Lowest client version that the server is compatible with.
+ * Server patches do not increment this value unless breaking compatibility.
+ */
+export const DEM_MIN_COMPATIBLE_CLIENT_VERSION = "${minClient}";
+
+/**
+ * Global DEM version constant indicating minimum compatible client version.
+ */
+export const DEM_VERSION = DEM_MIN_COMPATIBLE_CLIENT_VERSION;
+
+/**
+ * Socket protocol version for DEM communications.
+ */
+export const DEM_PROTOCOL_VERSION = "1.0.0";
+`;
+  fs.writeFileSync(versionFile, content, "utf-8");
+}
+
+/**
+ * Increments semver version string based on release type.
+ *
+ * @param currentVersion - Current semver string.
+ * @param releaseType - 'patch' | 'minor' | 'major'.
+ * @returns Incremented semver string.
+ */
+export function bumpSemVer(currentVersion, releaseType) {
+  const parts = currentVersion.split(".").map((n) => parseInt(n, 10));
+  let [major = 0, minor = 0, patch = 0] = parts;
+
+  if (releaseType === "major") {
+    major += 1;
+    minor = 0;
+    patch = 0;
+  } else if (releaseType === "minor") {
+    minor += 1;
+    patch = 0;
+  } else {
+    patch += 1;
+  }
+  return `${major}.${minor}.${patch}`;
 }
 
 /**
@@ -72,18 +146,106 @@ function ensureNpmLogin() {
 }
 
 /**
- * Executes the complete single-repository release workflow:
- * 1. Executes verification protocol (npx tsc and npm run test_for_AI).
- * 2. Compiles TypeScript artifacts into dist/.
- * 3. Bumps version in package.json using semver type (patch, minor, major) or explicit version string.
- * 4. Creates a dedicated release git commit containing only the version bump and automated or custom description.
- * 5. Tags the release with git tag.
- * 6. Optionally publishes the package to npm.
+ * Creates distribution package directories and manifests for client and server.
  *
- * @param releaseType - 'patch' | 'minor' | 'major' | semver string.
- * @param options - Release options including description, dryRun, skipTests, skipPublish.
+ * @param clientVersion - Version for client package.
+ * @param serverVersion - Version for server package.
  */
-export function release(releaseType = "patch", options = {}) {
+function preparePackageDist(clientVersion, serverVersion) {
+  const distDir = path.join(rootDir, "dist");
+  const distClientDir = path.join(distDir, "packages", "client");
+  const distServerDir = path.join(distDir, "packages", "server");
+
+  fs.mkdirSync(distClientDir, { recursive: true });
+  fs.mkdirSync(distServerDir, { recursive: true });
+
+  // Client package.json
+  const clientPkg = {
+    name: "@prestizni-software/client-dem",
+    version: clientVersion,
+    description: "Real-time client synchronization library for DEM",
+    type: "module",
+    main: "./client.js",
+    types: "./client.d.ts",
+    publishConfig: {
+      access: "public",
+      registry: "https://registry.npmjs.org/",
+    },
+    dependencies: {
+      bson: "^7.2.0",
+      eventemitter3: "^5.0.4",
+      lodash: "^4.17.23",
+      "reflect-metadata": "^0.2.2",
+      "socket.io-client": "^4.8.3",
+      "string-similarity-js": "^2.1.4",
+    },
+  };
+
+  // Server package.json
+  const serverPkg = {
+    name: "@prestizni-software/server-dem",
+    version: serverVersion,
+    description: "Real-time server synchronization library for DEM",
+    type: "module",
+    main: "./server.js",
+    types: "./server.d.ts",
+    publishConfig: {
+      access: "public",
+      registry: "https://registry.npmjs.org/",
+    },
+    dependencies: {
+      "@typegoose/typegoose": "^13.3.0",
+      bson: "^7.2.0",
+      eventemitter3: "^5.0.4",
+      lodash: "^4.17.23",
+      "node-machine-id": "^1.1.12",
+      "reflect-metadata": "^0.2.2",
+      "socket.io": "^4.8.3",
+      "socket.io-client": "^4.8.3",
+      "string-similarity-js": "^2.1.4",
+    },
+  };
+
+  fs.writeFileSync(
+    path.join(distClientDir, "package.json"),
+    JSON.stringify(clientPkg, null, 2),
+    "utf-8",
+  );
+  fs.writeFileSync(
+    path.join(distServerDir, "package.json"),
+    JSON.stringify(serverPkg, null, 2),
+    "utf-8",
+  );
+
+  // Copy compiled dist files into both packages
+  const items = fs.readdirSync(distDir);
+  for (const item of items) {
+    if (item === "packages") continue;
+    const srcPath = path.join(distDir, item);
+    const destClientPath = path.join(distClientDir, item);
+    const destServerPath = path.join(distServerDir, item);
+
+    const stat = fs.statSync(srcPath);
+    if (stat.isDirectory()) {
+      fs.cpSync(srcPath, destClientPath, { recursive: true });
+      fs.cpSync(srcPath, destServerPath, { recursive: true });
+    } else {
+      fs.copyFileSync(srcPath, destClientPath);
+      fs.copyFileSync(srcPath, destServerPath);
+    }
+  }
+
+  logSuccess(`Prepared distribution packages for client (v${clientVersion}) and server (v${serverVersion})`);
+}
+
+/**
+ * Executes unified release workflow for client and/or server packages.
+ *
+ * @param target - 'both' | 'client' | 'server'.
+ * @param releaseType - 'patch' | 'minor' | 'major' | semver string.
+ * @param options - Release execution options.
+ */
+export function release(target = "both", releaseType = "patch", options = {}) {
   const {
     description = "",
     dryRun = false,
@@ -92,15 +254,33 @@ export function release(releaseType = "patch", options = {}) {
     push = true,
   } = options;
 
-  const currentVersion = readCurrentVersion();
+  const currentVersions = readVersions();
+  let nextClientVersion = currentVersions.client;
+  let nextServerVersion = currentVersions.server;
+
+  if (target === "client" || target === "both" || target === "all") {
+    nextClientVersion = /^\d+\.\d+\.\d+/.test(releaseType)
+      ? releaseType
+      : bumpSemVer(currentVersions.client, releaseType);
+  }
+
+  if (target === "server" || target === "both" || target === "all") {
+    nextServerVersion = /^\d+\.\d+\.\d+/.test(releaseType)
+      ? releaseType
+      : bumpSemVer(currentVersions.server, releaseType);
+  }
 
   log(`\n========================================`);
-  log(`Starting single-repository release workflow for DEM`);
-  log(`Current Version: ${currentVersion}`);
+  log(`Starting release workflow for DEM`);
+  log(`Target: ${target}`);
   log(`Release Type: ${releaseType}`);
+  log(`Client Version: ${currentVersions.client} -> ${nextClientVersion}`);
+  log(`Server Version: ${currentVersions.server} -> ${nextServerVersion}`);
   if (description) {
     log(`Description: ${description}`);
   }
+  log(`========================================\n`);
+
   // Step 1: Verify npm login status
   if (!skipPublish && !dryRun) {
     ensureNpmLogin();
@@ -115,33 +295,34 @@ export function release(releaseType = "patch", options = {}) {
     logSuccess("All tests and verification checks passed!");
   }
 
-  // Step 3: Build distribution files
+  // Step 3: Update version.ts
+  writeVersions(nextClientVersion, nextServerVersion);
+
+  // Step 4: Build distribution files
   log("Building distribution files (dist/)...");
   runCommand("npx tsc", rootDir);
   logSuccess("Built dist/ successfully");
 
+  // Step 5: Prepare standalone client and server packages in dist/packages/
+  preparePackageDist(nextClientVersion, nextServerVersion);
+
   if (dryRun) {
-    logSuccess("[DRY RUN] Build completed. Skipping version bump, commit, and publish.");
+    logSuccess("[DRY RUN] Build and packaging completed. Skipping commit and publish.");
+    // Revert version.ts in dry run
+    writeVersions(currentVersions.client, currentVersions.server);
     return;
   }
 
-  // Step 3: Bump package version using npm version without automatic git commit/tag
-  log(`Bumping package version (${releaseType})...`);
-  runCommand(`npm version ${releaseType} --no-git-tag-version`, rootDir);
-  const newVersion = readCurrentVersion();
-  logSuccess(`Bumped version: ${currentVersion} -> ${newVersion}`);
+  // Step 6: Stage version.ts and dist/
+  runCommand("git add version.ts dist/", rootDir);
 
-  // Step 4: Stage package.json (and package-lock.json if updated) and dist files
-  runCommand("git add package.json package-lock.json dist/", rootDir);
-
-  // Step 5: Construct release commit message
+  // Step 7: Construct release commit message
   const commitTitle = description
-    ? `Release v${newVersion}: ${description}`
-    : `Release v${newVersion}`;
-  const commitMessage = `${commitTitle}\n\nVersion release for @prestizni-software/dem-publisher.`;
+    ? `Release client v${nextClientVersion}, server v${nextServerVersion}: ${description}`
+    : `Release client v${nextClientVersion}, server v${nextServerVersion}`;
+  const commitMessage = `${commitTitle}\n\nClient version: ${nextClientVersion}\nServer version: ${nextServerVersion}`;
 
   log(`Creating release commit: "${commitTitle}"...`);
-  // Use temporary file or direct command for commit message to handle multiline cleanly
   const tempMsgFile = path.join(rootDir, ".release-commit-msg.tmp");
   try {
     fs.writeFileSync(tempMsgFile, commitMessage, "utf-8");
@@ -152,13 +333,19 @@ export function release(releaseType = "patch", options = {}) {
     }
   }
 
-  // Step 6: Create git tag
-  const tagName = `v${newVersion}`;
-  log(`Tagging release as ${tagName}...`);
-  runCommand(`git tag -a "${tagName}" -m "${commitTitle}"`, rootDir);
-  logSuccess(`Created tag ${tagName}`);
+  // Step 8: Create git tags
+  if (target === "client" || target === "both" || target === "all") {
+    const clientTag = `client-v${nextClientVersion}`;
+    log(`Tagging release as ${clientTag}...`);
+    runCommand(`git tag -a "${clientTag}" -m "Release @prestizni-software/client-dem v${nextClientVersion}"`, rootDir);
+  }
+  if (target === "server" || target === "both" || target === "all") {
+    const serverTag = `server-v${nextServerVersion}`;
+    log(`Tagging release as ${serverTag}...`);
+    runCommand(`git tag -a "${serverTag}" -m "Release @prestizni-software/server-dem v${nextServerVersion}"`, rootDir);
+  }
 
-  // Step 7: Push commit and tags if enabled
+  // Step 9: Push commit and tags if enabled
   if (push) {
     try {
       log("Pushing commit and tags to origin...");
@@ -169,18 +356,31 @@ export function release(releaseType = "patch", options = {}) {
     }
   }
 
-  // Step 8: Publish to npm
+  // Step 10: Publish to npm
   if (skipPublish) {
     logSuccess("Skipping npm publish as requested.");
     return;
   }
 
-  log("Publishing package to npm...");
-  try {
-    runCommand("npm publish --access public", rootDir);
-    logSuccess(`Successfully published v${newVersion} to npm!`);
-  } catch (publishErr) {
-    logError("npm publish failed. Run 'npm publish --access public' manually.");
+  const distPackagesDir = path.join(rootDir, "dist", "packages");
+  if (target === "client" || target === "both" || target === "all") {
+    log("Publishing @prestizni-software/client-dem to npm...");
+    try {
+      runCommand("npm publish --access public", path.join(distPackagesDir, "client"));
+      logSuccess(`Successfully published @prestizni-software/client-dem v${nextClientVersion}!`);
+    } catch (err) {
+      logError("Client publish failed. Check npm credentials.");
+    }
+  }
+
+  if (target === "server" || target === "both" || target === "all") {
+    log("Publishing @prestizni-software/server-dem to npm...");
+    try {
+      runCommand("npm publish --access public", path.join(distPackagesDir, "server"));
+      logSuccess(`Successfully published @prestizni-software/server-dem v${nextServerVersion}!`);
+    } catch (err) {
+      logError("Server publish failed. Check npm credentials.");
+    }
   }
 }
 
@@ -188,6 +388,13 @@ export function release(releaseType = "patch", options = {}) {
 const args = process.argv.slice(2);
 const isMainModule = process.argv[1] && import.meta.url === `file:///${process.argv[1].replace(/\\/g, "/")}`;
 if (isMainModule) {
+  let target = "both";
+  if (args.includes("client")) {
+    target = "client";
+  } else if (args.includes("server")) {
+    target = "server";
+  }
+
   const releaseTypeArg = args.find((a) =>
     ["patch", "minor", "major"].includes(a) || /^\d+\.\d+\.\d+/.test(a),
   ) || "patch";
@@ -197,7 +404,6 @@ if (isMainModule) {
   const skipPublish = args.includes("--no-publish") || args.includes("--skip-publish");
   const noPush = args.includes("--no-push");
 
-  // Extract description: --desc "message", -m "message", or trailing non-flag arguments
   let description = "";
   const descIdx = args.findIndex((a) => a === "--desc" || a === "-m" || a === "--description");
   if (descIdx !== -1 && args[descIdx + 1]) {
@@ -206,7 +412,7 @@ if (isMainModule) {
     const freeArgs = args.filter(
       (a) =>
         !a.startsWith("-") &&
-        !["patch", "minor", "major"].includes(a) &&
+        !["patch", "minor", "major", "client", "server", "both", "all"].includes(a) &&
         !/^\d+\.\d+\.\d+/.test(a),
     );
     if (freeArgs.length > 0) {
@@ -214,7 +420,7 @@ if (isMainModule) {
     }
   }
 
-  release(releaseTypeArg, {
+  release(target, releaseTypeArg, {
     description,
     dryRun,
     skipTests,

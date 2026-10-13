@@ -15,10 +15,16 @@ This file defines the mandatory operating guidelines and instructions for AI age
    - Create a new document in `docs/` whenever you introduce a significant architectural change or feature.
    - Update `docs/README.md` when adding a new document.
 
-3. **Single-Repository Release Workflow**:
+3. **Single-Repository Release Workflow & Versioning**:
    - The release process is unified in `scripts/release.js`.
    - Never synchronize or deploy to external repositories (`../client`, `../server`).
-   - Run `npm run release` or `node scripts/release.js [patch|minor|major] [-m "description"]`.
+   - Run `node scripts/release.js [both|client|server] [patch|minor|major] [-m "description"]`.
+   - Client package is `@prestizni-software/client-dem` without `@typegoose/typegoose`.
+   - Server package is `@prestizni-software/server-dem`.
+   - Versions are tracked in `version.ts` as `DEM_CLIENT_VERSION` and `DEM_SERVER_VERSION`.
+   - Compatibility rule: All patches are compatible. Incompatible breaking changes require incrementing the middle (minor) version number.
+   - Handshake rule: The client sends `clientVersion` on handshake (`startup<ClassName>`). If the version differs and is incompatible (different minor or major), the connection is rejected.
+   - AI Agent rule: Whenever you introduce an incompatible breaking change to protocol or APIs, automatically bump the middle (minor) version number in `version.ts`.
    - Releases run all tests automatically and commit a dedicated version bump with an automated or provided title.
 
 4. **Verification Protocol**:

@@ -15,12 +15,14 @@ import {
   EVENT_STARTUP,
   EVENT_VERSION,
   DEM_VERSION,
+  DEM_SERVER_VERSION,
   DEM_PROTOCOL_VERSION,
   EventEmitter3,
   MongoId,
   IAutoUpdatedClientObjectBase,
   IAutoUpdateManager,
   safeStringify,
+  verifyDEMVersion,
   DEMError,
   DEMErrorCode,
   toDEMError,
@@ -684,6 +686,29 @@ export class AutoUpdateServerManager<
         ) => void,
       ) => {
         try {
+          const clientVersion =
+            req && typeof req === "object" && typeof (req as any).clientVersion === "string"
+              ? (req as any).clientVersion
+              : undefined;
+
+          if (clientVersion) {
+            const verResult = verifyDEMVersion(clientVersion, DEM_SERVER_VERSION);
+            if (!verResult.compatible) {
+              const errMsg =
+                verResult.message ||
+                `DEM Version Incompatibility: Client (${clientVersion}) is incompatible with Server (${DEM_SERVER_VERSION})`;
+              this.loggers.warn?.(`Rejecting client connection from ${socket.id}: ${errMsg}`);
+              if (typeof ack === "function") {
+                ack({
+                  success: false,
+                  code: DEMErrorCode.VERSION_MISMATCH,
+                  message: errMsg,
+                } as any);
+              }
+              return;
+            }
+          }
+
           const clientLastRev =
             req && typeof req === "object" && typeof (req as any).lastRevision === "number"
               ? (req as any).lastRevision

@@ -13,6 +13,7 @@ import {
   EVENT_UPDATE,
   EVENT_VERSION,
   DEM_VERSION,
+  DEM_CLIENT_VERSION,
   DEM_PROTOCOL_VERSION,
   DEMVersionOptions,
   verifyDEMVersion,
@@ -466,10 +467,12 @@ export class AutoUpdateClientManager<
         );
       }, 5000);
 
-      const startupPayload =
-        this.deltaSyncEnabled && hasRestoredFromStorage
-          ? { lastRevision: this.lastRevision }
-          : null;
+      const startupPayload: Record<string, unknown> = {
+        clientVersion: DEM_CLIENT_VERSION,
+      };
+      if (this.deltaSyncEnabled && hasRestoredFromStorage) {
+        startupPayload.lastRevision = this.lastRevision;
+      }
 
       this.socket.emit(
         "startup" + this.className,
@@ -500,28 +503,26 @@ export class AutoUpdateClientManager<
           // DEM Version Verification
           if (data.version) {
             const verResult = verifyDEMVersion(
-              DEM_VERSION,
+              DEM_CLIENT_VERSION,
               data.version,
               this.versionOptions,
             );
             if (!verResult.compatible) {
               const errMsg =
                 verResult.message ||
-                `DEM Version Incompatibility: Client (${DEM_VERSION}) is incompatible with Server (${data.version})`;
+                `DEM Version Incompatibility: Client (${DEM_CLIENT_VERSION}) is incompatible with Server (${data.version})`;
               this.loggers.error?.(errMsg);
               this.versionOptions?.onVersionMismatch?.(
-                DEM_VERSION,
+                DEM_CLIENT_VERSION,
                 data.version,
                 errMsg,
               );
-              if (this.versionOptions?.strictVersionMatch) {
-                reject(new DEMError(DEMErrorCode.VERSION_MISMATCH, errMsg));
-                return;
-              }
+              reject(new DEMError(DEMErrorCode.VERSION_MISMATCH, errMsg));
+              return;
             } else if (verResult.status !== "match") {
               this.loggers.warn?.(verResult.message);
               this.versionOptions?.onVersionMismatch?.(
-                DEM_VERSION,
+                DEM_CLIENT_VERSION,
                 data.version,
                 verResult.message,
               );

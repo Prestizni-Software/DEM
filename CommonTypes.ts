@@ -305,15 +305,7 @@ export const EVENT_GET = "get";
 export const EVENT_STARTUP = "startup";
 export const EVENT_VERSION = "dem_version";
 
-/**
- * Current version of the DEM library.
- */
-export const DEM_VERSION = "0.6.5";
-
-/**
- * DEM socket protocol version.
- */
-export const DEM_PROTOCOL_VERSION = "1.0.0";
+export * from "./version.js";
 
 /**
  * Configuration options for DEM client-server version verification.
@@ -511,21 +503,12 @@ export function verifyDEMVersion(
 
   // Minor version difference
   if (cParsed.minor !== sParsed.minor) {
-    if (options?.strictVersionMatch) {
-      return {
-        compatible: false,
-        clientVersion,
-        serverVersion,
-        status: "mismatch_minor",
-        message: `Strict version check failed: Client minor version (${clientVersion}) differs from Server (${serverVersion}).`,
-      };
-    }
     return {
-      compatible: true,
+      compatible: false,
       clientVersion,
       serverVersion,
-      status: "compatible_minor",
-      message: `DEM minor version notice: Client (${clientVersion}) differs from Server (${serverVersion}). Functionality is compatible.`,
+      status: "mismatch_minor",
+      message: `Incompatible minor DEM version: Client is ${clientVersion}, Server is ${serverVersion}. Minor versions must match.`,
     };
   }
 
@@ -535,7 +518,7 @@ export function verifyDEMVersion(
     clientVersion,
     serverVersion,
     status: "compatible_patch",
-    message: `DEM patch version notice: Client (${clientVersion}) and Server (${serverVersion}).`,
+    message: `DEM patch version compatible: Client (${clientVersion}) and Server (${serverVersion}).`,
   };
 }
 
