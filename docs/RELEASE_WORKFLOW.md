@@ -79,4 +79,10 @@ node scripts/release.js server minor -m "Incompatible server protocol update"
 
 # Dry run mode
 node scripts/release.js both patch --dry-run
+
+# Release without running tests
+node scripts/release.js both patch --skip-tests
+node scripts/release.js client patch --no-tests
+node scripts/release.js server patch -n
 ```
+

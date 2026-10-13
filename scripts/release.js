@@ -451,7 +451,11 @@ if (isMainModule) {
   ) || "patch";
 
   const dryRun = args.includes("--dry-run");
-  const skipTests = args.includes("--skip-tests");
+  const skipTests =
+    args.includes("--skip-tests") ||
+    args.includes("--no-tests") ||
+    args.includes("-n") ||
+    args.includes("--quick");
   const skipPublish = args.includes("--no-publish") || args.includes("--skip-publish");
   const noPush = args.includes("--no-push");
 
