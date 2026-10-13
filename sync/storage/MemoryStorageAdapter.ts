@@ -8,15 +8,27 @@ import { IClientStorageAdapter } from "./IClientStorageAdapter.js";
 export class MemoryStorageAdapter implements IClientStorageAdapter {
   private store = new Map<string, StoredManagerState<any>>();
 
+  /**
+   * Saves complete manager state into in-memory store.
+   * Clones the input state to prevent mutations from modifying the stored snapshot.
+   *
+   * @param className - The name identifier of the manager class.
+   * @param state - Complete snapshot of the manager state.
+   */
   public async saveManagerState<T = unknown>(
     className: string,
     state: StoredManagerState<T>,
   ): Promise<void> {
-    // Clone state to prevent external mutations from modifying stored snapshot
     const cloned = JSON.parse(JSON.stringify(state));
     this.store.set(className, cloned);
   }
 
+  /**
+   * Retrieves cloned manager state snapshot from in-memory store.
+   *
+   * @param className - The name identifier of the manager class.
+   * @returns The stored snapshot or null if not found.
+   */
   public async loadManagerState<T = unknown>(
     className: string,
   ): Promise<StoredManagerState<T> | null> {
@@ -25,10 +37,18 @@ export class MemoryStorageAdapter implements IClientStorageAdapter {
     return JSON.parse(JSON.stringify(state)) as StoredManagerState<T>;
   }
 
+  /**
+   * Removes saved in-memory state for a specific manager class.
+   *
+   * @param className - The name identifier of the manager class.
+   */
   public async clearManagerState(className: string): Promise<void> {
     this.store.delete(className);
   }
 
+  /**
+   * Purges all saved manager states across all classes from the in-memory store.
+   */
   public async clearAll(): Promise<void> {
     this.store.clear();
   }

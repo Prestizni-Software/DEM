@@ -134,7 +134,10 @@ export const DEM_ERROR_DESCRIPTIONS: Record<DEMErrorCode, string> = {
 };
 
 /**
- * Returns human-readable description for given error code.
+ * Returns the human-readable description for a given error code.
+ *
+ * @param code - The DEM error code enum value.
+ * @returns Standard descriptive message corresponding to the error code.
  */
 export function getDEMErrorDescription(code: DEMErrorCode): string {
   return DEM_ERROR_DESCRIPTIONS[code] || "Unknown error.";
@@ -142,12 +145,20 @@ export function getDEMErrorDescription(code: DEMErrorCode): string {
 
 /**
  * Standard typed Error class for DEM.
+ * Enforces structured error codes and optional diagnostic payloads.
  */
 export class DEMError extends Error {
   public readonly code: DEMErrorCode;
   public readonly details?: unknown;
   public readonly timestamp: number;
 
+  /**
+   * Constructs a new DEMError instance.
+   *
+   * @param code - The typed error code.
+   * @param message - Descriptive error message.
+   * @param details - Optional arbitrary diagnostic data.
+   */
   constructor(code: DEMErrorCode, message: string, details?: unknown) {
     super(`[${code}] ${message}`);
     this.name = "DEMError";
@@ -157,6 +168,11 @@ export class DEMError extends Error {
     Object.setPrototypeOf(this, DEMError.prototype);
   }
 
+  /**
+   * Serializes the error instance to a JSON-compatible object.
+   *
+   * @returns Plain object representation of the DEMError.
+   */
   public toJSON() {
     return {
       name: this.name,
@@ -169,7 +185,11 @@ export class DEMError extends Error {
 }
 
 /**
- * Converts unknown error into DEMError instance.
+ * Converts an unknown caught error or object into a typed DEMError instance.
+ *
+ * @param err - The caught error or value.
+ * @param defaultCode - Fallback error code when the source is not a DEMError.
+ * @returns Standard DEMError instance.
  */
 export function toDEMError(
   err: unknown,

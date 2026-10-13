@@ -7,6 +7,9 @@ import {
 
 /**
  * Calculates a fast approximation of the memory/JSON byte footprint of a JavaScript object/value.
+ *
+ * @param obj - The value or object to estimate.
+ * @returns Estimated size in bytes.
  */
 export function estimateObjectSizeBytes(obj: unknown): number {
   if (obj === null || obj === undefined) return 8;
@@ -43,6 +46,12 @@ export class ServerChangeTracker<T = unknown> {
   public maxEntries?: number;
   public pruneMode: PruneMode;
 
+  /**
+   * Initializes a new ServerChangeTracker instance.
+   *
+   * @param className - Managed entity class name.
+   * @param options - Pruning options such as maxAgeMs, maxSizeBytes, maxEntries, and pruneMode.
+   */
   constructor(
     public readonly className: string,
     options?: ChangeLogOptions,
@@ -55,6 +64,8 @@ export class ServerChangeTracker<T = unknown> {
 
   /**
    * Dynamically updates limits (MB size, TTL age, entries, pruneMode) mid-run and triggers pruning.
+   *
+   * @param options - Partial set of options to overwrite.
    */
   public updateOptions(options: Partial<ChangeLogOptions>): void {
     if (options.maxAgeMs !== undefined) this.maxAgeMs = options.maxAgeMs;
@@ -64,24 +75,49 @@ export class ServerChangeTracker<T = unknown> {
     this.prune();
   }
 
+  /**
+   * Retrieves the current monotonic revision number.
+   *
+   * @returns Latest revision counter.
+   */
   public getCurrentRevision(): number {
     return this.currentRevision;
   }
 
+  /**
+   * Retrieves the lowest revision number retained in the mutation log.
+   *
+   * @returns Oldest retained revision number.
+   */
   public getLowestRetainedRevision(): number {
     return this.lowestRetainedRevision;
   }
 
+  /**
+   * Retrieves the estimated total memory usage of all retained entries in bytes.
+   *
+   * @returns Total bytes consumed by retained entries.
+   */
   public getEstimatedSizeBytes(): number {
     return this.totalEstimatedBytes;
   }
 
+  /**
+   * Retrieves the total count of currently retained change entries.
+   *
+   * @returns Number of retained mutation entries.
+   */
   public getEntryCount(): number {
     return this.entries.length;
   }
 
   /**
    * Records a mutation and assigns a new monotonic revision number.
+   *
+   * @param type - Mutation type ('create', 'update', or 'delete').
+   * @param id - String identifier of mutated entity.
+   * @param data - Optional mutated property payload.
+   * @returns Assigned monotonic revision number.
    */
   public recordChange(
     type: ChangeType,
@@ -93,6 +129,12 @@ export class ServerChangeTracker<T = unknown> {
 
   /**
    * Records a mutation with an explicit timestamp (useful for testing or replay).
+   *
+   * @param type - Mutation type ('create', 'update', or 'delete').
+   * @param id - String identifier of mutated entity.
+   * @param data - Optional mutated property payload.
+   * @param timestamp - Explicit Unix timestamp in milliseconds.
+   * @returns Assigned monotonic revision number.
    */
   public recordChangeWithTimestamp(
     type: ChangeType,
@@ -128,6 +170,10 @@ export class ServerChangeTracker<T = unknown> {
    * Retrieves all mutations occurring strictly after `clientRevision`.
    * If `clientRevision` is older than the lowest retained revision in history,
    * returns `isExpired: true` indicating a full sync is necessary.
+   *
+   * @param clientRevision - The last revision known by the client.
+   * @param allowedIds - Optional Set of allowed IDs for permission filtering.
+   * @returns Object containing isExpired flag and array of change entries.
    */
   public getChangesSince(
     clientRevision: number,

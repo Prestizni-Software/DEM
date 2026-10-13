@@ -96,6 +96,20 @@ export abstract class AutoUpdatedClientObject<
     }
   };
 
+  /**
+   * Initializes an AutoUpdatedClientObject instance.
+   *
+   * @param classParam - Constructor of the client object entity.
+   * @param socket - Socket.IO client socket connection.
+   * @param data - Entity identifier string or initial data object.
+   * @param loggers - Logging interfaces.
+   * @param className - Managed entity class name.
+   * @param parentManager - Host client manager.
+   * @param callback - Event callbacks interface.
+   * @param emitter - Shared event emitter.
+   * @param isServer - Flag indicating whether running on server runtime.
+   * @throws {DEMError} Throws DEMErrorCode.MISSING_ARGUMENT when required parameters are omitted.
+   */
   constructor(
     classParam?: Constructor<T>,
     socket?: SocketType,
@@ -238,6 +252,12 @@ export abstract class AutoUpdatedClientObject<
     });
   }
 
+  /**
+   * Normalizes reference fields in entity data into string IDs.
+   *
+   * @param data - Entity data payload.
+   * @returns Cleaned entity data payload.
+   */
   protected handleDataCleanup(data: IsData<T>): IsData<T> {
     if (!data || typeof data !== "object") return data;
 
@@ -274,6 +294,12 @@ export abstract class AutoUpdatedClientObject<
     return data;
   }
 
+  /**
+   * Pauses execution until the object finishes asynchronous preloading.
+   *
+   * @param timeoutMs - Maximum milliseconds to wait before rejecting.
+   * @throws {DEMError} Throws DEMErrorCode.PRELOAD_TIMEOUT on timeout or OBJECT_LOAD_FAILED on failure.
+   */
   public async waitForPreloaded(timeoutMs: number = 15000): Promise<void> {
     if (this.loadError)
       throw new DEMError(DEMErrorCode.OBJECT_LOAD_FAILED, this.loadError);
@@ -298,6 +324,11 @@ export abstract class AutoUpdatedClientObject<
     });
   }
 
+  /**
+   * Emits creation event to the server socket and awaits populated entity response.
+   *
+   * @param data - Initial data payload.
+   */
   protected handleNewObject(data: IsData<T>): void {
     this.isLoading = true;
 
@@ -366,6 +397,11 @@ export abstract class AutoUpdatedClientObject<
     );
   }
 
+  /**
+   * Returns a deep clone of the entity's extracted data with reference objects converted to IDs.
+   *
+   * @returns Serialized entity representation.
+   */
   public get extractedData(): ExtractedData<T, IAutoUpdatedClientObject<any>> {
     const extracted = processIsRefProperties(
       this.data,
@@ -381,16 +417,29 @@ export abstract class AutoUpdatedClientObject<
     >;
   }
 
+  /**
+   * Indicates whether the entity has finished loading its data.
+   *
+   * @returns True if loaded.
+   */
   public get isLoaded(): boolean {
     return !this.isLoading;
   }
 
+  /**
+   * Asynchronously awaits preloading and loads all missing reference links.
+   *
+   * @returns Promise resolving to true when completed.
+   */
   public async isPreLoadedAsync(): Promise<boolean> {
     await this.loadReferencesAsync();
     this.generateSettersAndGetters();
     return true;
   }
 
+  /**
+   * Identifies and connects missing cross-entity references on server startup.
+   */
   public async loadMissingReferences(): Promise<void> {
     if (!this.isServer) return;
     this.checkedMissingProperties = {};
@@ -470,6 +519,12 @@ export abstract class AutoUpdatedClientObject<
     }
   }
 
+  /**
+   * Retrieves a property value by dot-notated or shallow key path.
+   *
+   * @param key_ - Property key or dot-delimited path.
+   * @returns Value at the requested path.
+   */
   public getValue<K extends Paths<T, IAutoUpdatedClientObject<any>>>(
     key_: K,
   ): PathValueOf<T, K>;
@@ -495,6 +550,13 @@ export abstract class AutoUpdatedClientObject<
     return value;
   }
 
+  /**
+   * Resolves reference pointer ID to instantiated entity instance across caches and managers.
+   *
+   * @param id - Entity ID or ObjectId.
+   * @param key - Property key referencing the entity.
+   * @returns Resolved entity instance or undefined.
+   */
   public findReference(
     id: string | ObjectId,
     key: string,
@@ -525,6 +587,13 @@ export abstract class AutoUpdatedClientObject<
     return undefined;
   }
 
+  /**
+   * Mutates property value and synchronizes change to the server via socket.
+   *
+   * @param key - Property key to modify.
+   * @param val - Value to assign.
+   * @returns Promise resolving to modification result.
+   */
   public async setValue<K extends string>(
     key: K,
     val: PathValueOf<IsData<T>, K>,
@@ -532,6 +601,17 @@ export abstract class AutoUpdatedClientObject<
     return await this.setValue__(key as string, val);
   }
 
+  /**
+   * Internal setter with writeQueue serialization ensuring sequential updates.
+   *
+   * @param key - Property key.
+   * @param val - Value to assign.
+   * @param silent - Whether socket broadcast is bypassed.
+   * @param noGet - Whether local update bypasses get.
+   * @param noUpdate - Whether onUpdate hook is bypassed.
+   * @param isParentUpdate - Whether mutation originated from parent.
+   * @returns Promise resolving to operation outcome.
+   */
   protected async setValue__(
     key: string,
     val: unknown,
@@ -898,6 +978,12 @@ export abstract class AutoUpdatedClientObject<
     }
   }
 
+  /**
+   * Destroys the entity and notifies server socket of deletion.
+   *
+   * @param once - Internal flag preventing infinite recursion.
+   * @returns Promise resolving to deletion outcome.
+   */
   public async destroy(
     once = false,
   ): Promise<{ success: boolean; message: string; code?: DEMErrorCode }> {
@@ -970,6 +1056,9 @@ export abstract class AutoUpdatedClientObject<
     }
   }
 
+  /**
+   * Triggers missing reference resolution on all child referenced entities.
+   */
   public async contactChildren(): Promise<void> {
     if (!this.isServer) return;
     for (const prop of this.properties as string[]) {
@@ -1003,6 +1092,17 @@ export abstract class AutoUpdatedClientObject<
   }
 }
 
+/**
+ * Traverses entity object and transforms referenced objects into string identifiers.
+ *
+ * @param instance - Raw entity data record.
+ * @param target - Reflection prototype target.
+ * @param prefix - Dot-notated property key prefix.
+ * @param allProps - Accumulated array of discovered property paths.
+ * @param newData - Output object receiving sanitized data.
+ * @param loggers - Logging interfaces.
+ * @returns Object containing all property paths and transformed newData.
+ */
 export function processIsRefProperties(
   instance: Record<string, unknown>,
   target: object,
@@ -1057,6 +1157,12 @@ export function processIsRefProperties(
   return { allProps, newData };
 }
 
+/**
+ * Compiles V8 fast-shape property getters and setters on the class prototype.
+ *
+ * @param classParam - Constructor function of the target entity class.
+ * @returns Cached metadata object with properties list, refProps set, and refsToMap.
+ */
 export function setupClassAccessors(classParam: Constructor<any>): {
   properties: string[];
   refProps: Set<string>;
@@ -1148,6 +1254,14 @@ export function setupClassAccessors(classParam: Constructor<any>): {
   return meta;
 }
 
+/**
+ * Traverses prototype chain recursively to resolve metadata key.
+ *
+ * @param metaKey - Reflection metadata key.
+ * @param proto - Prototype object.
+ * @param prop - Property name on prototype.
+ * @returns Metadata value or undefined.
+ */
 export function getMetadataRecursive(
   metaKey: string,
   proto: object | null,

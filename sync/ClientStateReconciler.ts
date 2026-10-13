@@ -23,6 +23,10 @@ export interface ReconcilableClientManager<T extends IAutoUpdatedClientObjectBas
 export class ClientStateReconciler {
   /**
    * Restores client manager objects in-memory from a persistent storage adapter.
+   *
+   * @param manager - Reconcilable client manager instance.
+   * @param storageAdapter - Storage adapter implementing IClientStorageAdapter.
+   * @returns Object indicating restoration success, stored revision, and restored entity count.
    */
   public static async restoreFromStorage<T extends IAutoUpdatedClientObjectBase>(
     manager: ReconcilableClientManager<T>,
@@ -90,6 +94,10 @@ export class ClientStateReconciler {
 
   /**
    * Persists current manager in-memory state to storage adapter.
+   *
+   * @param manager - Reconcilable client manager instance.
+   * @param revision - Monotonic revision number to record with the snapshot.
+   * @param storageAdapter - Storage adapter to receive the persisted state.
    */
   public static async persistToStorage<T extends IAutoUpdatedClientObjectBase>(
     manager: ReconcilableClientManager<T>,
@@ -125,6 +133,11 @@ export class ClientStateReconciler {
 
   /**
    * Applies a delta changes payload to the in-memory client manager.
+   * Handles creates, updates, and deletes with callback dispatch and local state persistence.
+   *
+   * @param manager - Reconcilable client manager instance.
+   * @param payload - Delta sync payload containing status, revision, and changes array.
+   * @param storageAdapter - Optional storage adapter to persist reconciled state.
    */
   public static async applyDelta<T extends IAutoUpdatedClientObjectBase>(
     manager: ReconcilableClientManager<T>,
@@ -211,6 +224,13 @@ export class ClientStateReconciler {
     }
   }
 
+  /**
+   * Patches changed fields onto an existing client object instance and triggers update callback.
+   *
+   * @param targetObj - Target client object to patch.
+   * @param patchData - Key-value map of properties to apply.
+   * @param callbacks - Optional manager callbacks interface.
+   */
   private static async patchObjectProperties(
     targetObj: any,
     patchData: Record<string, any>,

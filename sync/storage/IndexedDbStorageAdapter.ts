@@ -17,6 +17,11 @@ export class IndexedDbStorageAdapter implements IClientStorageAdapter {
   private idbFactory: IDBFactory | null = null;
   private dbPromise: Promise<IDBDatabase> | null = null;
 
+  /**
+   * Initializes an IndexedDbStorageAdapter instance.
+   *
+   * @param options - Configuration options for database name, store name, and IDBFactory.
+   */
   constructor(options?: IndexedDbStorageAdapterOptions) {
     this.dbName = options?.dbName ?? "dem_offline_store";
     this.storeName = options?.storeName ?? "manager_states";
@@ -32,6 +37,12 @@ export class IndexedDbStorageAdapter implements IClientStorageAdapter {
     }
   }
 
+  /**
+   * Retrieves or initializes the underlying IDBDatabase connection.
+   *
+   * @returns A promise resolving to the IDBDatabase instance.
+   * @throws {DEMError} Throws DEMErrorCode.STORAGE_NOT_SUPPORTED when IndexedDB is unavailable.
+   */
   private async getDb(): Promise<IDBDatabase> {
     if (this.dbPromise) return this.dbPromise;
     if (!this.idbFactory) {
@@ -63,6 +74,12 @@ export class IndexedDbStorageAdapter implements IClientStorageAdapter {
     return this.dbPromise;
   }
 
+  /**
+   * Persists manager state record to IndexedDB object store.
+   *
+   * @param className - The name identifier of the manager class.
+   * @param state - Complete snapshot of the manager state.
+   */
   public async saveManagerState<T = unknown>(
     className: string,
     state: StoredManagerState<T>,
@@ -84,6 +101,12 @@ export class IndexedDbStorageAdapter implements IClientStorageAdapter {
     }
   }
 
+  /**
+   * Retrieves stored manager state from IndexedDB store.
+   *
+   * @param className - The name identifier of the manager class.
+   * @returns Parsed state object or null if absent.
+   */
   public async loadManagerState<T = unknown>(
     className: string,
   ): Promise<StoredManagerState<T> | null> {
@@ -109,6 +132,11 @@ export class IndexedDbStorageAdapter implements IClientStorageAdapter {
     }
   }
 
+  /**
+   * Removes saved manager state for given class name from IndexedDB.
+   *
+   * @param className - The name identifier of the manager class.
+   */
   public async clearManagerState(className: string): Promise<void> {
     if (!this.idbFactory) return;
     try {
@@ -126,6 +154,9 @@ export class IndexedDbStorageAdapter implements IClientStorageAdapter {
     }
   }
 
+  /**
+   * Purges all stored records in the IndexedDB object store.
+   */
   public async clearAll(): Promise<void> {
     if (!this.idbFactory) return;
     try {

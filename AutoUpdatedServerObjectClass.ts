@@ -36,6 +36,18 @@ export abstract class AutoUpdatedServerObject<
   private loadPromise: Promise<void> | null = null;
   private _isUpdating: boolean = false;
 
+  /**
+   * Initializes an AutoUpdatedServerObject instance.
+   *
+   * @param classParam - Target entity constructor class.
+   * @param socket - Socket server or transport instance.
+   * @param data - Initial entity data payload.
+   * @param loggers - Logging interfaces.
+   * @param className - Managed entity class name.
+   * @param parentManager - Host server manager.
+   * @param emitter - Shared event emitter.
+   * @throws {DEMError} Throws DEMErrorCode.MISSING_ARGUMENT when required arguments are omitted.
+   */
   constructor();
   constructor(
     classParam: Constructor<T>,
@@ -145,6 +157,11 @@ export abstract class AutoUpdatedServerObject<
     }
   }
 
+  /**
+   * Persists active document changes to MongoDB with queue serialization.
+   *
+   * @returns Promise resolving when database write finishes.
+   */
   public async save(): Promise<void> {
     this.saveLock = (this.saveLock ?? Promise.resolve())
       .catch(() => {})
@@ -158,6 +175,12 @@ export abstract class AutoUpdatedServerObject<
     await this.saveLock;
   }
 
+  /**
+   * Loads entity document data directly from MongoDB by ID.
+   *
+   * @returns Promise resolving when data is populated.
+   * @throws {DEMError} Throws DEMErrorCode.MISSING_ID or DOCUMENT_NOT_FOUND.
+   */
   public async loadFromDB(): Promise<void> {
     if (this.loadPromise) return this.loadPromise;
     this.loadPromise = (async () => {
@@ -182,6 +205,11 @@ export abstract class AutoUpdatedServerObject<
     return this.loadPromise;
   }
 
+  /**
+   * Ingests existing MongoDB Mongoose document into instance state.
+   *
+   * @param document - Mongoose Typegoose document.
+   */
   public loadFromDocument(document: DocumentType<T>): void {
     this.entry = document;
     const docObj = typeof (document as any).toObject === "function" ? (document as any).toObject() : document;
@@ -196,12 +224,22 @@ export abstract class AutoUpdatedServerObject<
     IAutoUpdatedClientObject<any>
   > | null = null;
 
+  /**
+   * Cleans raw object data and invalidates the cached extracted data representation.
+   *
+   * @param data - Raw entity data object.
+   * @returns Cleaned entity data object.
+   */
   public override handleDataCleanup(data: IsData<T>): IsData<T> {
     this._cachedExtractedData = null;
     return super.handleDataCleanup(data);
   }
 
-  /** Override extractedData to return processed copy with cache */
+  /**
+   * Serialized data payload with resolved reference identifiers, cached for performance.
+   *
+   * @returns Extracted data representation of the entity.
+   */
   public override get extractedData(): ExtractedData<
     T,
     IAutoUpdatedClientObject<any>
@@ -219,6 +257,13 @@ export abstract class AutoUpdatedServerObject<
     return extracted;
   }
 
+  /**
+   * Sets a property value on the entity with deadlock-safe queueing during onUpdate hooks.
+   *
+   * @param key - Property key to modify.
+   * @param val - Value to set.
+   * @returns Promise resolving to operation outcome.
+   */
   public override async setValue<K extends string>(
     key: K,
     val: any,
@@ -238,6 +283,17 @@ export abstract class AutoUpdatedServerObject<
     return await super.setValue(key as any, val);
   }
 
+  /**
+   * Internal setter with re-entrant write queue lock support.
+   *
+   * @param key - Property key.
+   * @param val - Value to set.
+   * @param silent - Whether socket broadcast is skipped.
+   * @param noGet - Whether local update bypasses get.
+   * @param noUpdate - Whether onUpdate hook is skipped.
+   * @param isParentUpdate - Whether mutation originated from parent.
+   * @returns Promise resolving to update outcome.
+   */
   protected override async setValue__(
     key: string,
     val: unknown,
@@ -269,6 +325,15 @@ export abstract class AutoUpdatedServerObject<
     );
   }
 
+  /**
+   * Internal database and memory setter executing MongoDB updates and socket events.
+   *
+   * @param key - Property key to modify.
+   * @param value - Value to set.
+   * @param silent - Whether socket broadcast is bypassed.
+   * @param noUpdate - Whether onUpdate hook is bypassed.
+   * @returns Promise resolving to setter outcome.
+   */
   protected override async setValueInternal(
     key: string,
     value: unknown,
@@ -359,6 +424,12 @@ export abstract class AutoUpdatedServerObject<
     }
   }
 
+  /**
+   * Deletes entity from MongoDB and emits delete socket events.
+   *
+   * @param once - Internal flag for single-pass deletion.
+   * @returns Promise resolving to deletion outcome.
+   */
   public async destroy(
     once = false,
   ): Promise<{ success: boolean; message: string }> {
@@ -395,6 +466,12 @@ export abstract class AutoUpdatedServerObject<
     return { success: true, message: "Deleted" };
   }
 
+  /**
+   * Executes configured onUpdate hook with deadlock-safe write execution.
+   *
+   * @param noUpdate - Whether hook execution is skipped.
+   * @param key - Modified property key.
+   */
   protected override async onUpdate(
     noUpdate: boolean = false,
     key: string,
@@ -426,6 +503,9 @@ export abstract class AutoUpdatedServerObject<
     }
   }
 
+  /**
+   * Executes configured onDeletion hook prior to database removal.
+   */
   protected override async onDeletion(): Promise<void> {
     if (this.parentManager.options?.onDeletion) {
       await this.parentManager.options.onDeletion(this as unknown as T);
@@ -433,6 +513,19 @@ export abstract class AutoUpdatedServerObject<
   }
 }
 
+/**
+ * Instantiates and loads an AutoUpdatedServerObject instance.
+ *
+ * @param classParam - Constructor of the server entity class.
+ * @param className - Managed entity class name.
+ * @param socket - Socket server or transport instance.
+ * @param data - Entity identifier or initial data object.
+ * @param loggers - Logging interfaces.
+ * @param parentManager - Host server manager.
+ * @param emitter - Shared event emitter.
+ * @param document - Optional pre-loaded Mongoose document.
+ * @returns Promise resolving to the initialized server entity.
+ */
 export async function createAutoUpdatedClass<
   T extends IAutoUpdatedServerObject<T>,
 >(

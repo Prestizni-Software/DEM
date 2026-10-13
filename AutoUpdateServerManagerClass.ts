@@ -132,6 +132,14 @@ export type DEMEvent<C extends IAutoUpdatedClientObject<any>> =
       data: Omit<IsData<C>, "_id">;
     };
 
+/**
+ * Configures event whitelisting and permission middleware for the Socket.IO server.
+ *
+ * @param socket_server - Socket.IO server instance.
+ * @param loggers - Logging interfaces.
+ * @param managers - Registry of server managers.
+ * @param _models - Optional models registry.
+ */
 function setupSocketMiddleware(
   socket_server: Server,
   loggers: LoggersType,
@@ -319,8 +327,12 @@ function setupSocketMiddleware(
 }
 
 /**
- * Inspect database states for all server managers.
- * Throws DEMError if any manager database is not connected.
+ * Inspects database readiness states across all configured server managers.
+ *
+ * @param managers - Registry of server managers to inspect.
+ * @param loggers - Optional logger callbacks.
+ * @param emitter - Optional event emitter for error events.
+ * @throws {DEMError} Throws DEMErrorCode.DB_NOT_CONNECTED if any database is disconnected.
  */
 export function checkServerDbStates(
   managers: Record<string, AutoUpdateServerManager<any>>,
@@ -343,6 +355,17 @@ export function checkServerDbStates(
   }
 }
 
+/**
+ * Initializes and starts all server managers, executes DB state assertions, preloads data, and attaches sockets.
+ *
+ * @param defs - Server manager definitions including class constructors and options.
+ * @param loggers_ - Loggers interface.
+ * @param socket - Socket.IO server instance.
+ * @param doDebug - Flag indicating whether debug logging is enabled.
+ * @param emitter - Shared event emitter.
+ * @param models - Optional model registry.
+ * @returns Promise resolving to the map of initialized server managers.
+ */
 export async function AUSManagerFactory<
   T extends Record<string, IAutoUpdatedClientObject<any>>,
 >(
@@ -481,6 +504,18 @@ export class AutoUpdateServerManager<
   private _cachedObjectsArray: T[] | null = null;
   public readonly changeTracker?: ServerChangeTracker;
 
+  /**
+   * Initializes an AutoUpdateServerManager instance.
+   *
+   * @param classParam - Target server object class constructor.
+   * @param className - Managed entity class name.
+   * @param socket - Socket.IO Server instance.
+   * @param loggers - Logger callbacks interface.
+   * @param model - Typegoose Mongoose model for database operations.
+   * @param managers - Sibling server managers registry.
+   * @param emitter - Shared event emitter.
+   * @param options - Server manager options including access middlewares and delta sync settings.
+   */
   constructor(
     classParam: Constructor<T>,
     className: string,
@@ -505,7 +540,9 @@ export class AutoUpdateServerManager<
   }
 
   /**
-   * Inspect current database connection state.
+   * Inspects current database connection state.
+   *
+   * @returns Object describing connected flag, numeric readyState, and stateName.
    */
   public checkDbState(): {
     connected: boolean;
@@ -533,8 +570,9 @@ export class AutoUpdateServerManager<
   }
 
   /**
-   * Verify database connection is active.
-   * Throws DEMError if database is not connected.
+   * Verifies database connection is active.
+   *
+   * @throws {DEMError} Throws DEMErrorCode.DB_NOT_CONNECTED if database is not connected.
    */
   public assertDbConnected(): void {
     const status = this.checkDbState();
@@ -550,6 +588,12 @@ export class AutoUpdateServerManager<
     }
   }
 
+  /**
+   * Preloads all database documents into memory for the manager class.
+   *
+   * @param options - Optional batch loading options.
+   * @returns Promise resolving when all entities are loaded and populated in globalCache.
+   */
   public async preLoad(options?: { batchSize?: number }): Promise<void> {
     this.assertDbConnected();
     this.loggers.debug("Loading manager DB " + this.className);
@@ -599,6 +643,11 @@ export class AutoUpdateServerManager<
     );
   }
 
+  /**
+   * Resolves back-references and pointers across loaded objects.
+   *
+   * @returns Promise resolving when reference resolution completes.
+   */
   public override async loadReferences(): Promise<void> {
     // Phase 1: Initial reference resolution (including back-references/createdWithParent)
     // This MUST happen after all managers have finished preLoad so that all objects exist in globalCache.
@@ -610,6 +659,11 @@ export class AutoUpdateServerManager<
     await super.loadReferences();
   }
 
+  /**
+   * Registers a client socket with the manager and binds startup, delete, and new event listeners.
+   *
+   * @param socket - Connected client Socket instance.
+   */
   public registerSocket(socket: Socket): void {
     this.clientSockets.add(socket);
     socket.on(
@@ -961,15 +1015,31 @@ export class AutoUpdateServerManager<
     });
   }
 
+  /**
+   * Retrieves a server managed object by identifier.
+   *
+   * @param _id - Optional entity identifier.
+   * @returns Managed entity instance, null, or undefined.
+   */
   public getObject(_id?: MongoId): T | null | undefined {
     if (!_id) return null;
     return (this.objects_[_id.toString()] as any) || undefined;
   }
 
+  /**
+   * Dictionary of all managed entities keyed by their string IDs.
+   *
+   * @returns Map of managed entities.
+   */
   public get objects(): Record<string, T> {
     return this.objects_ as any;
   }
 
+  /**
+   * Array representation of all managed entities.
+   *
+   * @returns Array containing all managed entities.
+   */
   public get objectsAsArray(): T[] {
     if (!this._cachedObjectsArray) {
       this._cachedObjectsArray = Object.values(this.objects_) as any;
@@ -977,6 +1047,12 @@ export class AutoUpdateServerManager<
     return this._cachedObjectsArray!;
   }
 
+  /**
+   * Deletes an entity from database, manager cache, and mutation tracker.
+   *
+   * @param _id - Identifier of entity to delete.
+   * @returns Promise resolving to deletion outcome object.
+   */
   public override async deleteObject(
     _id: MongoId,
   ): Promise<{ success: boolean; message: string; code?: DEMErrorCode }> {
@@ -996,6 +1072,13 @@ export class AutoUpdateServerManager<
 
   private pendingMissingFetches = new Map<string, Promise<T>>();
 
+  /**
+   * Retrieves an entity missing from memory by querying MongoDB directly.
+   *
+   * @param _id - Identifier of missing entity.
+   * @returns Promise resolving to the retrieved server object.
+   * @throws {DEMError} Throws DEMErrorCode.DOCUMENT_NOT_FOUND or MANAGERS_NOT_INITIALIZED.
+   */
   public async handleGetMissingObject(_id: MongoId): Promise<T> {
     const _idStr = _id.toString();
     if (this.getObject(_idStr)) return this.getObject(_idStr)!;
@@ -1045,6 +1128,14 @@ export class AutoUpdateServerManager<
     return fetchPromise;
   }
 
+  /**
+   * Creates a new entity document in MongoDB and instantiates its manager wrapper.
+   * Broadcasts creation event to client sockets with authorized access.
+   *
+   * @param data - Initial entity properties.
+   * @returns Promise resolving to the created server entity.
+   * @throws {DEMError} Throws DEMErrorCode.MANAGERS_NOT_INITIALIZED.
+   */
   public async createObject(data: Omit<IsData<T>, "_id">): Promise<T> {
     if (!this.managers)
       throw new DEMError(
@@ -1163,6 +1254,12 @@ export class AutoUpdateServerManager<
     return object as any as T;
   }
 
+  /**
+   * Re-evaluates client socket permissions against dynamic startup middleware rules.
+   * Emits 'new' or 'delete' socket events when client access changes dynamically.
+   *
+   * @param object - Entity to evaluate.
+   */
   public async checkPermissionBoundaries(object: T): Promise<void> {
     if (!this.options?.accessDefinitions?.startupMiddleware) return;
     const id = object._id.toString();

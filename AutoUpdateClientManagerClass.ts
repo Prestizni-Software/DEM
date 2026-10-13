@@ -40,6 +40,20 @@ export type WrappedInstances<
 
 const inFlightFactories = new WeakMap<Socket, Promise<WrappedInstances<any>>>();
 
+/**
+ * Factory function initializing a dictionary of AutoUpdateClientManager instances.
+ * Verifies versions, executes startup handshakes, and parallelizes reference resolution.
+ *
+ * @param defs - Dictionary mapping entity class names to their client constructor classes.
+ * @param loggers - Logger callbacks interface.
+ * @param socket - Socket.IO client socket connection.
+ * @param doDebug - Flag indicating whether debug logs are emitted.
+ * @param emitter - Shared event emitter for lifecycle notifications.
+ * @param callbacks - Optional event callbacks (new, update, delete, progress).
+ * @param versionOptions - Version compatibility validation options.
+ * @param deltaSyncOptions - Delta sync storage and caching configuration.
+ * @returns Promise resolving to the initialized client manager map.
+ */
 export async function AUCManagerFactory<
   T extends Record<string, Constructor<IAutoUpdatedClientObjectBase>>,
 >(
@@ -253,6 +267,19 @@ export class AutoUpdateClientManager<
   private _cachedObjectsArray: T[] | null = null;
   private _reconnectHandler?: () => Promise<void>;
 
+  /**
+   * Initializes an AutoUpdateClientManager instance.
+   *
+   * @param classParam - Constructor of the client object entity.
+   * @param className - Managed entity class name.
+   * @param socket - Socket.IO client socket connection.
+   * @param loggers - Logging interfaces.
+   * @param managers - Registry of sibling client managers.
+   * @param emitter - Shared event emitter.
+   * @param callbacks - Client event callbacks.
+   * @param versionOptions - Version compatibility options.
+   * @param deltaSyncOptions - Delta sync storage adapter configuration.
+   */
   constructor(
     classParam: Constructor<T>,
     className: string,
@@ -309,12 +336,22 @@ export class AutoUpdateClientManager<
     this.socket?.on?.("reconnect", this._reconnectHandler);
   }
 
+  /**
+   * Normalizes loaded object count against total objects into a 0 to 1 progress fraction.
+   *
+   * @param loaded - Number of loaded objects.
+   * @param total - Total count of expected objects.
+   * @returns Normalized progress value between 0 and 1.
+   */
   public normalizeProgress(loaded: number, total: number): number {
     if (!total || total <= 0) return 1;
     const ratio = loaded / total;
     return Math.max(0, Math.min(1, ratio));
   }
 
+  /**
+   * Registers socket event listeners for entity creation and deletion broadcasts.
+   */
   private startSocketListeners() {
     this.socket.off("new" + this.className);
     this.socket.off("delete" + this.className);
@@ -374,6 +411,12 @@ export class AutoUpdateClientManager<
     });
   }
 
+  /**
+   * Deletes an object by ID from local cache, socket events, and persistent storage adapter.
+   *
+   * @param _id - Identifier of object to delete.
+   * @returns Promise resolving to deletion outcome.
+   */
   public override async deleteObject(
     _id: MongoId,
   ): Promise<{ success: boolean; message: string; code?: DEMErrorCode }> {
@@ -391,6 +434,12 @@ export class AutoUpdateClientManager<
     return res;
   }
 
+  /**
+   * Fetches startup data from the server or applies delta updates from local storage.
+   *
+   * @param t - Optional benchmark timer tracking object.
+   * @returns Promise resolving when data has been loaded and initialized.
+   */
   async loadFromServer(t?: { s: number; f: number }): Promise<void> {
     let hasRestoredFromStorage = false;
     if (this.storageAdapter && Object.keys(this.objects_).length === 0) {
@@ -675,6 +724,13 @@ export class AutoUpdateClientManager<
     if (t) t.f = Date.now();
   }
 
+  /**
+   * Verifies structural schema compatibility between client and server class definitions.
+   *
+   * @param extraProperties - Properties present on client class but absent on server.
+   * @param data - Server schema containing registered server property names.
+   * @returns Object indicating whether manager is allowed to load and descriptive error message.
+   */
   private checkLoadability(
     extraProperties: string[],
     data: { properties: string[] },
@@ -704,15 +760,31 @@ export class AutoUpdateClientManager<
     return { allowedToLoad, errorMessage };
   }
 
+  /**
+   * Retrieves an object from local memory by identifier.
+   *
+   * @param _id - Entity identifier.
+   * @returns Managed object instance, null, or undefined.
+   */
   public getObject(_id?: MongoId): T | null | undefined {
     if (!_id) return null;
     return this.objects_[_id.toString()] || undefined;
   }
 
+  /**
+   * Dictionary map containing all managed object instances keyed by ID string.
+   *
+   * @returns Object dictionary keyed by string IDs.
+   */
   public get objects(): { [_id: string]: T } {
     return this.objects_;
   }
 
+  /**
+   * Array representation of all managed object instances, cached for fast reads.
+   *
+   * @returns Array containing all managed object instances.
+   */
   public get objectsAsArray(): T[] {
     if (!this._cachedObjectsArray) {
       this._cachedObjectsArray = Object.values(this.objects_);
@@ -720,6 +792,14 @@ export class AutoUpdateClientManager<
     return this._cachedObjectsArray!;
   }
 
+  /**
+   * Fetches an object missing from local client memory on demand from the server.
+   * Deduplicates concurrent in-flight requests for the same entity ID.
+   *
+   * @param _id - Entity identifier of the missing object.
+   * @returns Promise resolving to the retrieved object instance.
+   * @throws {DEMError} Throws DEMErrorCode.MISSING_ID or MANAGERS_NOT_INITIALIZED.
+   */
   async handleGetMissingObject(_id: MongoId): Promise<T> {
     const _idStr = _id.toString();
     if (this.getObject(_idStr)) return this.getObject(_idStr)!;
@@ -772,6 +852,13 @@ export class AutoUpdateClientManager<
     return fetchPromise;
   }
 
+  /**
+   * Creates a new object instance on the server and registers it in local manager state.
+   *
+   * @param data - Object property payload omitting `_id`.
+   * @returns Promise resolving to the newly created client entity.
+   * @throws {DEMError} Throws DEMErrorCode.OBJECT_CREATE_FAILED on failure.
+   */
   async createObject(data: Omit<IsData<T>, "_id">): Promise<T> {
     if (!this.managers)
       throw new DEMError(
@@ -827,6 +914,9 @@ export class AutoUpdateClientManager<
     }
   }
 
+  /**
+   * Closes the manager and unbinds all socket event listeners.
+   */
   public override close() {
     if (this._reconnectHandler) {
       this.socket?.off?.("reconnect", this._reconnectHandler);

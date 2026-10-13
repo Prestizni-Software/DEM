@@ -35,6 +35,11 @@ This file defines the mandatory operating guidelines and instructions for AI age
    - Do not claim completion until the test passes.
    - Add tests for new features.
 
+7. **In-Code Documentation Mandate**:
+   - Provide complete JSDoc documentation for every function, method, and class.
+   - Specify descriptions, `@param` tags, `@returns` tags, and `@throws` tags.
+   - Keep all in-code comments and JSDoc blocks updated whenever changing functions.
+
 ---
 
 ## 2. Version Control Workflow

@@ -28,6 +28,11 @@ export class LocalStorageAdapter implements IClientStorageAdapter {
     length?: number;
   } | null = null;
 
+  /**
+   * Initializes a LocalStorageAdapter instance.
+   *
+   * @param options - Configuration options for storage key prefix and storage provider.
+   */
   constructor(options?: LocalStorageAdapterOptions) {
     this.prefix = options?.prefix ?? "dem_state_";
     if (options?.storage) {
@@ -39,10 +44,23 @@ export class LocalStorageAdapter implements IClientStorageAdapter {
     }
   }
 
+  /**
+   * Generates namespaced storage key for given manager class name.
+   *
+   * @param className - Class name of the manager.
+   * @returns Prefixed storage key string.
+   */
   private getKey(className: string): string {
     return `${this.prefix}${className}`;
   }
 
+  /**
+   * Persists serialized manager state to LocalStorage backend.
+   * Gracefully ignores quota exceeded errors.
+   *
+   * @param className - The name identifier of the manager class.
+   * @param state - Complete snapshot of the manager state.
+   */
   public async saveManagerState<T = unknown>(
     className: string,
     state: StoredManagerState<T>,
@@ -58,6 +76,12 @@ export class LocalStorageAdapter implements IClientStorageAdapter {
     }
   }
 
+  /**
+   * Retrieves and parses stored manager state from LocalStorage backend.
+   *
+   * @param className - The name identifier of the manager class.
+   * @returns Parsed state object or null if absent or corrupted.
+   */
   public async loadManagerState<T = unknown>(
     className: string,
   ): Promise<StoredManagerState<T> | null> {
@@ -77,6 +101,11 @@ export class LocalStorageAdapter implements IClientStorageAdapter {
     }
   }
 
+  /**
+   * Deletes saved manager state for given class name from LocalStorage.
+   *
+   * @param className - The name identifier of the manager class.
+   */
   public async clearManagerState(className: string): Promise<void> {
     if (!this.storageBackend) return;
     try {
@@ -86,6 +115,9 @@ export class LocalStorageAdapter implements IClientStorageAdapter {
     }
   }
 
+  /**
+   * Deletes all items with matching prefix from LocalStorage backend.
+   */
   public async clearAll(): Promise<void> {
     if (!this.storageBackend) return;
     try {

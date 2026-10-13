@@ -175,6 +175,12 @@ export type ServerUpdateRequest<T = unknown> = {
   value: unknown;
 };
 
+/**
+ * Property decorator that registers a property into the class reflection metadata.
+ *
+ * @param target - Prototype of the target class.
+ * @param propertyKey - Property name to register.
+ */
 export function classProp(target: object, propertyKey: string): void {
   const props = (Reflect.getOwnMetadata("props", target) as string[]) || [];
   if (props.includes(propertyKey)) return;
@@ -182,6 +188,12 @@ export function classProp(target: object, propertyKey: string): void {
   Reflect.defineMetadata("props", newProps, target);
 }
 
+/**
+ * Property decorator for populated references pointing to another managed entity class.
+ *
+ * @param where - The target managed class name this property references.
+ * @returns Property decorator function.
+ */
 export function populatedRef(
   where: string,
 ): (target: object, propertyKey: string) => void {
@@ -192,6 +204,11 @@ export function populatedRef(
   };
 }
 
+/**
+ * Property decorator marking a property as an unresolved reference pointer.
+ *
+ * @returns Property decorator function.
+ */
 export function classRef(): (target: object, propertyKey: string) => void {
   return function (target: object, propertyKey: string) {
     classProp(target, propertyKey);
@@ -362,6 +379,9 @@ export interface ParsedSemVer {
 
 /**
  * Parses a semantic version string (e.g. "0.6.5", "v1.2.3-alpha").
+ *
+ * @param version - Semantic version string to parse.
+ * @returns ParsedSemVer object containing major, minor, patch, and prerelease fields, or null if invalid.
  */
 export function parseSemVer(version: string): ParsedSemVer | null {
   if (!version || typeof version !== "string") return null;
@@ -378,7 +398,10 @@ export function parseSemVer(version: string): ParsedSemVer | null {
 
 /**
  * Compares two semantic version strings.
- * Returns -1 if v1 < v2, 0 if v1 === v2, 1 if v1 > v2.
+ *
+ * @param v1 - First version string.
+ * @param v2 - Second version string.
+ * @returns -1 if v1 < v2, 0 if v1 === v2, 1 if v1 > v2.
  */
 export function compareSemVer(v1: string, v2: string): number {
   const p1 = parseSemVer(v1);
@@ -395,6 +418,12 @@ export function compareSemVer(v1: string, v2: string): number {
 
 /**
  * Verifies compatibility between client and server DEM versions.
+ * Evaluates SemVer rules, custom validators, and minimum required versions.
+ *
+ * @param clientVersion - DEM version of the client.
+ * @param serverVersion - DEM version of the server.
+ * @param options - Optional verification rules and callbacks.
+ * @returns Object describing compatibility result and status code.
  */
 export function verifyDEMVersion(
   clientVersion: string,
@@ -510,6 +539,12 @@ export function verifyDEMVersion(
   };
 }
 
+/**
+ * Safely stringifies a value to JSON, catching circular reference errors.
+ *
+ * @param obj - The value to stringify.
+ * @returns JSON string or fallback warning message.
+ */
 export function safeStringify(obj: unknown): string {
   try {
     return JSON.stringify(obj);
@@ -518,6 +553,9 @@ export function safeStringify(obj: unknown): string {
   }
 }
 
+/**
+ * Global cache storing object references across managers.
+ */
 export class DEMGlobalCache {
   public objects: Record<
     string,
@@ -527,10 +565,18 @@ export class DEMGlobalCache {
     }
   > = {};
 
+  /**
+   * Clears all objects in the cache.
+   */
   public clear(): void {
     this.objects = {};
   }
 
+  /**
+   * Retrieves the number of stored objects.
+   *
+   * @returns Total count of cached objects.
+   */
   public get size(): number {
     return Object.keys(this.objects).length;
   }
