@@ -21,6 +21,9 @@ import {
   IAutoUpdatedClientObjectBase,
   IAutoUpdateManager,
   safeStringify,
+  DEMError,
+  DEMErrorCode,
+  toDEMError,
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types";
 import { EventEmitter } from "eventemitter3";
@@ -172,6 +175,7 @@ function setupSocketMiddleware(
         );
         event[2]({
           success: false,
+          code: DEMErrorCode.UNDEFINED_EVENT,
           message: "Undefined event, event: " + event[0] + " not found",
         });
         return;
@@ -252,7 +256,8 @@ function setupSocketMiddleware(
             } as DEMEvent<any>;
             break;
           default:
-            throw new Error(
+            throw new DEMError(
+              DEMErrorCode.UNKNOWN_EVENT,
               "Unknown event: " +
                 e +
                 " - known events: [" +
@@ -285,6 +290,7 @@ function setupSocketMiddleware(
           );
           event[2]({
             success: false,
+            code: DEMErrorCode.ACCESS_DENIED,
             message:
               "You were denied access to this event '" +
               event[0] +
@@ -293,17 +299,48 @@ function setupSocketMiddleware(
           });
         }
       } catch (error: unknown) {
+        const demErr = toDEMError(error, DEMErrorCode.INTERNAL_ERROR);
         loggers.error?.(
           "Error with event: " +
             event[0] +
             "\nError: " +
-            (error instanceof Error ? error.message : String(error)),
+            demErr.message,
         );
+        event[2]({
+          success: false,
+          code: demErr.code,
+          message: error instanceof Error ? error.message : String(error),
+        });
         return;
       }
     }) as any);
     next();
   });
+}
+
+/**
+ * Inspect database states for all server managers.
+ * Throws DEMError if any manager database is not connected.
+ */
+export function checkServerDbStates(
+  managers: Record<string, AutoUpdateServerManager<any>>,
+  loggers?: LoggersType,
+  emitter?: EventEmitter3,
+): void {
+  for (const [key, manager] of Object.entries(managers)) {
+    if (!manager) continue;
+    const status = manager.checkDbState();
+    if (!status.connected) {
+      const err = new DEMError(
+        DEMErrorCode.DB_NOT_CONNECTED,
+        `Server DB state check failed for '${key}': Database is in state '${status.stateName}' (code: ${status.readyState}). Database must be connected before DEM starts loading.`,
+        { manager: key, readyState: status.readyState, stateName: status.stateName },
+      );
+      emitter?.emit("error", err);
+      loggers?.error?.(err.message);
+      throw err;
+    }
+  }
 }
 
 export async function AUSManagerFactory<
@@ -355,6 +392,13 @@ export async function AUSManagerFactory<
       if (error instanceof Error && error.stack) loggers.error?.(error.stack);
     }
   }
+
+  // 1.5. Inspect database states before loading starts
+  checkServerDbStates(
+    managers as unknown as Record<string, AutoUpdateServerManager<any>>,
+    loggers,
+    emitter,
+  );
 
   // 2. Pre-load all managers in parallel
   await Promise.all(
@@ -460,7 +504,54 @@ export class AutoUpdateServerManager<
     }
   }
 
+  /**
+   * Inspect current database connection state.
+   */
+  public checkDbState(): {
+    connected: boolean;
+    readyState: number;
+    stateName: string;
+  } {
+    const db = (this.model as any)?.db;
+    if (!db || typeof db.readyState !== "number") {
+      return { connected: true, readyState: 1, stateName: "connected" };
+    }
+    const readyState: number = db.readyState;
+    const stateNames: Record<number, string> = {
+      0: "disconnected",
+      1: "connected",
+      2: "connecting",
+      3: "disconnecting",
+      99: "uninitialized",
+    };
+    const stateName = stateNames[readyState] ?? "unknown";
+    return {
+      connected: readyState === 1,
+      readyState,
+      stateName,
+    };
+  }
+
+  /**
+   * Verify database connection is active.
+   * Throws DEMError if database is not connected.
+   */
+  public assertDbConnected(): void {
+    const status = this.checkDbState();
+    if (!status.connected) {
+      const err = new DEMError(
+        DEMErrorCode.DB_NOT_CONNECTED,
+        `Database for manager '${this.className}' is in state '${status.stateName}' (code: ${status.readyState}). Database must be connected before DEM starts loading.`,
+        { className: this.className, readyState: status.readyState, stateName: status.stateName },
+      );
+      this.emitter.emit("error", err);
+      this.loggers.error?.(err.message);
+      throw err;
+    }
+  }
+
   public async preLoad(options?: { batchSize?: number }): Promise<void> {
+    this.assertDbConnected();
     this.loggers.debug("Loading manager DB " + this.className);
     const docs = await this.model.find({});
 
@@ -667,9 +758,11 @@ export class AutoUpdateServerManager<
           );
           if (error instanceof Error && error.stack)
             this.loggers.error(error.stack);
+          const demErr = toDEMError(error, DEMErrorCode.STARTUP_FAILED);
           if (typeof ack === "function") {
             ack({
               success: false,
+              code: demErr.code,
               message: error instanceof Error ? error.message : String(error),
             });
           }
@@ -690,6 +783,7 @@ export class AutoUpdateServerManager<
             if (res && !res.success) {
               ack({
                 success: false,
+                code: res.code ?? DEMErrorCode.OBJECT_DELETE_FAILED,
                 message: res.message || "Deletion unsuccessful",
               });
             } else {
@@ -711,9 +805,11 @@ export class AutoUpdateServerManager<
           );
           if (error instanceof Error && error.stack)
             this.loggers.error(error.stack);
+          const demErr = toDEMError(error, DEMErrorCode.OBJECT_DELETE_FAILED);
           if (typeof ack === "function") {
             ack({
               success: false,
+              code: demErr.code,
               message: error instanceof Error ? error.message : String(error),
             });
           }
@@ -746,9 +842,11 @@ export class AutoUpdateServerManager<
           );
           if (error instanceof Error && error.stack)
             this.loggers.error(error.stack);
+          const demErr = toDEMError(error, DEMErrorCode.OBJECT_CREATE_FAILED);
           if (typeof ack === "function") {
             ack({
               success: false,
+              code: demErr.code,
               message: error instanceof Error ? error.message : String(error),
             });
           }
@@ -782,7 +880,10 @@ export class AutoUpdateServerManager<
             const id = event.replace(EVENT_UPDATE + this.className, "");
             let obj = this.objects_[id];
             if (!obj)
-              throw new Error(`Never... failed to get object somehow: ${id}`);
+              throw new DEMError(
+                DEMErrorCode.OBJECT_GET_FAILED,
+                `Never... failed to get object somehow: ${id}`,
+              );
             const res = await (obj as any).setValue(
               (data as any).key,
               (data as any).value,
@@ -794,15 +895,21 @@ export class AutoUpdateServerManager<
                     success: res.success,
                     message: res.msg,
                   })
-                : ack({ success: res.success, message: res.msg });
+                : ack({
+                    success: res.success,
+                    code: res.code ?? DEMErrorCode.DB_SAVE_FAILED,
+                    message: res.msg,
+                  });
             }
           } catch (error: unknown) {
             this.loggers.warn(
               "Failed to update object in manager " + this.className,
             );
+            const demErr = toDEMError(error, DEMErrorCode.DB_SAVE_FAILED);
             if (typeof ack === "function") {
               ack({
                 success: false,
+                code: demErr.code,
                 message: error instanceof Error ? error.message : String(error),
               });
             }
@@ -814,7 +921,11 @@ export class AutoUpdateServerManager<
           try {
             const id = event.replace(EVENT_GET + this.className, "");
             let obj = this.objects_[id];
-            if (!obj) throw new Error(`Object not found: ${id}`);
+            if (!obj)
+              throw new DEMError(
+                DEMErrorCode.OBJECT_NOT_FOUND,
+                `Object not found: ${id}`,
+              );
             if (typeof ack === "function") {
               ack({
                 data: (obj as any).extractedData,
@@ -831,9 +942,11 @@ export class AutoUpdateServerManager<
             );
             if (error instanceof Error && error.stack)
               this.loggers.error(error.stack);
+            const demErr = toDEMError(error, DEMErrorCode.OBJECT_GET_FAILED);
             if (typeof ack === "function") {
               ack({
                 success: false,
+                code: demErr.code,
                 message: error instanceof Error ? error.message : String(error),
               });
             }
@@ -866,7 +979,7 @@ export class AutoUpdateServerManager<
 
   public override async deleteObject(
     _id: MongoId,
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; code?: DEMErrorCode }> {
     this._cachedObjectsArray = null;
     const idStr = _id.toString();
     if (this.changeTracker) {
@@ -893,8 +1006,16 @@ export class AutoUpdateServerManager<
     const fetchPromise = (async () => {
       try {
         const document = await this.model.findById(_idStr);
-        if (!document) throw new Error(`No document with id ${_idStr} in DB.`);
-        if (!this.managers) throw new Error(`No managers.`);
+        if (!document)
+          throw new DEMError(
+            DEMErrorCode.DOCUMENT_NOT_FOUND,
+            `No document with id ${_idStr} in DB.`,
+          );
+        if (!this.managers)
+          throw new DEMError(
+            DEMErrorCode.MANAGERS_NOT_INITIALIZED,
+            `No managers.`,
+          );
         const object = await createAutoUpdatedClass(
           this.classParam as any,
           this.className,
@@ -925,7 +1046,11 @@ export class AutoUpdateServerManager<
   }
 
   public async createObject(data: Omit<IsData<T>, "_id">): Promise<T> {
-    if (!this.managers) throw new Error(`No managers.`);
+    if (!this.managers)
+      throw new DEMError(
+        DEMErrorCode.MANAGERS_NOT_INITIALIZED,
+        `No managers.`,
+      );
     this.loggers.debug("Creating new object from manager " + this.className);
     const rawRec = { ...data } as any;
     if (rawRec._id === "" || rawRec._id === null) delete rawRec._id;

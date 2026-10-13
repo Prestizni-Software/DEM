@@ -17,6 +17,8 @@ import {
   EVENT_INTERNAL_PRE_LOADED,
   IAutoUpdateManager,
   ExtractedData,
+  DEMError,
+  DEMErrorCode,
 } from "./CommonTypes.js";
 import { DocumentType } from "@typegoose/typegoose";
 import { ObjectId } from "mongodb";
@@ -80,7 +82,8 @@ export abstract class AutoUpdatedServerObject<
       ) {
         return;
       } else
-        throw new Error(
+        throw new DEMError(
+          DEMErrorCode.MISSING_ARGUMENT,
           "Missing arguments for AutoUpdatedServerObject: " + className,
         );
     }
@@ -159,13 +162,14 @@ export abstract class AutoUpdatedServerObject<
     if (this.loadPromise) return this.loadPromise;
     this.loadPromise = (async () => {
       const _id = this.data._id;
-      if (!_id) throw new Error("No id.");
+      if (!_id) throw new DEMError(DEMErrorCode.MISSING_ID, "No id.");
 
       // Use the model from the parent manager
       this.entry = await this.parentManager.model.findById(_id);
 
       if (!this.entry)
-        throw new Error(
+        throw new DEMError(
+          DEMErrorCode.DOCUMENT_NOT_FOUND,
           `Object not found in DB: ${this.className} with ID ${_id}`,
         );
 
@@ -270,7 +274,7 @@ export abstract class AutoUpdatedServerObject<
     value: unknown,
     silent = false,
     noUpdate = false,
-  ): Promise<{ success: boolean; msg: string }> {
+  ): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }> {
     if (
       key === "__proto__" ||
       key === "constructor" ||
@@ -282,12 +286,17 @@ export abstract class AutoUpdatedServerObject<
     try {
       const _id = this.data._id;
       if (!_id)
-        throw new Error(
+        throw new DEMError(
+          DEMErrorCode.MISSING_ID,
           `Cannot update object ${this.className} - missing _id.`,
         );
 
       this.entry ??= await this.parentManager.model.findById(_id);
-      if (!this.entry) throw new Error("Object not found in DB.");
+      if (!this.entry)
+        throw new DEMError(
+          DEMErrorCode.OBJECT_NOT_FOUND,
+          "Object not found in DB.",
+        );
 
       // Check if property is part of properties or schema, regardless of current undefined value
       const isPersisted =

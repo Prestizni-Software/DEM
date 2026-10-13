@@ -21,6 +21,9 @@ import {
   IAutoUpdatedClientObjectBase,
   IAutoUpdateManager,
   DEMCache,
+  DEMError,
+  DEMErrorCode,
+  toDEMError,
 } from "./CommonTypes.js";
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
@@ -134,7 +137,11 @@ export abstract class AutoUpdatedClientObject<
         !emitter
       )
         return;
-      else throw new Error("Missing arguments???");
+      else
+        throw new DEMError(
+          DEMErrorCode.MISSING_ARGUMENT,
+          "Missing arguments for AutoUpdatedClientObject: " + className,
+        );
     }
 
     this.classParam = classParam;
@@ -268,21 +275,23 @@ export abstract class AutoUpdatedClientObject<
   }
 
   public async waitForPreloaded(timeoutMs: number = 15000): Promise<void> {
-    if (this.loadError) throw new Error(this.loadError);
+    if (this.loadError)
+      throw new DEMError(DEMErrorCode.OBJECT_LOAD_FAILED, this.loadError);
     if (this.isLoaded) return;
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         const errorMsg = `Timeout waiting for object preloading (${this.className})`;
         this.loadError = errorMsg;
         this.isLoading = false;
-        reject(new Error(errorMsg));
+        reject(new DEMError(DEMErrorCode.PRELOAD_TIMEOUT, errorMsg));
       }, timeoutMs);
 
       this.emitter.once(
         EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
         (failed: boolean, reason: string) => {
           clearTimeout(timer);
-          if (failed) reject(new Error(reason));
+          if (failed)
+            reject(new DEMError(DEMErrorCode.OBJECT_LOAD_FAILED, reason));
           else resolve();
         },
       );
@@ -519,7 +528,7 @@ export abstract class AutoUpdatedClientObject<
   public async setValue<K extends string>(
     key: K,
     val: PathValueOf<IsData<T>, K>,
-  ): Promise<{ success: boolean; msg: string }> {
+  ): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }> {
     return await this.setValue__(key as string, val);
   }
 
@@ -530,7 +539,7 @@ export abstract class AutoUpdatedClientObject<
     noGet = false,
     noUpdate = false,
     isParentUpdate = false,
-  ): Promise<{ success: boolean; msg: string }> {
+  ): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }> {
     this.writeQueue = this.writeQueue
       .catch(() => {})
       .then(() =>
@@ -543,7 +552,11 @@ export abstract class AutoUpdatedClientObject<
           isParentUpdate,
         ),
       );
-    return this.writeQueue as Promise<{ success: boolean; msg: string }>;
+    return this.writeQueue as Promise<{
+      success: boolean;
+      msg: string;
+      code?: DEMErrorCode;
+    }>;
   }
 
   private async setValueQueueInternal(
@@ -553,7 +566,7 @@ export abstract class AutoUpdatedClientObject<
     noGet = false,
     noUpdate = false,
     isParentUpdate = false,
-  ): Promise<{ success: boolean; msg: string }> {
+  ): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }> {
     const rootProp = (key as string).split(".")[0];
     if (
       key === "__proto__" ||
@@ -567,7 +580,10 @@ export abstract class AutoUpdatedClientObject<
       const isRef = getMetadataRecursive("isRef", this, key);
       const pointer = getMetadataRecursive("refsTo", this, key);
       if (pointer && !isParentUpdate && !silent && !this.isServer) {
-        throw new Error("Cannot set value of a reference pointer directly.");
+        throw new DEMError(
+          DEMErrorCode.CANNOT_SET_REF_DIRECTLY,
+          "Cannot set value of a reference pointer directly.",
+        );
       }
       let valueToStore = val;
       if (isRef) {
@@ -616,7 +632,10 @@ export abstract class AutoUpdatedClientObject<
           ) {
             const ref = await this.resolveReference(String(valAtKey));
             if (!ref)
-              throw new Error("Could not resolve reference on path: " + key);
+              throw new DEMError(
+                DEMErrorCode.REFERENCE_RESOLUTION_FAILED,
+                "Could not resolve reference on path: " + key,
+              );
             return await ref.setValue(
               path.slice(i + 1).join(".") as any,
               val as any,
@@ -659,9 +678,14 @@ export abstract class AutoUpdatedClientObject<
       this.loggers.error?.(
         `Error setting value ${key}: ${error instanceof Error ? error.message : String(error)}`,
       );
+      const demErr =
+        error instanceof DEMError
+          ? error
+          : toDEMError(error, DEMErrorCode.DB_SAVE_FAILED);
       return {
         success: false,
-        msg: error instanceof Error ? error.message : String(error),
+        code: demErr.code,
+        msg: demErr.message,
       };
     }
   }
@@ -671,7 +695,7 @@ export abstract class AutoUpdatedClientObject<
     value: unknown,
     silent = false,
     noUpdate = false,
-  ): Promise<{ success: boolean; msg: string }> {
+  ): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }> {
     if (silent) return { success: true, msg: "Silent" };
     return new Promise((resolve) => {
       const id = this.data?._id ?? this._id;
@@ -681,6 +705,7 @@ export abstract class AutoUpdatedClientObject<
         (res: ServerResponse<undefined>) => {
           resolve({
             success: res.success,
+            code: (res as any).code,
             msg: res.message ?? (res.success ? "Success" : "Error"),
           });
         },
@@ -694,7 +719,8 @@ export abstract class AutoUpdatedClientObject<
       this.loggers.error?.(
         `Probably missing the identifier ['_id'] again: ${key} = ${value}`,
       );
-      throw new Error(
+      throw new DEMError(
+        DEMErrorCode.MISSING_ID,
         `Cannot make update for ${this.className} because _id is missing.`,
       );
     }
@@ -874,7 +900,7 @@ export abstract class AutoUpdatedClientObject<
 
   public async destroy(
     once = false,
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; code?: DEMErrorCode }> {
     if (!once)
       return await this.parentManager.deleteObject(this.data._id.toString());
     return new Promise((resolve) => {
@@ -882,7 +908,11 @@ export abstract class AutoUpdatedClientObject<
         EVENT_DELETE + this.className,
         this.data._id,
         (res: ServerResponse<undefined>) => {
-          resolve({ success: res.success, message: res.message ?? "" });
+          resolve({
+            success: res.success,
+            code: (res as any).code,
+            message: res.message ?? "",
+          });
         },
       );
     });

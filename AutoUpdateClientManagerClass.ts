@@ -16,6 +16,9 @@ import {
   DEM_PROTOCOL_VERSION,
   DEMVersionOptions,
   verifyDEMVersion,
+  DEMError,
+  DEMErrorCode,
+  toDEMError,
 } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
 import {
@@ -110,7 +113,10 @@ export async function AUCManagerFactory<
       try {
         const Model = defs[key];
         if (typeof Model !== "function") {
-          throw new Error(`Invalid model constructor for manager: ${key}`);
+          throw new DEMError(
+            DEMErrorCode.INVALID_CONSTRUCTOR,
+            `Invalid model constructor for manager: ${key}`,
+          );
         }
         const c = new AutoUpdateClientManager(
           Model,
@@ -258,9 +264,21 @@ export class AutoUpdateClientManager<
     versionOptions?: DEMVersionOptions,
     deltaSyncOptions?: ClientDeltaSyncOptions | boolean,
   ) {
-    if (!classParam) throw new Error("Missing required argument: classParam");
-    if (!className) throw new Error("Missing required argument: className");
-    if (!socket) throw new Error("Missing required argument: socket");
+    if (!classParam)
+      throw new DEMError(
+        DEMErrorCode.MISSING_ARGUMENT,
+        "Missing required argument: classParam",
+      );
+    if (!className)
+      throw new DEMError(
+        DEMErrorCode.MISSING_ARGUMENT,
+        "Missing required argument: className",
+      );
+    if (!socket)
+      throw new DEMError(
+        DEMErrorCode.MISSING_ARGUMENT,
+        "Missing required argument: socket",
+      );
     super(classParam, className, socket, loggers, managers, emitter);
     this.socket = socket;
     this.managers = managers;
@@ -358,7 +376,7 @@ export class AutoUpdateClientManager<
 
   public override async deleteObject(
     _id: MongoId,
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; code?: DEMErrorCode }> {
     const _idStr = _id.toString();
     this.socket.off(EVENT_UPDATE + this.className + _idStr);
     this._cachedObjectsArray = null;
@@ -392,7 +410,8 @@ export class AutoUpdateClientManager<
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(
-          new Error(
+          new DEMError(
+            DEMErrorCode.TIMEOUT,
             `Timeout waiting for startup data from server for ${this.className}`,
           ),
         );
@@ -423,7 +442,7 @@ export class AutoUpdateClientManager<
             const err = res?.message || "Failed to load startup data";
             this.loggers.error("Error loading ids from server for manager");
             this.loggers.error(err);
-            reject(new Error(err));
+            reject(new DEMError(res?.code ?? DEMErrorCode.STARTUP_FAILED, err));
             return;
           }
 
@@ -447,7 +466,7 @@ export class AutoUpdateClientManager<
                 errMsg,
               );
               if (this.versionOptions?.strictVersionMatch) {
-                reject(new Error(errMsg));
+                reject(new DEMError(DEMErrorCode.VERSION_MISMATCH, errMsg));
                 return;
               }
             } else if (verResult.status !== "match") {
@@ -465,7 +484,7 @@ export class AutoUpdateClientManager<
             if (this.versionOptions?.strictVersionMatch) {
               const errMsg = `Strict DEM version match required for ${this.className}, but server did not provide a version.`;
               this.loggers.error?.(errMsg);
-              reject(new Error(errMsg));
+              reject(new DEMError(DEMErrorCode.VERSION_MISMATCH, errMsg));
               return;
             }
           }
@@ -500,7 +519,8 @@ export class AutoUpdateClientManager<
           let extraProperties: string[] = [];
           for (const property of this.properties) {
             if (typeof property !== "string")
-              throw new Error(
+              throw new DEMError(
+                DEMErrorCode.INVALID_ARGUMENT,
                 "Only string keys allowed. Not this shit: " + String(property),
               );
             if (property === "_id") continue;
@@ -517,7 +537,7 @@ export class AutoUpdateClientManager<
           );
           if (!allowedToLoad) {
             this.loggers.error?.(errorMessage);
-            reject(new Error(errorMessage));
+            reject(new DEMError(DEMErrorCode.STARTUP_FAILED, errorMessage));
             return;
           }
 
@@ -703,8 +723,12 @@ export class AutoUpdateClientManager<
   async handleGetMissingObject(_id: MongoId): Promise<T> {
     const _idStr = _id.toString();
     if (this.getObject(_idStr)) return this.getObject(_idStr)!;
-    if (!_idStr) throw new Error("No id.");
-    if (!this.managers) throw new Error(`No managers.`);
+    if (!_idStr) throw new DEMError(DEMErrorCode.MISSING_ID, "No id.");
+    if (!this.managers)
+      throw new DEMError(
+        DEMErrorCode.MANAGERS_NOT_INITIALIZED,
+        `No managers.`,
+      );
     if (this.objects_[_idStr]) return this.objects_[_idStr];
 
     if (this.pendingMissingFetches.has(_idStr)) {
@@ -724,7 +748,11 @@ export class AutoUpdateClientManager<
           this.emitter,
         );
         await object.waitForPreloaded();
-        if ((object as any).loadError) throw new Error((object as any).loadError);
+        if ((object as any).loadError)
+          throw new DEMError(
+            DEMErrorCode.OBJECT_LOAD_FAILED,
+            (object as any).loadError,
+          );
         this.objects_[object._id.toString()] = object;
         this._cachedObjectsArray = null;
         globalCache.objects[object._id.toString()] = {
@@ -745,7 +773,11 @@ export class AutoUpdateClientManager<
   }
 
   async createObject(data: Omit<IsData<T>, "_id">): Promise<T> {
-    if (!this.managers) throw new Error(`No managers.`);
+    if (!this.managers)
+      throw new DEMError(
+        DEMErrorCode.MANAGERS_NOT_INITIALIZED,
+        `No managers.`,
+      );
     this.loggers.debug("Creating new object from manager " + this.className);
     let createdId: string | null = null;
     try {
@@ -762,7 +794,10 @@ export class AutoUpdateClientManager<
       await object.waitForPreloaded();
       const id = object._id?.toString() ?? (object as any).data?._id?.toString();
       if (!id) {
-        throw new Error(`Failed to create ${this.className}: Object _id is missing after preload.`);
+        throw new DEMError(
+          DEMErrorCode.OBJECT_CREATE_FAILED,
+          `Failed to create ${this.className}: Object _id is missing after preload.`,
+        );
       }
       createdId = id;
       this.objects_[id] = object;

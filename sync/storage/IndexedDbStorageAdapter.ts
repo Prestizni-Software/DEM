@@ -1,5 +1,6 @@
 import { StoredManagerState } from "../types.js";
 import { IClientStorageAdapter } from "./IClientStorageAdapter.js";
+import { DEMError, DEMErrorCode } from "../../DEMErrors.js";
 
 export interface IndexedDbStorageAdapterOptions {
   dbName?: string;
@@ -34,7 +35,10 @@ export class IndexedDbStorageAdapter implements IClientStorageAdapter {
   private async getDb(): Promise<IDBDatabase> {
     if (this.dbPromise) return this.dbPromise;
     if (!this.idbFactory) {
-      throw new Error("IndexedDB is not supported in the current environment.");
+      throw new DEMError(
+        DEMErrorCode.STORAGE_NOT_SUPPORTED,
+        "IndexedDB is not supported in the current environment.",
+      );
     }
 
     this.dbPromise = new Promise<IDBDatabase>((resolve, reject) => {

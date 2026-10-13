@@ -31,6 +31,7 @@ Welcome to the DEM Project. This file serves as the root of the project's memory
 - [DEM Performance & Startup Optimization](./GEMINI_PERFORMANCE.md) - Analysis of profiler/HAR trace, 140x startup speedup (18s -> ~120ms), V8 Fast Shape prototype accessor compilation, and test suite categorization.
 - [Dynamic Permissions & WriteQueue Deadlock Prevention](./GEMINI_DYNAMIC_PERMISSIONS.md) - Synchronization across dynamic permission boundaries (startupMiddleware) and recursive writeQueue deadlock prevention in onUpdate.
 - [DEM Modular Delta Synchronization & Change-Tracking System](./GEMINI_DELTA_SYNC.md) - Modular change-tracking, monotonic revision sequence, pluggable storage adapters (Memory, LocalStorage, IndexedDB), configurable TTL/size pruning, and client delta reconciliation.
+- [DEM Server Database State Verification and Error Code Architecture](./GEMINI_ERRORS_AND_DB_STATE.md) - Server database state inspection prior to loading, standard DEMError class, error code catalog, and multi-channel host communication.
 - **Socket Middleware Event Validation**: Base socket listeners (`EVENT_UPDATE + className`, `EVENT_GET + className`) are intentionally registered in `AutoUpdateServerManagerClass.ts` to register prefixes into `socket.eventNames()`. The server middleware iterates through `socket.eventNames()` to validate and whitelist dynamic incoming events (e.g. `updateCompany<24-hex-id>`).
 
 ## General Rules

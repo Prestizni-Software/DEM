@@ -8,6 +8,8 @@ import {
   LoggersType,
   DEMCache,
   globalCache,
+  DEMError,
+  DEMErrorCode,
 } from "./CommonTypes.js";
 import "reflect-metadata";
 
@@ -46,7 +48,11 @@ export abstract class AutoUpdateManager<
     managers: M,
     emitter: EventEmitter3,
   ) {
-    if (!classParam) throw new Error("Missing required argument: classParam");
+    if (!classParam)
+      throw new DEMError(
+        DEMErrorCode.MISSING_ARGUMENT,
+        "Missing required argument: classParam",
+      );
     this.className = className;
     this.managers = managers;
     this.emitter = emitter;
@@ -106,7 +112,7 @@ export abstract class AutoUpdateManager<
 
   public async deleteObject(
     _id: MongoId,
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; code?: DEMErrorCode }> {
     const _idStr = _id.toString();
     const o = this.objects_[_idStr];
     let res: { success: boolean; message: string } | undefined;

@@ -2,6 +2,8 @@ import { EventEmitter } from "eventemitter3";
 import { ObjectId, ObjectIdLike } from "bson";
 import "reflect-metadata";
 
+import { DEMErrorCode } from "./DEMErrors.js";
+
 export type MongoId = string | ObjectId;
 export type EventEmitter3 = EventEmitter;
 
@@ -13,7 +15,7 @@ export interface IAutoUpdateManager<T extends IAutoUpdatedClientObjectBase> {
     IAutoUpdateManager<IAutoUpdatedClientObjectBase>
   >;
   getObject(_id?: MongoId): T | null | undefined;
-  deleteObject(_id: MongoId): Promise<{ success: boolean; message: string }>;
+  deleteObject(_id: MongoId): Promise<{ success: boolean; message: string; code?: DEMErrorCode }>;
   readonly objectsAsArray: T[];
   readonly isLoaded: boolean;
 }
@@ -25,11 +27,11 @@ export interface IAutoUpdatedClientObjectBase {
   readonly isLoaded: boolean;
   loadMissingReferences(): Promise<void>;
   waitForPreloaded(): Promise<void>;
-  destroy(once?: boolean): Promise<{ success: boolean; message: string }>;
+  destroy(once?: boolean): Promise<{ success: boolean; message: string; code?: DEMErrorCode }>;
   isPreLoadedAsync(): Promise<boolean>;
   contactChildren(): Promise<void>;
   getValue(key: string): unknown;
-  setValue(key: string, val: unknown): Promise<{ success: boolean; msg: string }>;
+  setValue(key: string, val: unknown): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }>;
   readonly parentManager: IAutoUpdateManager<IAutoUpdatedClientObjectBase>;
   readonly callbacks: any;
   readonly classParam: any;
@@ -45,7 +47,7 @@ export interface IAutoUpdatedClientObject<
   setValue<K extends Paths<T, IAutoUpdatedClientObject<any>>>(
     key: K,
     val: PathValueOf<IsData<T>, K>,
-  ): Promise<{ success: boolean; msg: string }>;
+  ): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }>;
 }
 
 export interface IAutoUpdatedServerObject<
@@ -157,10 +159,13 @@ export type ServerResponse<T> =
   | {
       data: T;
       message?: string;
+      code?: DEMErrorCode;
       success: true;
     }
   | {
       message: string;
+      code?: DEMErrorCode;
+      details?: unknown;
       success: false;
     };
 
@@ -542,4 +547,5 @@ export * from "./sync/storage/LocalStorageAdapter.js";
 export * from "./sync/storage/IndexedDbStorageAdapter.js";
 export * from "./sync/ServerChangeTracker.js";
 export * from "./sync/ClientStateReconciler.js";
+export * from "./DEMErrors.js";
 
