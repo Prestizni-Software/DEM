@@ -364,8 +364,8 @@ export function release(target = "both", releaseType = "patch", options = {}) {
     return;
   }
 
-  // Step 6: Stage version.ts (and package.json / package-lock.json if modified)
-  runCommand("git add version.ts package.json package-lock.json", rootDir);
+  // Step 6: Stage version.ts and package.json
+  runCommand("git add version.ts package.json", rootDir);
 
   // Step 7: Construct release commit message
   const commitTitle = description
