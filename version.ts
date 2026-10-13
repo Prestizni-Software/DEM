@@ -1,12 +1,12 @@
 /**
  * Current version of @prestizni-software/client-dem.
  */
-export const DEM_CLIENT_VERSION = "0.7.5";
+export const DEM_CLIENT_VERSION = "0.7.6";
 
 /**
  * Current version of @prestizni-software/server-dem.
  */
-export const DEM_SERVER_VERSION = "0.7.4";
+export const DEM_SERVER_VERSION = "0.7.5";
 
 /**
  * Lowest client version that the server is compatible with.
