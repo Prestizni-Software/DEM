@@ -15,10 +15,11 @@ This file defines the mandatory operating guidelines and instructions for AI age
    - Create a new document in `docs/` whenever you introduce a significant architectural change or feature.
    - Update `docs/README.md` when adding a new document.
 
-3. **Keep Release Scripts Synchronized**:
-   - Whenever you add a new file to the codebase, update `scripts/release.js` immediately.
-   - Add client-bound files to `clientFiles`.
-   - Add server-bound files to `serverFiles`.
+3. **Single-Repository Release Workflow**:
+   - The release process is unified in `scripts/release.js`.
+   - Never synchronize or deploy to external repositories (`../client`, `../server`).
+   - Run `npm run release` or `node scripts/release.js [patch|minor|major] [-m "description"]`.
+   - Releases run all tests automatically and commit a dedicated version bump with an automated or provided title.
 
 4. **Verification Protocol**:
    - Run `npx tsc --noEmit` to verify type safety and compilation.

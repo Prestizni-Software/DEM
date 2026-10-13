@@ -15,4 +15,5 @@ This directory contains architectural documentation and technical guides for the
 - [Performance Optimization](./PERFORMANCE_OPTIMIZATION.md) - Startup optimization benchmarks, profiling results, and fast shapes.
 - [Dynamic Permissions & Concurrency](./DYNAMIC_PERMISSIONS.md) - Startup middleware permissions and writeQueue deadlock prevention.
 - [Comprehensive Progress Report](./PROGRESS_REPORT.md) - Audit history, issue resolution log, and test verification summary.
+- [Single-Repository Release Workflow](./RELEASE_WORKFLOW.md) - Unified build, automated testing, version bump, and tagging workflow.
 - [Source Restoration Log](./RESTORATION_LOG.md) - Historical incident log and codebase reconstruction analysis.
