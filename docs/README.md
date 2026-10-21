@@ -17,3 +17,6 @@ This directory contains architectural documentation and technical guides for the
 - [Comprehensive Progress Report](./PROGRESS_REPORT.md) - Audit history, issue resolution log, and test verification summary.
 - [Single-Repository Release Workflow](./RELEASE_WORKFLOW.md) - Unified build, automated testing, version bump, and tagging workflow.
 - [Source Restoration Log](./RESTORATION_LOG.md) - Historical incident log and codebase reconstruction analysis.
+- [Agent Skills: Issue Tracker](./agents/issue-tracker.md) - GitHub issue tracker conventions, CLI workflow, and wayfinder operations.
+- [Agent Skills: Triage Labels](./agents/triage-labels.md) - Canonical triage roles and repository label mappings.
+- [Agent Skills: Domain Documentation](./agents/domain.md) - Domain documentation consumption rules, layout, and ADR conflict flags.

@@ -66,3 +66,20 @@ This file defines the mandatory operating guidelines and instructions for AI age
 - Prefer Vanilla CSS for web components.
 - Do not stage or commit files unless completing mandatory `--pre GEMINI` or `--GEMINI` workflow steps.
 - Socket listeners registered in `AutoUpdateServerManagerClass.ts` whitelist dynamic incoming events via `socket.eventNames()`. Do not remove them.
+
+---
+
+## 4. Agent skills
+
+### Issue tracker
+
+Issues and specifications exist in GitHub Issues with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five standard triage roles map to issue labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context repository layout (`GLOSSARY.md` and `docs/adr/` at repository root). See `docs/agents/domain.md`.
+
