@@ -20,3 +20,5 @@ This directory contains architectural documentation and technical guides for the
 - [Agent Skills: Issue Tracker](./agents/issue-tracker.md) - GitHub issue tracker conventions, CLI workflow, and wayfinder operations.
 - [Agent Skills: Triage Labels](./agents/triage-labels.md) - Canonical triage roles and repository label mappings.
 - [Agent Skills: Domain Documentation](./agents/domain.md) - Domain documentation consumption rules, layout, and ADR conflict flags.
+- [Domain Glossary](../GLOSSARY.md) - Core domain terminology and entity definitions.
+- [ADR 0001: Smart Lazy Loading & Static Snapshots](./adr/0001-smart-lazy-loading-and-static-snapshots.md) - Architectural decision for lazy manifests, depth resolution, and raw references.
