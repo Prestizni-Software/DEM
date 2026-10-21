@@ -298,6 +298,13 @@ function preparePackageDist(clientVersion, serverVersion) {
     }
   }
 
+  // Copy README.md to distribution packages
+  const readmeSrc = path.join(rootDir, "README.md");
+  if (fs.existsSync(readmeSrc)) {
+    fs.copyFileSync(readmeSrc, path.join(distClientDir, "README.md"));
+    fs.copyFileSync(readmeSrc, path.join(distServerDir, "README.md"));
+  }
+
   logSuccess(`Prepared distribution packages for client (v${clientVersion}) and server (v${serverVersion})`);
 }
 
