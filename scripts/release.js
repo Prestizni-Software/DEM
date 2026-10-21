@@ -73,7 +73,19 @@ export function writeVersions(newClientVersion, newServerVersion, minCompatibleC
   
   const clientParts = newClientVersion.split(".");
   const defaultMin = `${clientParts[0]}.${clientParts[1]}.0`;
-  const minClient = minCompatibleClientVersion || (existingMinMatch ? existingMinMatch[1] : defaultMin);
+  let minClient = minCompatibleClientVersion;
+  if (!minClient) {
+    if (existingMinMatch) {
+      const existingMinParts = existingMinMatch[1].split(".");
+      if (existingMinParts[0] === clientParts[0] && existingMinParts[1] === clientParts[1]) {
+        minClient = existingMinMatch[1];
+      } else {
+        minClient = defaultMin;
+      }
+    } else {
+      minClient = defaultMin;
+    }
+  }
 
   const content = `/**
  * Current version of @prestizni-software/client-dem.
