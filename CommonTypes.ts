@@ -15,9 +15,11 @@ export interface IAutoUpdateManager<T extends IAutoUpdatedClientObjectBase> {
     IAutoUpdateManager<IAutoUpdatedClientObjectBase>
   >;
   getObject(_id?: MongoId): T | null | undefined;
+  loadObject?(_id: MongoId, options?: { depth?: number }): Promise<T>;
   deleteObject(_id: MongoId): Promise<{ success: boolean; message: string; code?: DEMErrorCode }>;
   readonly objectsAsArray: T[];
   readonly isLoaded: boolean;
+  readonly manifest?: EntityDescriptor[];
 }
 
 export interface IAutoUpdatedClientObjectBase {
@@ -25,6 +27,10 @@ export interface IAutoUpdatedClientObjectBase {
   readonly properties: string[];
   readonly className: string;
   readonly isLoaded: boolean;
+  isLazyStub?: boolean;
+  descriptor?: string;
+  ensureLoaded?(options?: { depth?: number }): Promise<this>;
+  hydrateFromData?(payload: any): void;
   loadMissingReferences(): Promise<void>;
   waitForPreloaded(): Promise<void>;
   destroy(once?: boolean): Promise<{ success: boolean; message: string; code?: DEMErrorCode }>;
@@ -130,6 +136,10 @@ export type Pure<T extends object, Base = IAutoUpdatedClientObject<any>> = Omit<
   | "loadError"
   | "updateEventName"
   | "getRawId"
+  | "isLazyStub"
+  | "ensureLoaded"
+  | "hydrateFromData"
+  | "descriptor"
 >;
 
 export type IsData<T extends object> = {
@@ -161,6 +171,7 @@ export type ServerResponse<T> =
       message?: string;
       code?: DEMErrorCode;
       success: true;
+      related?: Record<string, any[]>;
     }
   | {
       message: string;
@@ -168,6 +179,34 @@ export type ServerResponse<T> =
       details?: unknown;
       success: false;
     };
+
+/**
+ * Lightweight entity descriptor providing human-readable identification before hydration.
+ */
+export interface EntityDescriptor {
+  /**
+   * String representation of entity unique identifier.
+   */
+  _id: string;
+  /**
+   * Human-readable summary string generated from direct entity properties.
+   */
+  description: string;
+}
+
+/**
+ * Configuration options governing smart lazy loading behavior.
+ */
+export interface LazyLoadingOptions {
+  /**
+   * Enables lazy loading mode for the target manager.
+   */
+  enabled?: boolean;
+  /**
+   * Default graph traversal depth for on-demand entity hydration (default: 2).
+   */
+  defaultDepth?: number;
+}
 
 export type ServerUpdateRequest<T = unknown> = {
   _id: MongoId;

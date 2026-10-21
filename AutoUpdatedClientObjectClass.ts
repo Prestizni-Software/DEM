@@ -55,6 +55,11 @@ export abstract class AutoUpdatedClientObject<
   public abstract readonly _id: MongoId;
   protected readonly loggers: LoggersType;
   protected isLoading = true;
+  public isLazyStub: boolean = false;
+  /**
+   * Human-readable descriptor string supplied by the server manifest.
+   */
+  public descriptor?: string;
   public loadError?: string;
   protected isLoadingReferences = true;
   protected checkedMissingProperties?: Record<string, boolean>;
@@ -67,6 +72,21 @@ export abstract class AutoUpdatedClientObject<
     managers: M;
   };
   private static _emitterCounter = 0;
+
+  /**
+   * Generates a human-readable descriptor from direct entity attributes.
+   * Base implementation stringifies the available data payload.
+   *
+   * @param data - Direct entity property data.
+   * @returns String descriptor representing the entity.
+   */
+  public static getDescriptor(data: Partial<any>): string {
+    try {
+      return JSON.stringify(data ?? {});
+    } catch {
+      return String(data ?? "");
+    }
+  }
   protected readonly EmitterID: string = `dem_e_${++AutoUpdatedClientObject._emitterCounter}`;
   protected toChangeOnParents?: { key: string; value: unknown }[];
   public callbacks: DEMClientCallbacks<T>;
@@ -202,6 +222,15 @@ export abstract class AutoUpdatedClientObject<
           }] ${s}`,
         ),
     };
+
+    if (typeof data === "object" && data !== null && (data as any).__isLazyStub) {
+      this.isLazyStub = true;
+      this.isLoading = true;
+      this.descriptor = (data as any).descriptor;
+      this.data = { _id: (data as any)._id } as any;
+      this.generateSettersAndGetters();
+      return;
+    }
 
     if (typeof data === "string") {
       this.data = { _id: data } as any;
@@ -423,7 +452,37 @@ export abstract class AutoUpdatedClientObject<
    * @returns True if loaded.
    */
   public get isLoaded(): boolean {
-    return !this.isLoading;
+    return !this.isLoading && !this.isLazyStub && !this.loadError;
+  }
+
+  /**
+   * Ensures that this entity is fully hydrated from the server.
+   * If the entity is a lazy stub, triggers on-demand graph hydration up to the requested depth.
+   *
+   * @param options - Hydration options containing graph depth.
+   * @returns Promise resolving to this hydrated entity instance.
+   */
+  public async ensureLoaded(options?: { depth?: number }): Promise<this> {
+    if (!this.isLazyStub && this.isLoaded) return this;
+    if (this.parentManager && typeof (this.parentManager as any).loadObject === "function") {
+      return (this.parentManager as any).loadObject(this.data?._id ?? this._id, options);
+    }
+    return this;
+  }
+
+  /**
+   * Hydrates an unhydrated stub instance with full entity data received from the server.
+   *
+   * @param payload - Entity data payload.
+   */
+  public hydrateFromData(payload: IsData<T>): void {
+    this.data = this.handleDataCleanup(payload);
+    this.isLoading = false;
+    this.isLazyStub = false;
+    this.loadError = undefined;
+    this.generateSettersAndGetters();
+    if (!this.isServer) this.openSockets();
+    this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
   }
 
   /**

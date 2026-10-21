@@ -10,6 +10,7 @@ import {
   IAutoUpdatedClientObjectBase,
   MongoId,
   IAutoUpdateManager,
+  EVENT_GET,
   EVENT_UPDATE,
   EVENT_VERSION,
   DEM_VERSION,
@@ -20,6 +21,8 @@ import {
   DEMError,
   DEMErrorCode,
   toDEMError,
+  EntityDescriptor,
+  LazyLoadingOptions,
 } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
 import {
@@ -70,6 +73,10 @@ export async function AUCManagerFactory<
   > = {},
   versionOptions?: DEMVersionOptions,
   deltaSyncOptions?: ClientDeltaSyncOptions | boolean,
+  lazyLoadingOptions?:
+    | LazyLoadingOptions
+    | boolean
+    | Partial<Record<keyof T, LazyLoadingOptions | boolean>>,
 ): Promise<WrappedInstances<T>> {
   if (socket && inFlightFactories.has(socket)) {
     loggers.debug?.(
@@ -133,6 +140,12 @@ export async function AUCManagerFactory<
             `Invalid model constructor for manager: ${key}`,
           );
         }
+        const managerLazyOpts =
+          typeof lazyLoadingOptions === "object" &&
+          lazyLoadingOptions !== null &&
+          key in lazyLoadingOptions
+            ? (lazyLoadingOptions as any)[key]
+            : (lazyLoadingOptions as any);
         const c = new AutoUpdateClientManager(
           Model,
           key,
@@ -150,6 +163,7 @@ export async function AUCManagerFactory<
           },
           versionOptions,
           deltaSyncOptions,
+          managerLazyOpts,
         );
         managers[key] = c as any;
       } catch (error: unknown) {
@@ -261,10 +275,15 @@ export class AutoUpdateClientManager<
   public readonly deltaSyncOptions?: ClientDeltaSyncOptions;
   public readonly storageAdapter?: IClientStorageAdapter;
   public readonly deltaSyncEnabled: boolean;
+  public readonly lazyLoadingOptions?: LazyLoadingOptions | boolean;
+  public readonly isLazyLoadingEnabled: boolean;
+  public readonly defaultHydrationDepth: number = 2;
+  public manifest: EntityDescriptor[] = [];
   public lastRevision: number = 0;
   totalObjects: number = 0;
   loadedObjects: number = 0;
   private pendingMissingFetches = new Map<string, Promise<T>>();
+  private pendingHydrations = new Map<string, Promise<T>>();
   private _cachedObjectsArray: T[] | null = null;
   private _reconnectHandler?: () => Promise<void>;
 
@@ -280,6 +299,7 @@ export class AutoUpdateClientManager<
    * @param callbacks - Client event callbacks.
    * @param versionOptions - Version compatibility options.
    * @param deltaSyncOptions - Delta sync storage adapter configuration.
+   * @param lazyLoadingOptions - Lazy loading manifest and hydration configuration.
    */
   constructor(
     classParam: Constructor<T>,
@@ -291,6 +311,7 @@ export class AutoUpdateClientManager<
     callbacks: DEMClientCallbacks<any>,
     versionOptions?: DEMVersionOptions,
     deltaSyncOptions?: ClientDeltaSyncOptions | boolean,
+    lazyLoadingOptions?: LazyLoadingOptions | boolean,
   ) {
     if (!classParam)
       throw new DEMError(
@@ -312,6 +333,15 @@ export class AutoUpdateClientManager<
     this.managers = managers;
     this.callbacks = callbacks;
     this.versionOptions = versionOptions;
+    this.lazyLoadingOptions = lazyLoadingOptions;
+
+    if (typeof lazyLoadingOptions === "object") {
+      this.isLazyLoadingEnabled = lazyLoadingOptions.enabled !== false;
+      this.defaultHydrationDepth = lazyLoadingOptions.defaultDepth ?? 2;
+    } else {
+      this.isLazyLoadingEnabled = Boolean(lazyLoadingOptions);
+      this.defaultHydrationDepth = 2;
+    }
 
     if (deltaSyncOptions) {
       this.deltaSyncEnabled = true;
@@ -357,35 +387,68 @@ export class AutoUpdateClientManager<
     this.socket.off("new" + this.className);
     this.socket.off("delete" + this.className);
 
-    this.socket.on("new" + this.className, async (id: string) => {
-      if (this.getObject(id)) return;
-      this.loggers.debug(
-        "Applying new object from manager " + this.className + " - " + id,
-      );
-      try {
-        this.totalObjects += 1;
-        await this.handleGetMissingObject(id);
-        this.loadedObjects += 1;
-        if (this.storageAdapter) {
-          await ClientStateReconciler.persistToStorage(
-            this as any,
-            this.lastRevision,
-            this.storageAdapter,
-          );
-        }
-      } catch (error: unknown) {
-        this.loggers.error(
-          "Error loading object " +
-            id +
-            " from manager " +
-            this.className +
-            " - " +
-            (error instanceof Error ? error.message : String(error)),
+    this.socket.on(
+      "new" + this.className,
+      async (payload: string | { _id: string; description?: string }) => {
+        const id = typeof payload === "string" ? payload : payload._id;
+        if (this.getObject(id)) return;
+        this.loggers.debug(
+          "Applying new object from manager " + this.className + " - " + id,
         );
-        if (error instanceof Error && error.stack)
-          this.loggers.error(error.stack);
-      }
-    });
+        try {
+          if (this.isLazyLoadingEnabled) {
+            const description =
+              typeof payload === "object" && payload.description
+                ? payload.description
+                : id;
+            this.manifest.push({ _id: id, description });
+            const stub = new this.classParam(
+              this.classParam,
+              this.socket,
+              { _id: id, __isLazyStub: true, descriptor: description } as any,
+              this.loggers,
+              this.className,
+              this,
+              this.callbacks,
+              this.emitter,
+            );
+            stub.descriptor = description;
+            this.objects_[id] = stub;
+            globalCache.objects[id] = {
+              className: this.className,
+              object: stub,
+            };
+            this._cachedObjectsArray = null;
+            this.totalObjects += 1;
+            this.loadedObjects += 1;
+            this.callbacks.new(stub as any);
+            return;
+          }
+
+          this.totalObjects += 1;
+          await this.handleGetMissingObject(id);
+          this.loadedObjects += 1;
+          if (this.storageAdapter) {
+            await ClientStateReconciler.persistToStorage(
+              this as any,
+              this.lastRevision,
+              this.storageAdapter,
+            );
+          }
+        } catch (error: unknown) {
+          this.loggers.error(
+            "Error loading object " +
+              id +
+              " from manager " +
+              this.className +
+              " - " +
+              (error instanceof Error ? error.message : String(error)),
+          );
+          if (error instanceof Error && error.stack)
+            this.loggers.error(error.stack);
+        }
+      },
+    );
 
     this.socket.on("delete" + this.className, async (id: string) => {
       if (!this.getObject(id)) return;
@@ -484,9 +547,10 @@ export class AutoUpdateClientManager<
             properties: string[];
             version?: string;
             protocolVersion?: string;
-            status?: "up-to-date" | "delta" | "full";
+            status?: "up-to-date" | "delta" | "full" | "lazy";
             revision?: number;
             changes?: ChangeEntry<any>[];
+            manifest?: EntityDescriptor[];
           }>,
         ) => {
           clearTimeout(timer);
@@ -556,6 +620,54 @@ export class AutoUpdateClientManager<
               data as any,
               this.storageAdapter,
             );
+            this.callbacks.progress?.(1);
+            this.startSocketListeners();
+            this.isLoaded_ = true;
+            if (t) t.f = Date.now();
+            resolve();
+            return;
+          }
+
+          if (data.status === "lazy") {
+            this.lastRevision = data.revision ?? this.lastRevision;
+            this.manifest = data.manifest ?? [];
+
+            // Clear old objects before populating new stubs
+            for (const oldId of Object.keys(this.objects_)) {
+              delete globalCache.objects[oldId];
+            }
+            this.objects_ = {};
+            this._cachedObjectsArray = null;
+
+            const descMap = new Map<string, string>();
+            if (data.manifest) {
+              for (const entry of data.manifest) {
+                descMap.set(String(entry._id), entry.description);
+              }
+            }
+
+            for (const id of data.ids) {
+              const description = descMap.get(String(id));
+              const stub = new this.classParam(
+                this.classParam,
+                this.socket,
+                { _id: id, __isLazyStub: true, descriptor: description } as any,
+                this.loggers,
+                this.className,
+                this,
+                this.callbacks,
+                this.emitter,
+              );
+              stub.descriptor = description;
+              this.objects_[id] = stub;
+              globalCache.objects[id] = {
+                className: this.className,
+                object: stub,
+              };
+            }
+
+            this.totalObjects = data.ids.length;
+            this.loadedObjects = data.ids.length;
             this.callbacks.progress?.(1);
             this.startSocketListeners();
             this.isLoaded_ = true;
@@ -791,6 +903,131 @@ export class AutoUpdateClientManager<
       this._cachedObjectsArray = Object.values(this.objects_);
     }
     return this._cachedObjectsArray!;
+  }
+
+  /**
+   * Loads and hydrates an unhydrated entity on demand up to a designated reference depth.
+   * Deduplicates concurrent in-flight hydration requests.
+   *
+   * @param _id - Unique identifier of the entity to hydrate.
+   * @param options - Hydration options containing target reference depth.
+   * @returns Promise resolving to the hydrated entity instance.
+   */
+  public async loadObject(
+    _id: MongoId,
+    options?: { depth?: number },
+  ): Promise<T> {
+    const _idStr = _id.toString();
+    const existing = this.objects_[_idStr];
+    if (existing && !(existing as any).isLazyStub && existing.isLoaded) {
+      return existing;
+    }
+
+    if (this.pendingHydrations.has(_idStr)) {
+      return this.pendingHydrations.get(_idStr)!;
+    }
+
+    const depth =
+      options?.depth ??
+      (typeof this.lazyLoadingOptions === "object"
+        ? this.lazyLoadingOptions.defaultDepth
+        : undefined) ??
+      this.defaultHydrationDepth ??
+      2;
+
+    const hydrationPromise = (async () => {
+      try {
+        const response = await new Promise<
+          Extract<ServerResponse<any>, { success: true }>
+        >((resolve, reject) => {
+          this.socket.emit(
+            EVENT_GET + this.className + _idStr,
+            { depth },
+            (res: ServerResponse<any>) => {
+              if (!res || !res.success) {
+                const errMsg = res?.message || `Failed to fetch lazy object ${_idStr}`;
+                reject(new DEMError(res?.code ?? DEMErrorCode.OBJECT_LOAD_FAILED, errMsg));
+                return;
+              }
+              resolve(res);
+            },
+          );
+        });
+
+        const rootData = response.data;
+        let rootObj = this.objects_[_idStr];
+        const existingDescriptor = rootObj?.descriptor ?? this.manifest.find((m) => String(m._id) === _idStr)?.description;
+        if (rootObj && typeof (rootObj as any).hydrateFromData === "function") {
+          (rootObj as any).hydrateFromData(rootData);
+        } else {
+          rootObj = new this.classParam(
+            this.classParam,
+            this.socket,
+            rootData,
+            this.loggers,
+            this.className,
+            this,
+            this.callbacks,
+            this.emitter,
+          );
+          this.objects_[_idStr] = rootObj;
+          globalCache.objects[_idStr] = {
+            className: this.className,
+            object: rootObj,
+          };
+        }
+        if (existingDescriptor) {
+          rootObj.descriptor = existingDescriptor;
+        }
+
+        // Hydrate related entities into respective sibling managers
+        if (response.related && typeof response.related === "object") {
+          for (const [targetClassName, entityList] of Object.entries(response.related)) {
+            const targetManager = this.managers?.[targetClassName] as
+              | AutoUpdateClientManager<any>
+              | undefined;
+            if (targetManager && Array.isArray(entityList)) {
+              for (const entityData of entityList) {
+                if (!entityData?._id) continue;
+                const entityIdStr = entityData._id.toString();
+                let targetObj = targetManager.objects_[entityIdStr];
+                if (targetObj && typeof (targetObj as any).hydrateFromData === "function") {
+                  (targetObj as any).hydrateFromData(entityData);
+                } else if (!targetObj) {
+                  targetObj = new targetManager.classParam(
+                    targetManager.classParam,
+                    targetManager.socket,
+                    entityData,
+                    targetManager.loggers,
+                    targetManager.className,
+                    targetManager,
+                    targetManager.callbacks,
+                    targetManager.emitter,
+                  );
+                  targetManager.objects_[entityIdStr] = targetObj;
+                  globalCache.objects[entityIdStr] = {
+                    className: targetManager.className,
+                    object: targetObj,
+                  };
+                }
+              }
+            }
+          }
+        }
+
+        // Resolve references on root object
+        await rootObj.isPreLoadedAsync();
+        await rootObj.loadMissingReferences();
+        this._cachedObjectsArray = null;
+
+        return rootObj;
+      } finally {
+        this.pendingHydrations.delete(_idStr);
+      }
+    })();
+
+    this.pendingHydrations.set(_idStr, hydrationPromise);
+    return hydrationPromise;
   }
 
   /**

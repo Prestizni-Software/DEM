@@ -26,13 +26,19 @@ import {
   DEMError,
   DEMErrorCode,
   toDEMError,
+  EntityDescriptor,
+  LazyLoadingOptions,
 } from "./CommonTypes.js";
 import { BeAnObject, ReturnModelType } from "@typegoose/typegoose/lib/types";
 import { EventEmitter } from "eventemitter3";
 import * as machineId from "node-machine-id";
 import { getModelForClass } from "@typegoose/typegoose";
 import { Paths } from "./CommonTypes.js";
-import { AutoUpdatedClientObject } from "./AutoUpdatedClientObjectClass.js";
+import {
+  AutoUpdatedClientObject,
+  getMetadataRecursive,
+  setupClassAccessors,
+} from "./AutoUpdatedClientObjectClass.js";
 import {
   ServerChangeTracker,
   ServerDeltaSyncOptions,
@@ -88,6 +94,7 @@ export type AUSOption<
   ) => Promise<void>;
   onDeletion?: (obj: C) => Promise<void>;
   deltaSync?: boolean | ServerDeltaSyncOptions;
+  lazyLoading?: boolean | LazyLoadingOptions;
 };
 
 export type ServerManagerDefinition<
@@ -662,6 +669,131 @@ export class AutoUpdateServerManager<
   }
 
   /**
+   * Indicates whether smart lazy loading mode is enabled for this manager.
+   *
+   * @returns True if lazy loading is enabled.
+   */
+  public get isLazyLoadingEnabled(): boolean {
+    if (typeof this.options?.lazyLoading === "object") {
+      return this.options.lazyLoading.enabled !== false;
+    }
+    return Boolean(this.options?.lazyLoading);
+  }
+
+  /**
+   * Generates an array of entity descriptors for unhydrated startup payloads.
+   *
+   * @param objects - Collection of server entity instances.
+   * @returns Array containing entity descriptors with unique identifiers and human-readable summaries.
+   */
+  public generateManifest(objects: T[]): EntityDescriptor[] {
+    return objects.map((obj) => {
+      const objData = (obj as any).extractedData ?? (obj as any).data ?? obj;
+      let desc: string;
+      if (typeof (this.classParam as any).getDescriptor === "function") {
+        try {
+          desc = (this.classParam as any).getDescriptor(objData);
+        } catch {
+          desc = JSON.stringify(objData ?? {});
+        }
+      } else {
+        desc = JSON.stringify(objData ?? {});
+      }
+      return {
+        _id: obj._id.toString(),
+        description: desc,
+      };
+    });
+  }
+
+  /**
+   * Recursively traverses and collects referenced entity documents up to a maximum depth.
+   * Uses an ID set to prevent infinite cycles.
+   *
+   * @param rootObj - The initial server entity instance.
+   * @param maxDepth - Maximum reference graph traversal depth.
+   * @returns Dictionary mapping manager class names to arrays of extracted entity data.
+   */
+  public collectEntityGraph(
+    rootObj: T,
+    maxDepth: number,
+  ): Record<string, any[]> {
+    const visited = new Set<string>();
+    const relatedByManager: Record<string, Map<string, any>> = {};
+
+    const rootIdStr = rootObj._id.toString();
+    visited.add(rootIdStr);
+
+    type QueueItem = {
+      obj: IAutoUpdatedClientObject<any>;
+      manager: IAutoUpdateManager<any>;
+      currentDepth: number;
+    };
+
+    const queue: QueueItem[] = [{ obj: rootObj, manager: this, currentDepth: 0 }];
+
+    while (queue.length > 0) {
+      const { obj, manager, currentDepth } = queue.shift()!;
+      if (currentDepth >= maxDepth) continue;
+
+      const classParam = (manager as any).classParam;
+      let refProps: string[] = classParam?.__refPropsCache;
+      if (!refProps && classParam) {
+        const meta = setupClassAccessors(classParam);
+        refProps = (classParam as any).__refPropsCache = Array.from(meta.refProps);
+      }
+      refProps = refProps ?? [];
+      const dataRec = (obj as any).extractedData ?? (obj as any).data ?? obj;
+
+      for (const prop of refProps) {
+        const val = dataRec[prop];
+        if (!val) continue;
+
+        const targetClassName =
+          (classParam?.__metaCache?.refsToMap?.get?.(prop)) ??
+          getMetadataRecursive("refsTo", classParam?.prototype ?? obj, prop) ??
+          getMetadataRecursive("refsTo", obj, prop);
+
+        const targetManager = targetClassName && this.managers
+          ? (this.managers as Record<string, IAutoUpdateManager<any>>)[targetClassName]
+          : undefined;
+
+        if (!targetManager) continue;
+
+        const rawIds: string[] = Array.isArray(val)
+          ? val.map((v) => (v && (v as any)._id ? (v as any)._id.toString() : v?.toString())).filter(Boolean)
+          : [val && (val as any)._id ? (val as any)._id.toString() : val?.toString()].filter(Boolean);
+
+        for (const refId of rawIds) {
+          if (visited.has(refId)) continue;
+          visited.add(refId);
+
+          const refObj = targetManager.getObject(refId);
+          if (refObj) {
+            if (!relatedByManager[targetManager.className]) {
+              relatedByManager[targetManager.className] = new Map();
+            }
+            const extracted = (refObj as any).extractedData ?? (refObj as any).data ?? refObj;
+            relatedByManager[targetManager.className].set(refId, extracted);
+
+            queue.push({
+              obj: refObj,
+              manager: targetManager,
+              currentDepth: currentDepth + 1,
+            });
+          }
+        }
+      }
+    }
+
+    const result: Record<string, any[]> = {};
+    for (const [mgrName, map] of Object.entries(relatedByManager)) {
+      result[mgrName] = Array.from(map.values());
+    }
+    return result;
+  }
+
+  /**
    * Registers a client socket with the manager and binds startup, delete, and new event listeners.
    *
    * @param socket - Connected client Socket instance.
@@ -679,9 +811,10 @@ export class AutoUpdateServerManager<
             properties: string[];
             version?: string;
             protocolVersion?: string;
-            status?: "up-to-date" | "delta" | "full";
+            status?: "up-to-date" | "delta" | "full" | "lazy";
             revision?: number;
             changes?: ChangeEntry<any>[];
+            manifest?: EntityDescriptor[];
           }>,
         ) => void,
       ) => {
@@ -809,6 +942,39 @@ export class AutoUpdateServerManager<
                 properties: this.properties as string[],
               };
             }
+          }
+
+          if (this.isLazyLoadingEnabled) {
+            const manifest = this.generateManifest(
+              this.options?.accessDefinitions?.startupMiddleware
+                ? (await this.options.accessDefinitions.startupMiddleware(
+                    this.objectsAsArray,
+                    this.managers as any,
+                    socket,
+                  ))
+                : this.objectsAsArray,
+            );
+            this.loggers.debug(
+              "Sending lazy startup data (" +
+                manifest.length +
+                " manifest items) for manager " +
+                this.className,
+            );
+            if (typeof ack === "function") {
+              ack({
+                data: {
+                  status: "lazy",
+                  revision: this.changeTracker ? this.changeTracker.getCurrentRevision() : 0,
+                  ids,
+                  manifest,
+                  properties: this.properties as string[],
+                  version: DEM_VERSION,
+                  protocolVersion: DEM_PROTOCOL_VERSION,
+                },
+                success: true,
+              });
+            }
+            return;
           }
 
           this.loggers.debug(
@@ -1005,12 +1171,30 @@ export class AutoUpdateServerManager<
                 DEMErrorCode.OBJECT_NOT_FOUND,
                 `Object not found: ${id}`,
               );
-            if (typeof ack === "function") {
-              ack({
-                data: (obj as any).extractedData,
-                success: true,
-                message: "Updated successfully",
-              });
+
+            const requestedDepth =
+              typeof data === "object" && data && typeof (data as any).depth === "number"
+                ? (data as any).depth
+                : 0;
+
+            if (requestedDepth > 0) {
+              const related = this.collectEntityGraph(obj, requestedDepth);
+              if (typeof ack === "function") {
+                ack({
+                  data: (obj as any).extractedData,
+                  related,
+                  success: true,
+                  message: "Retrieved successfully",
+                });
+              }
+            } else {
+              if (typeof ack === "function") {
+                ack({
+                  data: (obj as any).extractedData,
+                  success: true,
+                  message: "Updated successfully",
+                });
+              }
             }
           } catch (error: unknown) {
             this.loggers.error(
@@ -1154,6 +1338,33 @@ export class AutoUpdateServerManager<
   }
 
   /**
+   * Generates creation payload for client broadcasts, returning an entity descriptor in lazy mode.
+   *
+   * @param object - Server entity instance.
+   * @returns Entity ID string or descriptor payload.
+   */
+  public getNewObjectPayload(object: any): string | EntityDescriptor {
+    if (this.isLazyLoadingEnabled) {
+      const objData = (object as any).extractedData ?? (object as any).data ?? object;
+      let desc: string;
+      if (typeof (this.classParam as any).getDescriptor === "function") {
+        try {
+          desc = (this.classParam as any).getDescriptor(objData);
+        } catch {
+          desc = JSON.stringify(objData ?? {});
+        }
+      } else {
+        desc = JSON.stringify(objData ?? {});
+      }
+      return {
+        _id: (object as any)._id.toString(),
+        description: desc,
+      };
+    }
+    return (object as any)._id.toString();
+  }
+
+  /**
    * Creates a new entity document in MongoDB and instantiates its manager wrapper.
    * Broadcasts creation event to client sockets with authorized access.
    *
@@ -1262,7 +1473,7 @@ export class AutoUpdateServerManager<
           }
           known.add(id);
           this.loggers.debug("Emitting new object " + (object as any)._id);
-          socket.emit("new" + this.className, (object as any)._id.toString());
+          socket.emit("new" + this.className, this.getNewObjectPayload(object));
         }
       } catch (error: unknown) {
         this.loggers.error(
@@ -1308,7 +1519,7 @@ export class AutoUpdateServerManager<
           this.loggers.debug(
             `Granting dynamic access to ${this.className} ${id} for socket ${socket.id}`,
           );
-          socket.emit("new" + this.className, id);
+          socket.emit("new" + this.className, this.getNewObjectPayload(object));
         } else if (!hasAccess && hadAccess) {
           known.delete(id);
           this.loggers.debug(
