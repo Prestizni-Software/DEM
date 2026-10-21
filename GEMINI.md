@@ -11,6 +11,7 @@ This file defines the mandatory operating guidelines and instructions for AI age
    - Read the architectural guides to understand system invariants and protocols.
 
 2. **Maintain Documentation**:
+   - Keep root `README.md` synchronized with features, API changes, and architecture updates.
    - Keep all documentation in `docs/` synchronized with code changes.
    - Create a new document in `docs/` whenever you introduce a significant architectural change or feature.
    - Update `docs/README.md` when adding a new document.
