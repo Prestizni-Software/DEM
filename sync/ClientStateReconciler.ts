@@ -165,6 +165,7 @@ export class ClientStateReconciler {
           if ("_cachedObjectsArray" in manager) {
             (manager as any)._cachedObjectsArray = null;
           }
+          manager.callbacks?.delete?.(existing);
         }
       } else if (change.type === "create") {
         let existing = manager.getObject(id);

@@ -1071,8 +1071,11 @@ export abstract class AutoUpdatedClientObject<
     once = false,
     isRemote = false,
   ): Promise<{ success: boolean; message: string; code?: DEMErrorCode }> {
-    if (!once)
-      return await (this.parentManager as any).deleteObject(this.data._id.toString(), isRemote);
+    if (!once) {
+      return isRemote
+        ? await (this.parentManager as any).deleteObject(this.data._id.toString(), true)
+        : await this.parentManager.deleteObject(this.data._id.toString());
+    }
     if (isRemote) {
       await this.wipeSelf();
       return { success: true, message: "Cleaned locally" };

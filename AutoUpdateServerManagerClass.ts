@@ -1381,6 +1381,7 @@ export class AutoUpdateServerManager<
       // Unhydrated or lazy object: delete directly from database
       try {
         let doc: any = null;
+        let deleted = false;
         if (typeof this.model?.findById === "function") {
           doc = await this.model.findById(idStr);
         }
@@ -1390,15 +1391,20 @@ export class AutoUpdateServerManager<
           }
           if (typeof doc.deleteOne === "function") {
             await doc.deleteOne();
+            deleted = true;
           } else if (typeof this.model?.deleteOne === "function") {
             await this.model.deleteOne({ _id: idStr });
+            deleted = true;
           }
         } else if (typeof this.model?.deleteOne === "function") {
-          await this.model.deleteOne({ _id: idStr });
+          const delRes = await this.model.deleteOne({ _id: idStr });
+          if (delRes && delRes.deletedCount > 0) {
+            deleted = true;
+          }
         }
         delete this.objects_[idStr];
         delete globalCache.objects[idStr];
-        res = { success: true, message: "Deleted" };
+        res = { success: true, message: deleted ? "Deleted" : "Already gone" };
       } catch (error: any) {
         this.loggers.error?.(
           `Error deleting unhydrated object ${this.className} ${idStr}: ${error?.message ?? String(error)}`,
