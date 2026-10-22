@@ -24,22 +24,23 @@
 ## 2. Bounty Accounting Ledger
 
 Pricing formula: Low = $50. Medium = $100. High = $200. Critical = $400. Solution bonus = +50%.
+Invalid/rejected claims receive a penalty equal to negative double of the requested payout (-2x).
 
-| Bug ID | Title | Severity | Base Bounty | Solution Bonus (+50%) | Total Claim |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **BUG-01** | Server deleteObject DB Deletion Bypass on Unhydrated Entities | Critical | $400 | $200 | **$600** |
-| **BUG-02** | Socket Handler Hardcoded 24-Char ID Length Drops Non-Hex IDs | Critical | $400 | $200 | **$600** |
-| **BUG-03** | Client deleteObject Echo Storm on Incoming Server Deletions | High | $200 | $100 | **$300** |
-| **BUG-04** | callbacks.delete Receives Manager Instance Instead of Entity | High | $200 | $100 | **$300** |
-| **BUG-05** | Client loadFromServer Leaks Socket Listeners on Reconnection | High | $200 | $100 | **$300** |
-| **BUG-06** | Duplicate Socket Listeners Attached on Lazy Stub Hydration | Medium | $100 | $50 | **$150** |
-| **BUG-07** | Server setValueInternal Creates Literal Dotted Key | High | $200 | $100 | **$300** |
-| **BUG-08** | Client setValue Crashes on Undefined Intermediate Objects | Medium | $100 | $50 | **$150** |
-| **BUG-09** | getRawId Corrupts Reference Arrays into Comma Strings | Low | $50 | $25 | **$75** |
-| **BUG-10** | Server collectEntityGraph Ignores Unhydrated DB Relations | Critical | $400 | $200 | **$600** |
-| **BUG-11** | Server extractedData Exposes Mutable Cached Object Reference | Medium | $100 | $50 | **$150** |
-| **UNC-01** | Uncertainties and Architectural Edge Cases Report | Review | $10 | $0 | **$10** |
-| **TOTAL** | | | **$2,360** | **$1,175** | **$3,535** |
+| Bug ID | Title | Severity | Base Bounty | Solution Bonus (+50%) | Claimed | Audit Status | Final Payout | Review Comments |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **BUG-01** | Server deleteObject DB Deletion Bypass on Unhydrated Entities | Critical | $400 | $200 | $600 | **ACCEPTED** | **$600** | Verified. Unhydrated entities were never deleted from DB, and changeTracker recorded deletion prematurely. |
+| **BUG-02** | Socket Handler Hardcoded 24-Char ID Length Drops Non-Hex IDs | Critical | $400 | $200 | $600 | **ACCEPTED** | **$600** | Verified. Hardcoded 24-char check dropped non-hex UUIDs and string IDs, causing client deadlocks. |
+| **BUG-03** | Client deleteObject Echo Storm on Incoming Server Deletions | High | $200 | $100 | $300 | **ACCEPTED** | **$300** | Verified. destroy(true) on incoming remote deletes and delta sync emitted delete back to server in echo loop. |
+| **BUG-04** | callbacks.delete Receives Manager Instance Instead of Entity | High | $200 | $100 | $300 | **ACCEPTED** | **$300** | Verified. deleteObject passed `this` (manager instance) instead of `o` (deleted entity) to callbacks.delete. |
+| **BUG-05** | Client loadFromServer Leaks Socket Listeners on Reconnection | High | $200 | $100 | $300 | **ACCEPTED** | **$300** | Verified. loadFromServer cleared in-memory maps without detaching old socket listeners, retaining zombie instances. |
+| **BUG-06** | Duplicate Socket Listeners Attached on Lazy Stub Hydration | Medium | $100 | $50 | $150 | **ACCEPTED** | **$150** | Verified. hydrateFromData attached update listeners without socket.off, stacking duplicate listeners. |
+| **BUG-07** | Server setValueInternal Creates Literal Dotted Key | High | $200 | $100 | $300 | **ACCEPTED** | **$300** | Verified. Server created literal top-level `"a.b"` key in memory instead of updating nested properties. |
+| **BUG-08** | Client setValue Crashes on Undefined Intermediate Objects | Medium | $100 | $50 | $150 | **ACCEPTED** | **$150** | Verified. Setting nested dotted path threw unhandled TypeError when intermediate subdocuments were undefined. |
+| **BUG-09** | getRawId Corrupts Reference Arrays into Comma Strings | Low | $50 | $25 | $75 | **ACCEPTED** | **$75** | Verified. String(val) joined ID arrays into comma-separated strings instead of returning a string array. |
+| **BUG-10** | Server collectEntityGraph Ignores Unhydrated DB Relations | Critical | $400 | $200 | $600 | **ACCEPTED** | **$600** | Verified. Synchronous collectEntityGraph failed to query unhydrated lazy relations from DB during depth hydration. |
+| **BUG-11** | Server extractedData Exposes Mutable Cached Object Reference | Medium | $100 | $50 | $150 | **ACCEPTED** | **$150** | Verified. Returning internal cached extractedData by reference allowed external callers to corrupt server cache. |
+| **UNC-01** | Uncertainties and Architectural Edge Cases Report | Review | $10 | $0 | $10 | **REJECTED** | **-$20** | **REJECTED**: Not a valid bug. This document contains open architectural inquiries and discussion topics with no defect report, reproduction test, or bug fix. Per policy, rejected claims are penalized at negative double the claimed payout (-2x = -$20). |
+| **TOTAL** | | | **$2,360** | **$1,175** | **$3,535** | | **$3,505** | **Net Payout: $3,505** |
 
 ---
 
