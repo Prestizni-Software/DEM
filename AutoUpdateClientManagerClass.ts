@@ -458,7 +458,7 @@ export class AutoUpdateClientManager<
       try {
         this.totalObjects -= 1;
         this.loadedObjects -= 1;
-        await this.deleteObject(id);
+        await this.deleteObject(id, true);
       } catch (error: unknown) {
         this.loggers.error(
           "Error applying object deletion from manager " +
@@ -479,15 +479,30 @@ export class AutoUpdateClientManager<
    * Deletes an object by ID from local cache, socket events, and persistent storage adapter.
    *
    * @param _id - Identifier of object to delete.
+   * @param isRemote - Whether the deletion originates from a remote server broadcast or delta sync.
    * @returns Promise resolving to deletion outcome.
    */
   public override async deleteObject(
     _id: MongoId,
+    isRemote: boolean = false,
   ): Promise<{ success: boolean; message: string; code?: DEMErrorCode }> {
     const _idStr = _id.toString();
     this.socket.off(EVENT_UPDATE + this.className + _idStr);
     this._cachedObjectsArray = null;
-    const res = await super.deleteObject(_id);
+
+    const o = this.objects_[_idStr];
+    let res: { success: boolean; message: string; code?: DEMErrorCode } | undefined;
+    if (o && typeof o.destroy === "function") {
+      res = await (o as any).destroy(true, isRemote);
+    }
+    if (res?.success || !o || typeof o?.destroy !== "function") {
+      delete this.objects_[_idStr];
+      delete globalCache.objects[_idStr];
+    }
+    if (o) {
+      o.callbacks?.delete?.(o);
+    }
+
     if (this.storageAdapter) {
       await ClientStateReconciler.persistToStorage(
         this as any,
@@ -495,7 +510,7 @@ export class AutoUpdateClientManager<
         this.storageAdapter,
       );
     }
-    return res;
+    return res ?? { success: true, message: "Already gone" };
   }
 
   /**

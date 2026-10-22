@@ -1271,6 +1271,7 @@ export class AutoUpdateServerManager<
    */
   public override async deleteObject(
     _id: MongoId,
+    isRemote: boolean = false,
   ): Promise<{ success: boolean; message: string; code?: DEMErrorCode }> {
     this._cachedObjectsArray = null;
     this.startupPayloadCache = null;
@@ -1280,7 +1281,7 @@ export class AutoUpdateServerManager<
     const inMemoryObj = this.objects_[idStr];
 
     if (inMemoryObj && typeof inMemoryObj.destroy === "function") {
-      res = await super.deleteObject(_id);
+      res = await super.deleteObject(_id, isRemote);
     } else {
       // Unhydrated or lazy object: delete directly from database
       try {

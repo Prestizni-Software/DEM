@@ -140,16 +140,18 @@ export abstract class AutoUpdateManager<
    * Deletes an object by its identifier, destroys the instance, and clears global caches.
    *
    * @param _id - The unique identifier of the object to delete.
+   * @param isRemote - Whether the deletion originates from a remote source.
    * @returns A promise resolving to the deletion result object.
    */
   public async deleteObject(
     _id: MongoId,
+    isRemote: boolean = false,
   ): Promise<{ success: boolean; message: string; code?: DEMErrorCode }> {
     const _idStr = _id.toString();
     const o = this.objects_[_idStr];
     let res: { success: boolean; message: string } | undefined;
     if (o && typeof o.destroy === "function") {
-      res = await o.destroy(true);
+      res = await (o as any).destroy(true, isRemote);
     }
     if (res?.success || !o || typeof o?.destroy !== "function") {
       delete this.objects_[_idStr];
