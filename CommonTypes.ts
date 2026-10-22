@@ -36,6 +36,7 @@ export interface IAutoUpdatedClientObjectBase {
   destroy(once?: boolean): Promise<{ success: boolean; message: string; code?: DEMErrorCode }>;
   isPreLoadedAsync(): Promise<boolean>;
   contactChildren(): Promise<void>;
+  getRawId?(key: string): string | string[] | undefined;
   getValue(key: string): unknown;
   setValue(key: string, val: unknown): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }>;
   readonly parentManager: IAutoUpdateManager<IAutoUpdatedClientObjectBase>;

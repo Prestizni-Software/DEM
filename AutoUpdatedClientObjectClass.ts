@@ -556,10 +556,27 @@ export abstract class AutoUpdatedClientObject<
     return EVENT_UPDATE + this.className + (id ? id.toString() : "");
   }
 
-  public getRawId(key: string): string | undefined {
+  /**
+   * Extracts the raw string identifier or array of string identifiers from a reference property.
+   *
+   * @param key - Name of property to extract identifier from.
+   * @returns Raw string ID, array of raw string IDs, or undefined if missing.
+   */
+  public getRawId(key: string): string | string[] | undefined {
     if (!this.data) return undefined;
     const val = (this.data as Record<string, unknown>)[key];
     if (!val) return undefined;
+    if (Array.isArray(val)) {
+      return val
+        .map((item) =>
+          item && typeof item === "object" && (item as any)._id
+            ? (item as any)._id.toString()
+            : item
+              ? item.toString()
+              : undefined,
+        )
+        .filter(Boolean) as string[];
+    }
     if (typeof val === "string") return val;
     if (typeof val === "object" && val !== null && (val as any)._id) {
       return (val as any)._id.toString();
