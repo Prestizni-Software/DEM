@@ -175,6 +175,11 @@ describe("Strict DEM Bug Repositories — Automated Proof Suite", () => {
       emitter,
     );
     (manager as any).objects_[uuid] = serverObj;
+    (serverObj as any).entry = {
+      save: jest.fn().mockResolvedValue({}),
+      status: "pending",
+      toObject: () => ({ _id: uuid, status: "pending" }),
+    };
 
     let ackResponse: any = null;
     const ackFn = (res: any) => {

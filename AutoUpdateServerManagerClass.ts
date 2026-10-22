@@ -1109,10 +1109,12 @@ export class AutoUpdateServerManager<
         data: unknown,
         ack?: (res: ServerResponse<unknown>) => void,
       ) => {
-        if (
-          event.startsWith(EVENT_UPDATE + this.className) &&
-          event.replace(EVENT_UPDATE + this.className, "").length === 24
-        ) {
+        const updatePrefix = EVENT_UPDATE + this.className;
+        const getPrefix = EVENT_GET + this.className;
+
+        if (event.startsWith(updatePrefix)) {
+          const id = event.slice(updatePrefix.length);
+          if (!id) return;
           this.loggers.debug(
             "Updating object in manager " +
               this.className +
@@ -1122,8 +1124,10 @@ export class AutoUpdateServerManager<
               (typeof data === "object" ? "[object]" : String(data)),
           );
           try {
-            const id = event.replace(EVENT_UPDATE + this.className, "");
             let obj = this.objects_[id];
+            if (!obj) {
+              obj = await this.handleGetMissingObject(id);
+            }
             if (!obj)
               throw new DEMError(
                 DEMErrorCode.OBJECT_GET_FAILED,
@@ -1138,11 +1142,13 @@ export class AutoUpdateServerManager<
                 ? ack({
                     data: null,
                     success: res.success,
+                    code: (res as any).code,
                     message: res.msg,
                   })
                 : ack({
+                    data: null,
                     success: res.success,
-                    code: res.code ?? DEMErrorCode.DB_SAVE_FAILED,
+                    code: (res as any).code ?? DEMErrorCode.DB_SAVE_FAILED,
                     message: res.msg,
                   });
             }
@@ -1159,13 +1165,14 @@ export class AutoUpdateServerManager<
               });
             }
           }
-        } else if (
-          event.startsWith(EVENT_GET + this.className) &&
-          event.replace(EVENT_GET + this.className, "").length === 24
-        ) {
+        } else if (event.startsWith(getPrefix)) {
+          const id = event.slice(getPrefix.length);
+          if (!id) return;
           try {
-            const id = event.replace(EVENT_GET + this.className, "");
             let obj = this.objects_[id];
+            if (!obj) {
+              obj = await this.handleGetMissingObject(id);
+            }
             if (!obj)
               throw new DEMError(
                 DEMErrorCode.OBJECT_NOT_FOUND,
