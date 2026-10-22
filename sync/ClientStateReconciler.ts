@@ -40,6 +40,13 @@ export class ClientStateReconciler {
 
       // Clear existing in-memory objects for this manager
       for (const oldId of Object.keys(manager.objects_)) {
+        if (manager.socket && typeof manager.socket.off === "function") {
+          manager.socket.off("update" + manager.className + oldId);
+        }
+        const oldObj = manager.objects_[oldId];
+        if (oldObj && typeof (oldObj as any).destroyImmediate === "function") {
+          (oldObj as any).destroyImmediate();
+        }
         delete globalCache.objects[oldId];
       }
       manager.objects_ = {};

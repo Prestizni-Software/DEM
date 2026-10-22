@@ -719,6 +719,11 @@ export class AutoUpdateClientManager<
 
           // Clear old objects before populating new ones on full reload
           for (const oldId of Object.keys(this.objects_)) {
+            this.socket.off(EVENT_UPDATE + this.className + oldId);
+            const oldObj = this.objects_[oldId];
+            if (oldObj && typeof (oldObj as any).destroyImmediate === "function") {
+              (oldObj as any).destroyImmediate();
+            }
             delete globalCache.objects[oldId];
           }
           this.objects_ = {};
