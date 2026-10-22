@@ -796,7 +796,11 @@ export abstract class AutoUpdatedClientObject<
         const pathArr = (key as string).split(".");
         let obj = this.data as Record<string, unknown>;
         for (let i = 0; i < pathArr.length - 1; i++) {
-          obj = obj[pathArr[i]] as Record<string, unknown>;
+          const seg = pathArr[i];
+          if (!obj[seg] || typeof obj[seg] !== "object") {
+            obj[seg] = {};
+          }
+          obj = obj[seg] as Record<string, unknown>;
         }
         obj[pathArr[pathArr.length - 1]] = valueToStore;
         if (this.isServer) {
