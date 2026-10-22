@@ -382,13 +382,21 @@ export abstract class AutoUpdatedServerObject<
               await (this.entry as any).save();
             }
             if (this.entry) {
-              (this.entry as any)[key] = value;
+              if (key.includes(".")) {
+                _.set(this.entry, key, value);
+              } else {
+                (this.entry as any)[key] = value;
+              }
             }
           });
         await this.saveLock;
       }
 
-      (this.data as any)[key] = value;
+      if (key.includes(".")) {
+        _.set(this.data as any, key, value);
+      } else {
+        (this.data as any)[key] = value;
+      }
       this._cachedExtractedData = null;
       if (this.parentManager) {
         (this.parentManager as any).startupPayloadCache = null;
