@@ -525,8 +525,8 @@ describe("Strict DEM Bug Repositories — Automated Proof Suite", () => {
     // Notice: book-1 is NOT pre-loaded in bookManager.objects_ (lazy loading state)
     expect(bookManager.getObject("book-1")).toBeUndefined();
 
-    // Invoking collectEntityGraph with depth 1
-    const related = authorManager.collectEntityGraph(authorObj, 1);
+    // Invoking collectEntityGraphAsync with depth 1
+    const related = await authorManager.collectEntityGraphAsync(authorObj, 1);
 
     // EXPECTED: related["Book"] should contain the loaded book data from MongoDB
     // ON CURRENT CODE: collectEntityGraph only checks in-memory getObject() synchronously and returns empty

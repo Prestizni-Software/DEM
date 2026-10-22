@@ -794,6 +794,101 @@ export class AutoUpdateServerManager<
   }
 
   /**
+   * Asynchronously traverses entity references to collect a graph of related entities,
+   * querying MongoDB for unhydrated entities when lazy loading is active.
+   *
+   * @param rootObj - Root entity to start traversal from.
+   * @param maxDepth - Maximum reference depth to traverse.
+   * @returns Promise resolving to dictionary mapping manager class names to arrays of extracted entity data.
+   */
+  public async collectEntityGraphAsync(
+    rootObj: T,
+    maxDepth: number,
+  ): Promise<Record<string, any[]>> {
+    const visited = new Set<string>();
+    const relatedByManager: Record<string, Map<string, any>> = {};
+
+    const rootIdStr = rootObj._id.toString();
+    visited.add(rootIdStr);
+
+    type QueueItem = {
+      obj: IAutoUpdatedClientObject<any>;
+      manager: IAutoUpdateManager<any>;
+      currentDepth: number;
+    };
+
+    const queue: QueueItem[] = [{ obj: rootObj, manager: this, currentDepth: 0 }];
+
+    while (queue.length > 0) {
+      const { obj, manager, currentDepth } = queue.shift()!;
+      if (currentDepth >= maxDepth) continue;
+
+      const classParam = (manager as any).classParam;
+      let refProps: string[] = classParam?.__refPropsCache;
+      if (!refProps && classParam) {
+        const meta = setupClassAccessors(classParam);
+        refProps = (classParam as any).__refPropsCache = Array.from(meta.refProps);
+      }
+      refProps = refProps ?? [];
+      const dataRec = (obj as any).extractedData ?? (obj as any).data ?? obj;
+
+      for (const prop of refProps) {
+        const val = dataRec[prop];
+        if (!val) continue;
+
+        const targetClassName =
+          (classParam?.__metaCache?.refsToMap?.get?.(prop)) ??
+          getMetadataRecursive("refsTo", classParam?.prototype ?? obj, prop) ??
+          getMetadataRecursive("refsTo", obj, prop);
+
+        const targetManager = targetClassName && this.managers
+          ? (this.managers as Record<string, IAutoUpdateManager<any>>)[targetClassName]
+          : undefined;
+
+        if (!targetManager) continue;
+
+        const rawIds: string[] = Array.isArray(val)
+          ? val.map((v) => (v && (v as any)._id ? (v as any)._id.toString() : v?.toString())).filter(Boolean)
+          : [val && (val as any)._id ? (val as any)._id.toString() : val?.toString()].filter(Boolean);
+
+        for (const refId of rawIds) {
+          if (visited.has(refId)) continue;
+          visited.add(refId);
+
+          let refObj = targetManager.getObject(refId);
+          if (!refObj && typeof (targetManager as any).handleGetMissingObject === "function") {
+            try {
+              refObj = await (targetManager as any).handleGetMissingObject(refId);
+            } catch {
+              // Ignore dangling references
+            }
+          }
+
+          if (refObj) {
+            if (!relatedByManager[targetManager.className]) {
+              relatedByManager[targetManager.className] = new Map();
+            }
+            const extracted = (refObj as any).extractedData ?? (refObj as any).data ?? refObj;
+            relatedByManager[targetManager.className].set(refId, extracted);
+
+            queue.push({
+              obj: refObj,
+              manager: targetManager,
+              currentDepth: currentDepth + 1,
+            });
+          }
+        }
+      }
+    }
+
+    const result: Record<string, any[]> = {};
+    for (const [mgrName, map] of Object.entries(relatedByManager)) {
+      result[mgrName] = Array.from(map.values());
+    }
+    return result;
+  }
+
+  /**
    * Registers a client socket with the manager and binds startup, delete, and new event listeners.
    *
    * @param socket - Connected client Socket instance.
@@ -1185,7 +1280,7 @@ export class AutoUpdateServerManager<
                 : 0;
 
             if (requestedDepth > 0) {
-              const related = this.collectEntityGraph(obj, requestedDepth);
+              const related = await this.collectEntityGraphAsync(obj, requestedDepth);
               if (typeof ack === "function") {
                 ack({
                   data: (obj as any).extractedData,
