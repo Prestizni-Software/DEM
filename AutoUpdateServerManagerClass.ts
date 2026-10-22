@@ -1266,17 +1266,60 @@ export class AutoUpdateServerManager<
     _id: MongoId,
   ): Promise<{ success: boolean; message: string; code?: DEMErrorCode }> {
     this._cachedObjectsArray = null;
+    this.startupPayloadCache = null;
     const idStr = _id.toString();
-    if (this.changeTracker) {
-      this.changeTracker.recordChange("delete", idStr);
-    }
-    for (const socket of this.clientSockets) {
-      const known = this.knownObjectIdsBySocket.get(socket);
-      if (known) {
-        known.delete(idStr);
+
+    let res: { success: boolean; message: string; code?: DEMErrorCode };
+    const inMemoryObj = this.objects_[idStr];
+
+    if (inMemoryObj && typeof inMemoryObj.destroy === "function") {
+      res = await super.deleteObject(_id);
+    } else {
+      // Unhydrated or lazy object: delete directly from database
+      try {
+        let doc: any = null;
+        if (typeof this.model?.findById === "function") {
+          doc = await this.model.findById(idStr);
+        }
+        if (doc) {
+          if (this.options?.onDeletion) {
+            await this.options.onDeletion(doc as any);
+          }
+          if (typeof doc.deleteOne === "function") {
+            await doc.deleteOne();
+          } else if (typeof this.model?.deleteOne === "function") {
+            await this.model.deleteOne({ _id: idStr });
+          }
+        } else if (typeof this.model?.deleteOne === "function") {
+          await this.model.deleteOne({ _id: idStr });
+        }
+        delete this.objects_[idStr];
+        delete globalCache.objects[idStr];
+        res = { success: true, message: "Deleted" };
+      } catch (error: any) {
+        this.loggers.error?.(
+          `Error deleting unhydrated object ${this.className} ${idStr}: ${error?.message ?? String(error)}`,
+        );
+        return {
+          success: false,
+          code: DEMErrorCode.OBJECT_DELETE_FAILED,
+          message: error?.message ?? String(error),
+        };
       }
     }
-    return super.deleteObject(_id);
+
+    if (res.success) {
+      if (this.changeTracker) {
+        this.changeTracker.recordChange("delete", idStr);
+      }
+      for (const socket of this.clientSockets) {
+        const known = this.knownObjectIdsBySocket.get(socket);
+        if (known) {
+          known.delete(idStr);
+        }
+      }
+    }
+    return res;
   }
 
   private pendingMissingFetches = new Map<string, Promise<T>>();
