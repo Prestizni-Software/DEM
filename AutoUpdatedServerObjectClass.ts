@@ -244,7 +244,9 @@ export abstract class AutoUpdatedServerObject<
     T,
     IAutoUpdatedClientObject<any>
   > {
-    if (this._cachedExtractedData) return this._cachedExtractedData;
+    if (this._cachedExtractedData) {
+      return _.cloneDeep(this._cachedExtractedData);
+    }
     const extracted = processIsRefProperties(
       this.data as any,
       this,
@@ -254,7 +256,7 @@ export abstract class AutoUpdatedServerObject<
       this.loggers,
     ).newData as ExtractedData<T, IAutoUpdatedClientObject<any>>;
     this._cachedExtractedData = extracted;
-    return extracted;
+    return _.cloneDeep(extracted);
   }
 
   /**
