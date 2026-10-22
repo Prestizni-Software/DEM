@@ -1384,6 +1384,7 @@ export class AutoUpdateServerManager<
 
     // Sanitize creation payload to prevent property injection
     const dataRec: Record<string, unknown> = {};
+    const meta = this.classParam ? setupClassAccessors(this.classParam) : null;
     for (const key of Object.keys(rawRec)) {
       if (
         key !== "__proto__" &&
@@ -1394,12 +1395,24 @@ export class AutoUpdateServerManager<
           Boolean((this.model.schema as any)?.path?.(key)))
       ) {
         const val = rawRec[key];
+        const schemaPath = (this.model.schema as any)?.path?.(key);
+        const isMongoRef =
+          schemaPath?.instance === "ObjectID" ||
+          schemaPath?.caster?.instance === "ObjectID";
+        const isRef = Boolean(
+          (meta ? meta.refProps.has(key) : false) ||
+            getMetadataRecursive("isRef", this.classParam?.prototype, key) ||
+            isMongoRef,
+        );
+
         if (val && typeof val === "object") {
           if (Array.isArray(val)) {
-            dataRec[key] = val.map((v) =>
-              v && typeof v === "object" && v._id ? v._id.toString() : v,
-            );
-          } else if ((val as any)._id) {
+            dataRec[key] = isRef
+              ? val.map((v) =>
+                  v && typeof v === "object" && v._id ? v._id.toString() : v,
+                )
+              : val;
+          } else if (isRef && (val as any)._id) {
             dataRec[key] = (val as any)._id.toString();
           } else {
             dataRec[key] = val;

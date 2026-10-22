@@ -127,7 +127,10 @@ When an application calls `createObject(data)` on a client manager, DEM executes
 2. **Server Manager Handlers**: If authorized, dispatches to `serverManager.createObject(data)`.
 
 ### Step 5: Server-Side MongoDB Persistence & Server Object Wrapping
-1. **Data Record Cleaning**: Removes empty or null `_id` fields (`delete dataRec._id`).
+1. **Data Record Cleaning & Sanitization**:
+   - Removes empty or null `_id` fields (`delete rawRec._id`).
+   - Validates properties against allowed class properties or schema paths and strips dangerous keys (`__proto__`, `constructor`, `prototype`).
+   - Normalizes references to ID strings only when properties are annotated with `@classRef()` / `isRef` metadata or defined as Mongoose `ObjectID` schema instances. Embedded objects, snapshots, and subdocuments without reference metadata are preserved as intact objects.
 2. **Database Insert**: Calls `await this.model.create(dataRec)`, persisting the document to MongoDB and generating a primary `_id`.
 3. **Server Object Instantiation (`createAutoUpdatedClass`)**:
    - Calls `new classParam(...)` with `isServer = true`.
