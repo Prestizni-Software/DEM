@@ -157,7 +157,9 @@ export abstract class AutoUpdateManager<
       delete this.objects_[_idStr];
       delete globalCache.objects[_idStr];
     }
-    o?.callbacks?.delete?.(this);
+    if (o) {
+      o.callbacks?.delete?.(o);
+    }
     return res ?? { success: true, message: "Already gone" };
   }
 

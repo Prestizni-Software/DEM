@@ -489,20 +489,7 @@ export class AutoUpdateClientManager<
     const _idStr = _id.toString();
     this.socket.off(EVENT_UPDATE + this.className + _idStr);
     this._cachedObjectsArray = null;
-
-    const o = this.objects_[_idStr];
-    let res: { success: boolean; message: string; code?: DEMErrorCode } | undefined;
-    if (o && typeof o.destroy === "function") {
-      res = await (o as any).destroy(true, isRemote);
-    }
-    if (res?.success || !o || typeof o?.destroy !== "function") {
-      delete this.objects_[_idStr];
-      delete globalCache.objects[_idStr];
-    }
-    if (o) {
-      o.callbacks?.delete?.(o);
-    }
-
+    const res = await super.deleteObject(_id, isRemote);
     if (this.storageAdapter) {
       await ClientStateReconciler.persistToStorage(
         this as any,
@@ -510,7 +497,7 @@ export class AutoUpdateClientManager<
         this.storageAdapter,
       );
     }
-    return res ?? { success: true, message: "Already gone" };
+    return res;
   }
 
   /**
