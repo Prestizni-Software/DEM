@@ -508,7 +508,9 @@ export abstract class AutoUpdatedClientObject<
 
   private openSockets() {
     const id = this.data?._id ?? this._id;
+    if (!id || !this.socket) return;
     const event = EVENT_UPDATE + this.className + id.toString();
+    this.socket.off(event);
     this.socket.on(
       event,
       async (update: unknown, ack: (res: ServerResponse<unknown>) => void) => {
