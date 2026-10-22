@@ -1,7 +1,8 @@
 import { jest } from '@jest/globals';
 import { AutoUpdateServerManager } from "../AutoUpdateServerManagerClass.js";
 import { EventEmitter } from "eventemitter3";
-import { LoggersType, globalCache } from "../CommonTypes.js";
+import { LoggersType, globalCache, classProp, classRef } from "../CommonTypes.js";
+import { AutoUpdatedServerObject } from "../AutoUpdatedServerObjectClass.js";
 import "reflect-metadata";
 
 describe("AutoUpdateManager base class tests", () => {
@@ -114,5 +115,68 @@ describe("AutoUpdateManager base class tests", () => {
         
         manager['loggers'].warn("test warn");
         expect(loggers.warn).toHaveBeenCalledWith("[DEM - TestClass MANAGER] test warn");
+    });
+    test("createObject does not flatten embedded object containing _id when property is not a reference", async () => {
+        let createdData: any = null;
+        mockModel.create = jest.fn().mockImplementation((dataRec: any) => {
+            createdData = dataRec;
+            return Promise.resolve({
+                _id: "created-doc-id-123",
+                ...dataRec
+            });
+        });
+
+        class TestEntity extends AutoUpdatedServerObject<TestEntity> {
+            @classProp
+            public snapshot!: any;
+
+            @classProp
+            public subdocs!: any[];
+
+            @classRef()
+            @classProp
+            public companyRef!: any;
+        }
+
+        const testManager = new AutoUpdateServerManager(
+            TestEntity,
+            "TestEntity",
+            mockSocket,
+            loggers,
+            mockModel,
+            {},
+            mockEmitter
+        );
+        (testManager as any).managers = { TestEntity: testManager };
+
+        const payload = {
+            snapshot: {
+                _id: "snap-id-1",
+                title: "Original Snapshot",
+                status: "ACTIVE"
+            },
+            subdocs: [
+                { _id: "sub-1", label: "First" },
+                { _id: "sub-2", label: "Second" }
+            ],
+            companyRef: {
+                _id: "comp-ref-1",
+                name: "Company Name"
+            }
+        };
+
+        await testManager.createObject(payload as any);
+
+        expect(createdData).toBeDefined();
+        expect(createdData.snapshot).toEqual({
+            _id: "snap-id-1",
+            title: "Original Snapshot",
+            status: "ACTIVE"
+        });
+        expect(createdData.subdocs).toEqual([
+            { _id: "sub-1", label: "First" },
+            { _id: "sub-2", label: "Second" }
+        ]);
+        expect(createdData.companyRef).toBe("comp-ref-1");
     });
 });
