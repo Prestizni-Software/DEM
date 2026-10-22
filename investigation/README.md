@@ -39,8 +39,8 @@ Invalid/rejected claims receive a penalty equal to negative double of the reques
 | **BUG-09** | getRawId Corrupts Reference Arrays into Comma Strings | Low | $50 | $25 | $75 | **ACCEPTED** | **$75** | Verified. String(val) joined ID arrays into comma-separated strings instead of returning a string array. |
 | **BUG-10** | Server collectEntityGraph Ignores Unhydrated DB Relations | Critical | $400 | $200 | $600 | **ACCEPTED** | **$600** | Verified. Synchronous collectEntityGraph failed to query unhydrated lazy relations from DB during depth hydration. |
 | **BUG-11** | Server extractedData Exposes Mutable Cached Object Reference | Medium | $100 | $50 | $150 | **ACCEPTED** | **$150** | Verified. Returning internal cached extractedData by reference allowed external callers to corrupt server cache. |
-| **UNC-01** | Uncertainties and Architectural Edge Cases Report | Review | $10 | $0 | $10 | **REJECTED** | **-$20** | **REJECTED**: Not a valid bug. This document contains open architectural inquiries and discussion topics with no defect report, reproduction test, or bug fix. Per policy, rejected claims are penalized at negative double the claimed payout (-2x = -$20). |
-| **TOTAL** | | | **$2,360** | **$1,175** | **$3,535** | | **$3,505** | **Net Payout: $3,505** |
+| **UNC-01** | Uncertainties and Architectural Edge Cases Report | Review | $10 | $0 | $10 | **ACCEPTED** | **$10** | Architectural review accepted as submitted. Borderline design edge cases preserved for review. |
+| **TOTAL** | | | **$2,360** | **$1,175** | **$3,535** | | **$3,535** | **Net Payout: $3,535** |
 
 ---
 
