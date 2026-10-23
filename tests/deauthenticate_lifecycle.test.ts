@@ -13,7 +13,7 @@ function createClientMockClass(props: string[] = ["_id"]) {
     get _id() {
       return (this as any).data?._id;
     }
-    override waitForPreloaded = jest.fn().mockResolvedValue(undefined as any);
+    override waitForPreloaded = jest.fn().mockResolvedValue(undefined as never);
   }
   Reflect.defineMetadata("props", props, MockClientEntity.prototype);
   return MockClientEntity;
