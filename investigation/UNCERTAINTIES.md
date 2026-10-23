@@ -45,8 +45,8 @@ return result;
 Every read `obj.items` produces a new array reference (`obj.items !== obj.items`).
 In React Native hooks (`useMemo`, `useEffect`, `useSyncExternalStore`), unstable object references trigger re-render cycles.
 
-### Uncertainty
-Should DEM cache reference array instances until the underlying ID list mutates, or should consumers assume getter results are ephemeral?
+### Resolution
+Implemented in commit `0f49615`. Added `createReadOnlyArrayProxy` and instance-level reference array proxy caching. Reference array getters return stable array proxy references across reads (`obj.items === obj.items`), while developer mutating operations (`push`, `splice`, index assignment) throw informative errors. Underlying arrays remain mutable to the library and unwrap via `DEM_RAW_ARRAY`. Cache invalidates on relation updates.
 
 ---
 

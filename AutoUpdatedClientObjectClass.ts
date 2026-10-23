@@ -38,6 +38,66 @@ export type DEMClientCallbacks<T extends object> = {
   progress: (percent: number) => void;
 };
 
+export const DEM_RAW_ARRAY: unique symbol = Symbol("DEM_RAW_ARRAY");
+
+const MUTATING_ARRAY_METHODS = new Set<string | symbol>([
+  "push",
+  "pop",
+  "shift",
+  "unshift",
+  "splice",
+  "sort",
+  "reverse",
+  "fill",
+  "copyWithin",
+]);
+
+/**
+ * Wraps a resolved relation array in a Proxy that blocks external mutations
+ * while allowing transparent read operations, iterations, and library unwrapping.
+ *
+ * @param rawArray - The internal mutable array of resolved entities.
+ * @param propertyName - The name identifier of the relation property.
+ * @returns Immutable proxy wrapping the underlying entity array.
+ */
+export function createReadOnlyArrayProxy<T>(
+  rawArray: T[],
+  propertyName: string,
+): T[] {
+  return new Proxy(rawArray, {
+    get(target, prop, receiver) {
+      if (prop === DEM_RAW_ARRAY) {
+        return target;
+      }
+      if (MUTATING_ARRAY_METHODS.has(prop)) {
+        return () => {
+          throw new DEMError(
+            DEMErrorCode.CANNOT_SET_REF_DIRECTLY,
+            `Cannot mutate DEM reference array '${propertyName}' directly. Use setValue() or manager mutation APIs.`,
+          );
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      if (typeof value === "function") {
+        return value.bind(target);
+      }
+      return value;
+    },
+    set() {
+      throw new DEMError(
+        DEMErrorCode.CANNOT_SET_REF_DIRECTLY,
+        `Cannot assign index on DEM reference array '${propertyName}'. Use setValue() or manager mutation APIs.`,
+      );
+    },
+    deleteProperty() {
+      throw new DEMError(
+        DEMErrorCode.CANNOT_SET_REF_DIRECTLY,
+        `Cannot delete elements from DEM reference array '${propertyName}'. Use setValue() or manager mutation APIs.`,
+      );
+    },
+  });
+}
+
 type SocketType = Socket;
 
 export abstract class AutoUpdatedClientObject<
@@ -48,6 +108,7 @@ export abstract class AutoUpdatedClientObject<
   >,
 > implements IAutoUpdatedClientObject<T> {
   protected entry: unknown;
+  public _refArrayCache?: Map<string, { rawIdsHash: string; proxy: any[] }>;
 
   protected readonly socket: SocketType;
   protected data: IsData<T>;
@@ -288,6 +349,7 @@ export abstract class AutoUpdatedClientObject<
    * @returns Cleaned entity data payload.
    */
   protected handleDataCleanup(data: IsData<T>): IsData<T> {
+    this._refArrayCache?.clear();
     if (!data || typeof data !== "object") return data;
 
     const meta = this.classParam ? setupClassAccessors(this.classParam) : null;
@@ -828,6 +890,7 @@ export abstract class AutoUpdatedClientObject<
           }
           obj[pathArr[pathArr.length - 1]] = valueToStore;
         }
+        this._refArrayCache?.delete(rootProp);
         if (this.isServer) {
           await this.findAndLoadReferences(key, valueToStore);
           if (isRef && this.parentManager.isLoaded) await this.contactChildren();
@@ -927,6 +990,7 @@ export abstract class AutoUpdatedClientObject<
   }
 
   protected async wipeSelf(): Promise<void> {
+    this._refArrayCache?.clear();
     if ((this.data as unknown as { Wiped: boolean }).Wiped) return;
     const id = this.data?._id ?? this._id;
     const _id = id ? id.toString() : "unknown";
@@ -1307,15 +1371,34 @@ export function setupClassAccessors(classParam: Constructor<any>): {
         if (val === null) val = undefined;
         if (isRef && val) {
           if (Array.isArray(val)) {
-            const result: IAutoUpdatedClientObject<any>[] = [];
+            const idsHash = val
+              .map((item) =>
+                item && typeof item === "object" && "_id" in item
+                  ? String((item as any)._id)
+                  : String(item),
+              )
+              .join(",");
+
+            if (!this._refArrayCache) {
+              this._refArrayCache = new Map();
+            }
+
+            const cached = this._refArrayCache.get(key);
+            if (cached && cached.rawIdsHash === idsHash) {
+              return cached.proxy;
+            }
+
+            const rawResult: IAutoUpdatedClientObject<any>[] = [];
             for (let i = 0; i < val.length; i++) {
               const item = val[i];
               if (item) {
                 const ref = this.findReference(item, key);
-                if (ref) result.push(ref);
+                if (ref) rawResult.push(ref);
               }
             }
-            return result;
+            const proxy = createReadOnlyArrayProxy(rawResult, key);
+            this._refArrayCache.set(key, { rawIdsHash: idsHash, proxy });
+            return proxy;
           } else {
             return this.findReference(val as string | ObjectId, key);
           }
@@ -1339,6 +1422,7 @@ export function setupClassAccessors(classParam: Constructor<any>): {
             }
           }
           (this.data as Record<string, unknown>)[key] = valueToSet;
+          this._refArrayCache?.delete(key);
         }
       },
       enumerable: true,
