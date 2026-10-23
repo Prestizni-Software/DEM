@@ -91,7 +91,7 @@ export async function AUCManagerFactory<
       update:
         callbacks.update ??
         ((_x: IAutoUpdatedClientObjectBase, _y: string) => {}),
-      delete: callbacks.delete ?? ((_x: IAutoUpdatedClientObjectBase) => {}),
+      delete: callbacks.delete ?? ((_x: IAutoUpdateManager<any>) => {}),
       progress: callbacks.progress ?? ((_x: number) => {}),
     };
 

@@ -34,7 +34,7 @@ export type DEMClientCallbacks<T extends object> = {
     obj: IAutoUpdatedClientObject<T>,
     key: string,
   ) => Promise<void> | void;
-  delete: (obj: IAutoUpdatedClientObject<T>) => Promise<void> | void;
+  delete: (manager: IAutoUpdateManager<any>) => Promise<void> | void;
   progress: (percent: number) => void;
 };
 

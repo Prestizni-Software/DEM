@@ -20,7 +20,15 @@ export interface IAutoUpdateManager<T extends IAutoUpdatedClientObjectBase> {
   readonly objectsAsArray: T[];
   readonly isLoaded: boolean;
   readonly manifest?: EntityDescriptor[];
+  readonly callbacks?: any;
 }
+
+export type DEMCallbacks<T extends IAutoUpdatedClientObjectBase = any> = {
+  new: (obj: T) => Promise<void> | void;
+  update: (obj: T, key: string) => Promise<void> | void;
+  delete: (manager: IAutoUpdateManager<T>) => Promise<void> | void;
+  progress: (percent: number) => void;
+};
 
 export interface IAutoUpdatedClientObjectBase {
   readonly _id: MongoId;

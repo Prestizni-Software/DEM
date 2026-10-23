@@ -241,9 +241,9 @@ describe("Strict DEM Bug Repositories — Automated Proof Suite", () => {
   });
 
   // =========================================================================
-  // BUG 4 (HIGH): AutoUpdateManager.deleteObject passes Manager to callbacks.delete
+  // BUG 4 (HIGH - AUDIT: REJECTED): AutoUpdateManager.deleteObject passes Manager to callbacks.delete
   // =========================================================================
-  test("BUG 4 [HIGH]: AutoUpdateManager.deleteObject must pass deleted entity instance to callbacks.delete, not the Manager instance", async () => {
+  test("BUG 4 [REJECTED CLAIM]: AutoUpdateManager.deleteObject correctly passes Manager instance to callbacks.delete as designed", async () => {
     const loggers = makeLoggers();
     const emitter = new EventEmitter();
     const deleteCallback = jest.fn();
@@ -273,10 +273,9 @@ describe("Strict DEM Bug Repositories — Automated Proof Suite", () => {
 
     await manager.deleteObject("person-99");
 
-    // EXPECTED: deleteCallback must be called with the deleted person object `person`
-    // ON CURRENT CODE: Line 158 calls `o?.callbacks?.delete?.(this)` passing `this` (the Manager instance)!
-    expect(deleteCallback).toHaveBeenCalledWith(person);
-    expect(deleteCallback).not.toHaveBeenCalledWith(manager);
+    // EXPECTED: deleteCallback must receive the manager instance `manager`, allowing consumers to manage collection state
+    expect(deleteCallback).toHaveBeenCalledWith(manager);
+    expect(deleteCallback).not.toHaveBeenCalledWith(person);
   });
 
   // =========================================================================

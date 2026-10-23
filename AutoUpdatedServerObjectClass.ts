@@ -111,7 +111,7 @@ export abstract class AutoUpdatedServerObject<
       >,
       {
         update: (_x: IAutoUpdatedClientObject<T>, _key: string) => {},
-        delete: (_x: IAutoUpdatedClientObject<T>) => {},
+        delete: (_x: IAutoUpdateManager<any>) => {},
         new: (_x: IAutoUpdatedClientObject<T>) => {},
         progress: (_x: number) => {},
       },

@@ -31,7 +31,7 @@ Invalid/rejected claims receive a penalty equal to negative double of the reques
 | **BUG-01** | Server deleteObject DB Deletion Bypass on Unhydrated Entities | Critical | $400 | $200 | $600 | **ACCEPTED** | **$600** | Verified. Unhydrated entities were never deleted from DB, and changeTracker recorded deletion prematurely. |
 | **BUG-02** | Socket Handler Hardcoded 24-Char ID Length Drops Non-Hex IDs | Critical | $400 | $200 | $600 | **ACCEPTED** | **$600** | Verified. Hardcoded 24-char check dropped non-hex UUIDs and string IDs, causing client deadlocks. |
 | **BUG-03** | Client deleteObject Echo Storm on Incoming Server Deletions | High | $200 | $100 | $300 | **ACCEPTED** | **$300** | Verified. destroy(true) on incoming remote deletes and delta sync emitted delete back to server in echo loop. |
-| **BUG-04** | callbacks.delete Receives Manager Instance Instead of Entity | High | $200 | $100 | $300 | **ACCEPTED** | **$300** | Verified. deleteObject passed `this` (manager instance) instead of `o` (deleted entity) to callbacks.delete. |
+| **BUG-04** | callbacks.delete Receives Manager Instance Instead of Entity | High | $200 | $100 | $300 | **REJECTED** | **-$600** | **REJECTED**: Returning manager instance `this` to `callbacks.delete` is the intended design to manage collections. Type annotations were inaccurate, not the implementation. Penalized at -2x (-$600). |
 | **BUG-05** | Client loadFromServer Leaks Socket Listeners on Reconnection | High | $200 | $100 | $300 | **ACCEPTED** | **$300** | Verified. loadFromServer cleared in-memory maps without detaching old socket listeners, retaining zombie instances. |
 | **BUG-06** | Duplicate Socket Listeners Attached on Lazy Stub Hydration | Medium | $100 | $50 | $150 | **ACCEPTED** | **$150** | Verified. hydrateFromData attached update listeners without socket.off, stacking duplicate listeners. |
 | **BUG-07** | Server setValueInternal Creates Literal Dotted Key | High | $200 | $100 | $300 | **ACCEPTED** | **$300** | Verified. Server created literal top-level `"a.b"` key in memory instead of updating nested properties. |
@@ -40,7 +40,7 @@ Invalid/rejected claims receive a penalty equal to negative double of the reques
 | **BUG-10** | Server collectEntityGraph Ignores Unhydrated DB Relations | Critical | $400 | $200 | $600 | **ACCEPTED** | **$600** | Verified. Synchronous collectEntityGraph failed to query unhydrated lazy relations from DB during depth hydration. |
 | **BUG-11** | Server extractedData Exposes Mutable Cached Object Reference | Medium | $100 | $50 | $150 | **ACCEPTED** | **$150** | Verified. Returning internal cached extractedData by reference allowed external callers to corrupt server cache. |
 | **UNC-01** | Uncertainties and Architectural Edge Cases Report | Review | $10 | $0 | $10 | **ACCEPTED** | **$10** | Architectural review accepted as submitted. Borderline design edge cases preserved for review. |
-| **TOTAL** | | | **$2,360** | **$1,175** | **$3,535** | | **$3,535** | **Net Payout: $3,535** |
+| **TOTAL** | | | **$2,360** | **$1,175** | **$3,535** | | **$2,635** | **Net Payout: $2,635** |
 
 ---
 
