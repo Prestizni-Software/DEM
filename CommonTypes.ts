@@ -30,6 +30,10 @@ export type DEMCallbacks<T extends IAutoUpdatedClientObjectBase = any> = {
   progress: (percent: number) => void;
 };
 
+export type SetValueOptions = {
+  silent?: boolean;
+};
+
 export interface IAutoUpdatedClientObjectBase {
   readonly _id: MongoId;
   readonly properties: string[];
@@ -46,7 +50,11 @@ export interface IAutoUpdatedClientObjectBase {
   contactChildren(): Promise<void>;
   getRawId?(key: string): string | string[] | undefined;
   getValue(key: string): unknown;
-  setValue(key: string, val: unknown): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }>;
+  setValue(
+    key: string,
+    val: unknown,
+    options?: SetValueOptions,
+  ): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }>;
   readonly parentManager: IAutoUpdateManager<IAutoUpdatedClientObjectBase>;
   readonly callbacks: any;
   readonly classParam: any;
@@ -62,6 +70,7 @@ export interface IAutoUpdatedClientObject<
   setValue<K extends Paths<T, IAutoUpdatedClientObject<any>>>(
     key: K,
     val: PathValueOf<IsData<T>, K>,
+    options?: SetValueOptions,
   ): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }>;
 }
 

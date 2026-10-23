@@ -19,6 +19,7 @@ import {
   ExtractedData,
   DEMError,
   DEMErrorCode,
+  toDEMError,
 } from "./CommonTypes.js";
 import { DocumentType } from "@typegoose/typegoose";
 import { ObjectId } from "mongodb";
@@ -267,12 +268,15 @@ export abstract class AutoUpdatedServerObject<
    *
    * @param key - Property key to modify.
    * @param val - Value to set.
+   * @param options - Optional update settings such as silent update.
    * @returns Promise resolving to operation outcome.
    */
   public override async setValue<K extends string>(
     key: K,
     val: any,
-  ): Promise<{ success: boolean; msg: string }> {
+    options?: { silent?: boolean },
+  ): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }> {
+    const silent = Boolean(options?.silent);
     if (
       this._isUpdating &&
       typeof (this as any).setValueQueueInternal === "function"
@@ -280,12 +284,12 @@ export abstract class AutoUpdatedServerObject<
       return (this as any).setValueQueueInternal(
         key,
         val,
-        false,
+        silent,
         false,
         true,
       );
     }
-    return await super.setValue(key as any, val);
+    return await super.setValue(key as any, val, options);
   }
 
   /**
@@ -306,7 +310,7 @@ export abstract class AutoUpdatedServerObject<
     noGet = false,
     noUpdate = false,
     isParentUpdate = false,
-  ): Promise<{ success: boolean; msg: string }> {
+  ): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }> {
     if (
       this._isUpdating &&
       typeof (this as any).setValueQueueInternal === "function"
@@ -350,7 +354,11 @@ export abstract class AutoUpdatedServerObject<
       key === "constructor" ||
       key === "prototype"
     ) {
-      return { success: false, msg: `Invalid property key: ${key}` };
+      return {
+        success: false,
+        code: DEMErrorCode.INVALID_ARGUMENT,
+        msg: `Invalid property key: ${key}`,
+      };
     }
 
     try {
@@ -460,7 +468,15 @@ export abstract class AutoUpdatedServerObject<
       this.loggers.error?.(
         `Error saving object [${this.className}: ${this.data._id?.toString() ?? "not loaded"}]: ${error.message}`,
       );
-      return { success: false, msg: "Error saving object: " + error.message };
+      const demErr =
+        error instanceof DEMError
+          ? error
+          : toDEMError(error, DEMErrorCode.DB_SAVE_FAILED);
+      return {
+        success: false,
+        code: demErr.code,
+        msg: "Error saving object: " + error.message,
+      };
     }
   }
 

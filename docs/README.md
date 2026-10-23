@@ -23,3 +23,4 @@ This directory contains architectural documentation and technical guides for the
 - [Domain Glossary](../GLOSSARY.md) - Core domain terminology and entity definitions.
 - [ADR 0001: Smart Lazy Loading](./adr/0001-smart-lazy-loading-and-static-snapshots.md) - Architectural decision for lazy manifests, depth resolution, and raw references.
 - [Smart Lazy Loading Plan](./superpowers/plans/2026-10-21-smart-lazy-loading.md) - Phased implementation plan and review criteria.
+- [Functionality Catalog & Combinations Matrix](./functionalities/README.md) - Catalog of all 14 library subsystems, 2-way and 3-way combinations matrix, and subagent test suites.

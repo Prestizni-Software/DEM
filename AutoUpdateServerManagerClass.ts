@@ -150,7 +150,7 @@ export type DEMEvent<C extends IAutoUpdatedClientObject<any>> =
  * @param managers - Registry of server managers.
  * @param _models - Optional models registry.
  */
-function setupSocketMiddleware(
+export function setupSocketMiddleware(
   socket_server: Server,
   loggers: LoggersType,
   managers: BaseManagers,
@@ -1029,8 +1029,6 @@ export class AutoUpdateServerManager<
             ids = allowedObjects.map((obj) => obj._id.toString()).filter(Boolean);
             objects = allowedObjects.map((obj) => (obj as any).extractedData).filter(Boolean);
 
-            this.knownObjectIdsBySocket.set(socket, new Set(ids));
-
             if (!this.options?.accessDefinitions?.startupMiddleware) {
               this.startupPayloadCache = {
                 ids,
@@ -1039,6 +1037,8 @@ export class AutoUpdateServerManager<
               };
             }
           }
+
+          this.knownObjectIdsBySocket.set(socket, new Set(ids));
 
           if (this.isLazyLoadingEnabled) {
             const manifest = this.generateManifest(

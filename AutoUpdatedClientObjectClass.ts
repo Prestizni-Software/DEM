@@ -735,13 +735,16 @@ export abstract class AutoUpdatedClientObject<
    *
    * @param key - Property key to modify.
    * @param val - Value to assign.
+   * @param options - Optional update settings such as silent update.
    * @returns Promise resolving to modification result.
    */
   public async setValue<K extends string>(
     key: K,
     val: PathValueOf<IsData<T>, K>,
+    options?: { silent?: boolean },
   ): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }> {
-    return await this.setValue__(key as string, val);
+    const silent = Boolean(options?.silent);
+    return await this.setValue__(key as string, val, silent);
   }
 
   /**
@@ -797,7 +800,11 @@ export abstract class AutoUpdatedClientObject<
       key === "prototype" ||
       (this.properties && !this.properties.includes(rootProp) && rootProp !== "_id")
     ) {
-      return { success: false, msg: `Invalid property key: ${key}` };
+      return {
+        success: false,
+        code: DEMErrorCode.INVALID_ARGUMENT,
+        msg: `Invalid property key: ${key}`,
+      };
     }
     try {
       const isRef = getMetadataRecursive("isRef", this, key);
@@ -933,16 +940,22 @@ export abstract class AutoUpdatedClientObject<
     noUpdate = false,
   ): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }> {
     if (silent) return { success: true, msg: "Silent" };
+    const id = this.data?._id ?? this._id;
+    if (!id) {
+      throw new DEMError(
+        DEMErrorCode.MISSING_ID,
+        `Cannot update object ${this.className} because _id is missing.`,
+      );
+    }
     return new Promise((resolve) => {
-      const id = this.data?._id ?? this._id;
       this.socket.emit(
         EVENT_UPDATE + this.className + id,
         { _id: id.toString(), key, value },
         (res: ServerResponse<undefined>) => {
           resolve({
-            success: res.success,
-            code: (res as any).code,
-            msg: res.message ?? (res.success ? "Success" : "Error"),
+            success: res?.success ?? false,
+            code: (res as any)?.code,
+            msg: res?.message ?? (res?.success ? "Success" : "Error"),
           });
         },
       );
