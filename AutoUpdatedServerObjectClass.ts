@@ -366,38 +366,65 @@ export abstract class AutoUpdatedServerObject<
         );
 
       // Check if property is part of properties or schema, regardless of current undefined value
+      const rootProp = key.split(".")[0];
       const isPersisted =
+        this.properties.includes(rootProp) ||
         this.properties.includes(key) ||
         (this.entry as any)[key] !== undefined ||
-        Boolean((this.entry.schema as any)?.path?.(key));
+        (this.entry as any)[rootProp] !== undefined ||
+        Boolean((this.entry.schema as any)?.path?.(key)) ||
+        Boolean((this.entry.schema as any)?.path?.(rootProp));
 
       if (isPersisted) {
         this.saveLock = (this.saveLock ?? Promise.resolve())
           .catch(() => {})
           .then(async () => {
             if (typeof this.parentManager.model?.updateOne === "function") {
-              await this.parentManager.model.updateOne(
-                { _id },
-                { $set: { [key]: value } },
-              );
+              if (value === undefined) {
+                await this.parentManager.model.updateOne(
+                  { _id },
+                  { $unset: { [key]: "" } },
+                );
+              } else {
+                await this.parentManager.model.updateOne(
+                  { _id },
+                  { $set: { [key]: value } },
+                );
+              }
             } else if (this.entry && typeof (this.entry as any).save === "function") {
               await (this.entry as any).save();
             }
             if (this.entry) {
-              if (key.includes(".")) {
-                _.set(this.entry, key, value);
+              if (value === undefined) {
+                if (key.includes(".")) {
+                  _.unset(this.entry, key);
+                } else {
+                  delete (this.entry as any)[key];
+                }
               } else {
-                (this.entry as any)[key] = value;
+                if (key.includes(".")) {
+                  _.set(this.entry, key, value);
+                } else {
+                  (this.entry as any)[key] = value;
+                }
               }
             }
           });
         await this.saveLock;
       }
 
-      if (key.includes(".")) {
-        _.set(this.data as any, key, value);
+      if (value === undefined) {
+        if (key.includes(".")) {
+          _.unset(this.data as any, key);
+        } else {
+          delete (this.data as any)[key];
+        }
       } else {
-        (this.data as any)[key] = value;
+        if (key.includes(".")) {
+          _.set(this.data as any, key, value);
+        } else {
+          (this.data as any)[key] = value;
+        }
       }
       this._cachedExtractedData = null;
       if (this.parentManager) {

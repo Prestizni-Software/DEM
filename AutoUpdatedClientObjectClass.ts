@@ -810,16 +810,24 @@ export abstract class AutoUpdatedClientObject<
         noUpdate,
       );
       if (res.success) {
-        const pathArr = (key as string).split(".");
-        let obj = this.data as Record<string, unknown>;
-        for (let i = 0; i < pathArr.length - 1; i++) {
-          const seg = pathArr[i];
-          if (!obj[seg] || typeof obj[seg] !== "object") {
-            obj[seg] = {};
+        if (valueToStore === undefined) {
+          if ((key as string).includes(".")) {
+            _.unset(this.data as any, key as string);
+          } else {
+            delete (this.data as any)[key as string];
           }
-          obj = obj[seg] as Record<string, unknown>;
+        } else {
+          const pathArr = (key as string).split(".");
+          let obj = this.data as Record<string, unknown>;
+          for (let i = 0; i < pathArr.length - 1; i++) {
+            const seg = pathArr[i];
+            if (!obj[seg] || typeof obj[seg] !== "object") {
+              obj[seg] = {};
+            }
+            obj = obj[seg] as Record<string, unknown>;
+          }
+          obj[pathArr[pathArr.length - 1]] = valueToStore;
         }
-        obj[pathArr[pathArr.length - 1]] = valueToStore;
         if (this.isServer) {
           await this.findAndLoadReferences(key, valueToStore);
           if (isRef && this.parentManager.isLoaded) await this.contactChildren();
