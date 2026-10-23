@@ -255,6 +255,9 @@ export abstract class AutoUpdatedServerObject<
       {},
       this.loggers,
     ).newData as ExtractedData<T, IAutoUpdatedClientObject<any>>;
+    if ((this.data as any)?._id && !(extracted as any)._id) {
+      (extracted as any)._id = ((this.data as any)._id as any)?.toString?.() ?? String((this.data as any)._id);
+    }
     this._cachedExtractedData = extracted;
     return _.cloneDeep(extracted);
   }

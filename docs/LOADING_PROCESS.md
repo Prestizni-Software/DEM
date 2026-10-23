@@ -84,3 +84,12 @@ Smart Lazy Loading optimizes startup duration and memory consumption for large d
 - Classes declared with `@classProp` and omitting `@populatedRef` disable reference resolution.
 - Getters return raw scalar values or embedded objects without external manager queries.
 
+
+### 5. Local Storage Snapshots with Lazy Loading
+- Persistent storage adapters save lazy manifests and entity stubs with `__isLazyStub` flags.
+- `ClientStateReconciler.restoreFromStorage` restores manifests and stubs without falsely marking stubs as loaded.
+- Calling `ensureLoaded()` on a restored lazy stub triggers server hydration on demand.
+- Calling `ensureLoaded()` on a restored hydrated entity returns immediately without network round-trips.
+- Server startup in lazy mode reconciles against stored entities and preserves locally hydrated data.
+- Server deletions remove matching entities from local caches and manifests.
+- On-demand `loadObject` calls and real-time broadcasts automatically update persistent storage adapters.

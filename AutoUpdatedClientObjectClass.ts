@@ -502,6 +502,9 @@ export abstract class AutoUpdatedClientObject<
       {},
       this.loggers,
     ).newData;
+    if (this.data?._id && !(extracted as any)._id) {
+      (extracted as any)._id = (this.data._id as any)?.toString?.() ?? String(this.data._id);
+    }
     return _.cloneDeep(extracted) as unknown as ExtractedData<
       T,
       IAutoUpdatedClientObject<any>

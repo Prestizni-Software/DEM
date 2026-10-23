@@ -1,6 +1,6 @@
 import { ChangeEntry, DeltaSyncPayload, StoredManagerState } from "./types.js";
 import { IClientStorageAdapter } from "./storage/IClientStorageAdapter.js";
-import { globalCache, IAutoUpdatedClientObjectBase } from "../CommonTypes.js";
+import { EntityDescriptor, globalCache, IAutoUpdatedClientObjectBase } from "../CommonTypes.js";
 
 export interface ReconcilableClientManager<T extends IAutoUpdatedClientObjectBase = IAutoUpdatedClientObjectBase> {
   className: string;
@@ -14,6 +14,8 @@ export interface ReconcilableClientManager<T extends IAutoUpdatedClientObjectBas
   totalObjects: number;
   loadedObjects: number;
   isLoaded_: boolean;
+  manifest?: EntityDescriptor[];
+  isLazyLoadingEnabled?: boolean;
   getObject(id: string): T | undefined;
   deleteObject(id: any, isRemote?: boolean): Promise<any>;
   registerDynamicProperty?(prop: string): void;
@@ -60,6 +62,10 @@ export class ClientStateReconciler {
         }
       }
 
+      if (state.manifest && Array.isArray(state.manifest)) {
+        manager.manifest = [...state.manifest];
+      }
+
       for (const id of state.ids) {
         const objData = objectMap.get(id);
         const instance = new manager.classParam(
@@ -72,6 +78,10 @@ export class ClientStateReconciler {
           manager.callbacks,
           manager.emitter,
         );
+        if (objData && objData.__isLazyStub) {
+          instance.isLazyStub = true;
+          instance.descriptor = objData.descriptor;
+        }
         manager.objects_[id] = instance;
         globalCache.objects[id] = {
           className: manager.className,
@@ -115,10 +125,26 @@ export class ClientStateReconciler {
       const objectsAsArray = manager.objectsAsArray;
       const ids = objectsAsArray.map((o) => (o._id ? o._id.toString() : (o as any).data?._id?.toString())).filter(Boolean);
       const objects = objectsAsArray.map((o: any) => {
-        if (typeof o.extractedData !== "undefined") {
-          return o.extractedData;
+        const idStr = o._id ? o._id.toString() : (o.data?._id?.toString() ?? "unknown");
+        if (o.isLazyStub) {
+          return {
+            _id: idStr,
+            __isLazyStub: true,
+            descriptor: o.descriptor,
+          };
         }
-        return o.data || { _id: o._id ? o._id.toString() : "unknown" };
+        if (typeof o.extractedData !== "undefined") {
+          const extracted = { ...o.extractedData };
+          if (!extracted._id && idStr !== "unknown") {
+            extracted._id = idStr;
+          }
+          return extracted;
+        }
+        const data = o.data ? { ...o.data } : { _id: idStr };
+        if (!data._id && idStr !== "unknown") {
+          data._id = idStr;
+        }
+        return data;
       });
 
       const state: StoredManagerState<any> = {
@@ -127,6 +153,7 @@ export class ClientStateReconciler {
         ids,
         objects,
         properties: (manager.properties as string[]) || [],
+        manifest: manager.manifest ? [...manager.manifest] : undefined,
         savedAt: Date.now(),
       };
 
@@ -165,6 +192,11 @@ export class ClientStateReconciler {
           if ("_cachedObjectsArray" in manager) {
             (manager as any)._cachedObjectsArray = null;
           }
+          if (manager.manifest && Array.isArray(manager.manifest)) {
+            manager.manifest = manager.manifest.filter(
+              (m) => String(m._id) !== String(id),
+            );
+          }
           manager.callbacks?.delete?.(manager as any);
         }
       } else if (change.type === "create") {
@@ -188,6 +220,21 @@ export class ClientStateReconciler {
             className: manager.className,
             object: instance,
           };
+          if (manager.manifest && Array.isArray(manager.manifest)) {
+            let desc: string;
+            if (typeof (manager.classParam as any)?.getDescriptor === "function") {
+              try {
+                desc = (manager.classParam as any).getDescriptor(change.data ?? {});
+              } catch {
+                desc = id;
+              }
+            } else {
+              desc = id;
+            }
+            if (!manager.manifest.some((m) => String(m._id) === String(id))) {
+              manager.manifest.push({ _id: id, description: desc });
+            }
+          }
           manager.totalObjects += 1;
           manager.loadedObjects += 1;
           manager.callbacks?.new?.(instance);

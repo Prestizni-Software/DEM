@@ -432,6 +432,13 @@ export class AutoUpdateClientManager<
             this._cachedObjectsArray = null;
             this.totalObjects += 1;
             this.loadedObjects += 1;
+            if (this.storageAdapter) {
+              await ClientStateReconciler.persistToStorage(
+                this as any,
+                this.lastRevision,
+                this.storageAdapter,
+              );
+            }
             this.callbacks.new(stub as any);
             return;
           }
@@ -500,6 +507,9 @@ export class AutoUpdateClientManager<
     const _idStr = _id.toString();
     this.socket.off(EVENT_UPDATE + this.className + _idStr);
     this._cachedObjectsArray = null;
+    if (this.manifest && Array.isArray(this.manifest)) {
+      this.manifest = this.manifest.filter((m) => String(m._id) !== _idStr);
+    }
     const res = await super.deleteObject(_id, isRemote);
     if (this.storageAdapter) {
       await ClientStateReconciler.persistToStorage(
@@ -645,13 +655,6 @@ export class AutoUpdateClientManager<
             this.lastRevision = data.revision ?? this.lastRevision;
             this.manifest = data.manifest ?? [];
 
-            // Clear old objects before populating new stubs
-            for (const oldId of Object.keys(this.objects_)) {
-              delete globalCache.objects[oldId];
-            }
-            this.objects_ = {};
-            this._cachedObjectsArray = null;
-
             const descMap = new Map<string, string>();
             if (data.manifest) {
               for (const entry of data.manifest) {
@@ -659,8 +662,38 @@ export class AutoUpdateClientManager<
               }
             }
 
+            const incomingIds = new Set(data.ids.map(String));
+
+            // Remove any locally cached objects that no longer exist on the server
+            for (const oldId of Object.keys(this.objects_)) {
+              if (!incomingIds.has(oldId)) {
+                if (this.socket && typeof this.socket.off === "function") {
+                  this.socket.off(EVENT_UPDATE + this.className + oldId);
+                }
+                const oldObj = this.objects_[oldId];
+                if (oldObj && typeof (oldObj as any).destroyImmediate === "function") {
+                  (oldObj as any).destroyImmediate();
+                }
+                delete globalCache.objects[oldId];
+                delete this.objects_[oldId];
+              }
+            }
+            this._cachedObjectsArray = null;
+
             for (const id of data.ids) {
-              const description = descMap.get(String(id));
+              const idStr = String(id);
+              const description = descMap.get(idStr);
+              const existing = this.objects_[idStr];
+
+              // If the object already exists and is fully hydrated (e.g. preserved from local snapshot),
+              // preserve its hydrated state instead of wiping it into an empty stub.
+              if (existing && !existing.isLazyStub && existing.isLoaded) {
+                if (description) {
+                  existing.descriptor = description;
+                }
+                continue;
+              }
+
               const stub = new this.classParam(
                 this.classParam,
                 this.socket,
@@ -681,6 +714,13 @@ export class AutoUpdateClientManager<
 
             this.totalObjects = data.ids.length;
             this.loadedObjects = data.ids.length;
+            if (this.storageAdapter) {
+              await ClientStateReconciler.persistToStorage(
+                this as any,
+                this.lastRevision,
+                this.storageAdapter,
+              );
+            }
             this.callbacks.progress?.(1);
             this.startSocketListeners();
             this.isLoaded_ = true;
@@ -1037,6 +1077,29 @@ export class AutoUpdateClientManager<
         await rootObj.isPreLoadedAsync();
         await rootObj.loadMissingReferences();
         this._cachedObjectsArray = null;
+
+        if (this.storageAdapter) {
+          await ClientStateReconciler.persistToStorage(
+            this as any,
+            this.lastRevision,
+            this.storageAdapter,
+          );
+        }
+
+        if (response.related && typeof response.related === "object") {
+          for (const targetClassName of Object.keys(response.related)) {
+            const targetManager = this.managers?.[targetClassName] as
+              | AutoUpdateClientManager<any>
+              | undefined;
+            if (targetManager?.storageAdapter) {
+              await ClientStateReconciler.persistToStorage(
+                targetManager as any,
+                targetManager.lastRevision,
+                targetManager.storageAdapter,
+              );
+            }
+          }
+        }
 
         return rootObj;
       } finally {

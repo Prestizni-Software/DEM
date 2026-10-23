@@ -1,3 +1,5 @@
+import { EntityDescriptor } from "../CommonTypes.js";
+
 /**
  * Core types and interfaces for DEM Delta Synchronization & Change Tracking.
  */
@@ -57,6 +59,7 @@ export interface StoredManagerState<T = unknown> {
   objects: T[];
   properties: string[];
   savedAt: number;
+  manifest?: EntityDescriptor[];
 }
 
 export interface ClientDeltaSyncOptions {

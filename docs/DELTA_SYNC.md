@@ -135,6 +135,7 @@ if (state) {
   console.log(state.revision);   // Stored revision number
   console.log(state.ids);        // Array of object IDs
   console.log(state.objects);    // Array of plain serialized objects
+  console.log(state.manifest);   // Optional array of entity descriptors (lazy mode)
   console.log(state.savedAt);    // Unix timestamp of save
 }
 ```

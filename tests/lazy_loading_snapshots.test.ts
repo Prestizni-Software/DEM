@@ -6,6 +6,8 @@ import { EventEmitter } from "eventemitter3";
 import { MemoryStorageAdapter } from "../sync/storage/MemoryStorageAdapter.js";
 import { ClientStateReconciler } from "../sync/ClientStateReconciler.js";
 
+import { LocalStorageAdapter } from "../sync/storage/LocalStorageAdapter.js";
+
 // Self-contained snapshot model
 class SnapshotTaskClient extends AutoUpdatedClientObject<SnapshotTaskClient> {
   @classProp
@@ -435,5 +437,287 @@ describe("Lazy Loading with Locally Saved Snapshots", () => {
     expect(stored?.ids).toEqual(["task-2", "task-3"]);
     expect(stored?.manifest?.some((m) => m._id === "task-1")).toBe(false);
     expect(stored?.manifest?.some((m) => m._id === "task-3")).toBe(true);
+  });
+
+  it("should hydrate cross-manager related entities, persist both managers, and restore offline with synchronous navigation", async () => {
+    class LazyCustomerClient extends AutoUpdatedClientObject<LazyCustomerClient> {
+      @classProp
+      public name!: string;
+
+      public static override getDescriptor(data: Partial<LazyCustomerClient>): string {
+        return `Customer: ${data.name ?? "Unknown"}`;
+      }
+    }
+
+    class LazyOrderClient extends AutoUpdatedClientObject<LazyOrderClient> {
+      @classProp
+      public orderNumber!: string;
+
+      @populatedRef("LazyCustomerClient")
+      public customer!: LazyCustomerClient;
+
+      @classProp
+      public detailsSnapshot!: Record<string, unknown>;
+
+      public static override getDescriptor(data: Partial<LazyOrderClient>): string {
+        return `Order: ${data.orderNumber ?? "NoNum"}`;
+      }
+    }
+
+    const multiManagers: Record<string, any> = {};
+    const orderStorage = new MemoryStorageAdapter();
+    const customerStorage = new MemoryStorageAdapter();
+
+    const orderManager = new AutoUpdateClientManager(
+      LazyOrderClient as any,
+      "LazyOrderClient",
+      mockSocket,
+      { info: jest.fn(), debug: jest.fn(), error: jest.fn(), warn: jest.fn() },
+      multiManagers,
+      emitter as any,
+      { new: jest.fn(), update: jest.fn(), delete: jest.fn(), progress: jest.fn() },
+      undefined,
+      { storage: orderStorage },
+      { lazyLoading: true },
+    );
+
+    const customerManager = new AutoUpdateClientManager(
+      LazyCustomerClient as any,
+      "LazyCustomerClient",
+      mockSocket,
+      { info: jest.fn(), debug: jest.fn(), error: jest.fn(), warn: jest.fn() },
+      multiManagers,
+      emitter as any,
+      { new: jest.fn(), update: jest.fn(), delete: jest.fn(), progress: jest.fn() },
+      undefined,
+      { storage: customerStorage },
+      { lazyLoading: true },
+    );
+
+    multiManagers["LazyOrderClient"] = orderManager;
+    multiManagers["LazyCustomerClient"] = customerManager;
+
+    // Startup both managers in lazy mode
+    mockSocket.emit.mockImplementation((event: string, payload: any, ack: Function) => {
+      if (event === "startupLazyOrderClient") {
+        ack({
+          success: true,
+          data: {
+            status: "lazy",
+            revision: 1,
+            ids: ["order-1"],
+            manifest: [{ _id: "order-1", description: "Order: ORD-100" }],
+            properties: ["orderNumber", "customer", "detailsSnapshot", "_id"],
+          },
+        });
+      } else if (event === "startupLazyCustomerClient") {
+        ack({
+          success: true,
+          data: {
+            status: "lazy",
+            revision: 1,
+            ids: ["cust-1"],
+            manifest: [{ _id: "cust-1", description: "Customer: ACME Corp" }],
+            properties: ["name", "_id"],
+          },
+        });
+      } else if (event === "getLazyOrderClientorder-1") {
+        ack({
+          success: true,
+          data: {
+            _id: "order-1",
+            orderNumber: "ORD-100",
+            customer: "cust-1",
+            detailsSnapshot: { itemsCount: 5, totalAmount: 99.95 },
+          },
+          related: {
+            LazyCustomerClient: [
+              {
+                _id: "cust-1",
+                name: "ACME Corp",
+              },
+            ],
+          },
+        });
+      }
+    });
+
+    await orderManager.loadFromServer();
+    await customerManager.loadFromServer();
+
+    // Both are stubs initially
+    const orderStub = orderManager.getObject("order-1");
+    const customerStub = customerManager.getObject("cust-1");
+    expect(orderStub?.isLazyStub).toBe(true);
+    expect(customerStub?.isLazyStub).toBe(true);
+
+    // On-demand load order-1 with related entities
+    await orderManager.loadObject("order-1", { depth: 2 });
+    expect(orderStub?.isLazyStub).toBe(false);
+    expect(customerStub?.isLazyStub).toBe(false);
+
+    // Both orderStorage and customerStorage must now have persisted the hydrated data!
+    const storedOrder = await orderStorage.loadManagerState("LazyOrderClient");
+    const storedCustomer = await customerStorage.loadManagerState("LazyCustomerClient");
+
+    expect(storedOrder?.objects[0].orderNumber).toBe("ORD-100");
+    expect(storedOrder?.objects[0].detailsSnapshot).toEqual({ itemsCount: 5, totalAmount: 99.95 });
+    expect(storedOrder?.objects[0].__isLazyStub).toBeFalsy();
+
+    expect(storedCustomer?.objects[0].name).toBe("ACME Corp");
+    expect(storedCustomer?.objects[0].__isLazyStub).toBeFalsy();
+
+    // Now simulate an offline restart: create brand new manager instances restoring from storage
+    const offlineManagers: Record<string, any> = {};
+    const offlineOrderManager = new AutoUpdateClientManager(
+      LazyOrderClient as any,
+      "LazyOrderClient",
+      mockSocket,
+      { info: jest.fn(), debug: jest.fn(), error: jest.fn(), warn: jest.fn() },
+      offlineManagers,
+      emitter as any,
+      { new: jest.fn(), update: jest.fn(), delete: jest.fn(), progress: jest.fn() },
+      undefined,
+      { storage: orderStorage },
+      { lazyLoading: true },
+    );
+    const offlineCustomerManager = new AutoUpdateClientManager(
+      LazyCustomerClient as any,
+      "LazyCustomerClient",
+      mockSocket,
+      { info: jest.fn(), debug: jest.fn(), error: jest.fn(), warn: jest.fn() },
+      offlineManagers,
+      emitter as any,
+      { new: jest.fn(), update: jest.fn(), delete: jest.fn(), progress: jest.fn() },
+      undefined,
+      { storage: customerStorage },
+      { lazyLoading: true },
+    );
+    offlineManagers["LazyOrderClient"] = offlineOrderManager;
+    offlineManagers["LazyCustomerClient"] = offlineCustomerManager;
+
+    await ClientStateReconciler.restoreFromStorage(offlineOrderManager as any, orderStorage);
+    await ClientStateReconciler.restoreFromStorage(offlineCustomerManager as any, customerStorage);
+
+    const restoredOrder = offlineOrderManager.getObject("order-1");
+    const restoredCust = offlineCustomerManager.getObject("cust-1");
+
+    expect(restoredOrder?.isLoaded).toBe(true);
+    expect(restoredOrder?.isLazyStub).toBeFalsy();
+    expect(restoredOrder?.orderNumber).toBe("ORD-100");
+    expect(restoredOrder?.detailsSnapshot).toEqual({ itemsCount: 5, totalAmount: 99.95 });
+
+    expect(restoredCust?.isLoaded).toBe(true);
+    expect(restoredCust?.isLazyStub).toBeFalsy();
+    expect(restoredCust?.name).toBe("ACME Corp");
+
+    // Calling ensureLoaded() on restored entities must return immediately without socket calls
+    const ensuredOrder = await restoredOrder!.ensureLoaded();
+    expect(ensuredOrder).toBe(restoredOrder);
+
+    const ensuredCust = await restoredCust!.ensureLoaded();
+    expect(ensuredCust).toBe(restoredCust);
+  });
+
+  it("should serialize and deserialize lazy state with LocalStorageAdapter", async () => {
+    const memoryBackend: Record<string, string> = {};
+    const mockStorageBackend = {
+      getItem: (key: string) => memoryBackend[key] ?? null,
+      setItem: (key: string, value: string) => { memoryBackend[key] = value; },
+      removeItem: (key: string) => { delete memoryBackend[key]; },
+    };
+
+    const lsAdapter = new LocalStorageAdapter({ storage: mockStorageBackend });
+
+    const lsManager = new AutoUpdateClientManager(
+      SnapshotTaskClient as any,
+      "SnapshotTaskClient",
+      mockSocket,
+      { info: jest.fn(), debug: jest.fn(), error: jest.fn(), warn: jest.fn() },
+      {},
+      emitter as any,
+      { new: jest.fn(), update: jest.fn(), delete: jest.fn(), progress: jest.fn() },
+      undefined,
+      { storage: lsAdapter },
+      { lazyLoading: true },
+    );
+
+    mockSocket.emit.mockImplementation((event: string, payload: any, ack: Function) => {
+      if (event === "startupSnapshotTaskClient") {
+        ack({
+          success: true,
+          data: {
+            status: "lazy",
+            revision: 42,
+            ids: ["ls-1"],
+            manifest: [{ _id: "ls-1", description: "Task: LocalStorage" }],
+            properties: ["title", "authorId", "metadataSnapshot", "_id"],
+          },
+        });
+      }
+    });
+
+    await lsManager.loadFromServer();
+
+    // Verify localStorage received serialized JSON
+    const rawSaved = mockStorageBackend.getItem("dem_state_SnapshotTaskClient");
+    expect(rawSaved).toBeTruthy();
+    const parsed = JSON.parse(rawSaved!);
+    expect(parsed.manifest).toEqual([{ _id: "ls-1", description: "Task: LocalStorage" }]);
+    expect(parsed.objects[0].__isLazyStub).toBe(true);
+
+    // Restore into fresh manager
+    const freshManager = new AutoUpdateClientManager(
+      SnapshotTaskClient as any,
+      "SnapshotTaskClient",
+      mockSocket,
+      { info: jest.fn(), debug: jest.fn(), error: jest.fn(), warn: jest.fn() },
+      {},
+      emitter as any,
+      { new: jest.fn(), update: jest.fn(), delete: jest.fn(), progress: jest.fn() },
+      undefined,
+      { storage: lsAdapter },
+      { lazyLoading: true },
+    );
+
+    const result = await ClientStateReconciler.restoreFromStorage(freshManager as any, lsAdapter);
+    expect(result.restored).toBe(true);
+    expect(freshManager.manifest).toEqual([{ _id: "ls-1", description: "Task: LocalStorage" }]);
+    const restoredStub = freshManager.getObject("ls-1");
+    expect(restoredStub?.isLazyStub).toBe(true);
+    expect(restoredStub?.descriptor).toBe("Task: LocalStorage");
+  });
+
+  it("should gracefully handle missing or corrupted manifests during restoration", async () => {
+    // Stored state without manifest field (legacy snapshot)
+    await storageAdapter.saveManagerState("SnapshotTaskClient", {
+      className: "SnapshotTaskClient",
+      revision: 1,
+      ids: ["task-legacy"],
+      objects: [
+        { _id: "task-legacy", title: "Legacy", authorId: "u1" },
+      ],
+      properties: ["title", "authorId", "metadataSnapshot", "_id"],
+      savedAt: Date.now(),
+    });
+
+    const legacyManager = new AutoUpdateClientManager(
+      SnapshotTaskClient as any,
+      "SnapshotTaskClient",
+      mockSocket,
+      { info: jest.fn(), debug: jest.fn(), error: jest.fn(), warn: jest.fn() },
+      {},
+      emitter as any,
+      { new: jest.fn(), update: jest.fn(), delete: jest.fn(), progress: jest.fn() },
+      undefined,
+      { storage: storageAdapter },
+      { lazyLoading: true },
+    );
+
+    const result = await ClientStateReconciler.restoreFromStorage(legacyManager as any, storageAdapter);
+    expect(result.restored).toBe(true);
+    // When no manifest is in storage, manifest remains empty array rather than undefined or throwing
+    expect(legacyManager.manifest).toBeDefined();
+    expect(Array.isArray(legacyManager.manifest)).toBe(true);
   });
 });
