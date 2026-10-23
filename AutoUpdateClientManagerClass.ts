@@ -13,6 +13,7 @@ import {
   EVENT_GET,
   EVENT_UPDATE,
   EVENT_VERSION,
+  EVENT_DEAUTHENTICATE,
   DEM_VERSION,
   DEM_CLIENT_VERSION,
   DEM_PROTOCOL_VERSION,
@@ -286,6 +287,7 @@ export class AutoUpdateClientManager<
   private pendingHydrations = new Map<string, Promise<T>>();
   private _cachedObjectsArray: T[] | null = null;
   private _reconnectHandler?: () => Promise<void>;
+  private _deauthHandler?: (payload?: unknown) => void;
 
   /**
    * Initializes an AutoUpdateClientManager instance.
@@ -365,6 +367,15 @@ export class AutoUpdateClientManager<
       }
     };
     this.socket?.on?.("reconnect", this._reconnectHandler);
+
+    this._deauthHandler = (payload?: unknown) => {
+      this.loggers.info?.(
+        `[DEM - ${this.className} MANAGER] Received deauthenticate event, tearing down manager.`,
+      );
+      this.emitter.emit(EVENT_DEAUTHENTICATE, payload);
+      this.close();
+    };
+    this.socket?.on?.(EVENT_DEAUTHENTICATE, this._deauthHandler);
   }
 
   /**
@@ -1163,6 +1174,10 @@ export class AutoUpdateClientManager<
    * Closes the manager and unbinds all socket event listeners.
    */
   public override close() {
+    if (this._deauthHandler) {
+      this.socket?.off?.(EVENT_DEAUTHENTICATE, this._deauthHandler);
+      this._deauthHandler = undefined;
+    }
     if (this._reconnectHandler) {
       this.socket?.off?.("reconnect", this._reconnectHandler);
       this._reconnectHandler = undefined;

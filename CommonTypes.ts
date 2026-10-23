@@ -352,6 +352,7 @@ export const EVENT_NEW = "new";
 export const EVENT_GET = "get";
 export const EVENT_STARTUP = "startup";
 export const EVENT_VERSION = "dem_version";
+export const EVENT_DEAUTHENTICATE = "deauthenticate";
 
 export * from "./version.js";
 

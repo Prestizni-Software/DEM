@@ -14,6 +14,7 @@ import {
   EVENT_GET,
   EVENT_STARTUP,
   EVENT_VERSION,
+  EVENT_DEAUTHENTICATE,
   DEM_VERSION,
   DEM_SERVER_VERSION,
   DEM_PROTOCOL_VERSION,
@@ -1324,6 +1325,27 @@ export class AutoUpdateServerManager<
       this.clientSockets.delete(socket);
       this.knownObjectIdsBySocket.delete(socket);
     });
+  }
+
+  /**
+   * Emits standardized deauthenticate event to a target client socket or all connected client sockets,
+   * triggering automatic teardown and memory cleanup on the client.
+   *
+   * @param targetSocket - Optional client socket to deauthenticate. If omitted, all registered client sockets are deauthenticated.
+   * @param reason - Optional explanation for deauthentication.
+   */
+  public deauthenticate(targetSocket?: Socket, reason?: string): void {
+    const payload = {
+      reason: reason ?? "Session expired or unauthorized",
+      timestamp: Date.now(),
+    };
+    if (targetSocket) {
+      targetSocket.emit(EVENT_DEAUTHENTICATE, payload);
+    } else {
+      for (const s of this.clientSockets) {
+        s.emit(EVENT_DEAUTHENTICATE, payload);
+      }
+    }
   }
 
   /**
