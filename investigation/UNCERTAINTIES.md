@@ -29,7 +29,7 @@ When authorization tokens expire, DEM managers do not receive a standardized `un
 The mobile app manually calls `close()` across all manager instances and clears singletons.
 
 ### Uncertainty
-Should the DEM socket protocol include a standardized server-to-client `deauthenticate` event that tears down all local manager instances automatically?
+Should the DEM socket protocol include a standardized server-to-client `deauthenticate` event that tears down all local manager instances automatically? - Yes, implement this
 
 ---
 
@@ -58,4 +58,4 @@ When a client sets a property to `undefined`, MongoDB driver behavior depends on
 Setting a property to `undefined` does not emit an `$unset` operator.
 
 ### Uncertainty
-Should DEM translate `undefined` values into MongoDB `$unset` operations, or is clearing fields via `null` the required convention?
+Should DEM translate `undefined` values into MongoDB `$unset` operations, or is clearing fields via `null` the required convention? -yes, implement this
