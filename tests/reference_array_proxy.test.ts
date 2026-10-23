@@ -9,7 +9,12 @@ function makeMockSocket() {
   return {
     on: jest.fn(),
     off: jest.fn(),
-    emit: jest.fn(),
+    emit: jest.fn((event: string, ...args: any[]) => {
+      const cb = args[args.length - 1];
+      if (typeof cb === "function") {
+        cb({ success: true, message: "OK" });
+      }
+    }),
   };
 }
 
@@ -203,5 +208,81 @@ describe("Reference Array Getter Referential Stability & Proxy Immutability", ()
     // Direct mutation of raw internal array does not throw
     expect(() => raw.push({ test: true })).not.toThrow();
     expect(raw.length).toBe(1);
+  });
+
+  test("Cache invalidates when a referenced child entity is destroyed", async () => {
+    const { MockItem, MockContainer } = createTestClasses();
+
+    const itemManager = new AutoUpdateClientManager(
+      MockItem as any,
+      "MockItem",
+      mockSocket as any,
+      loggers,
+      {},
+      emitter,
+      { new: jest.fn(), update: jest.fn(), delete: jest.fn() },
+    );
+    const containerManager = new AutoUpdateClientManager(
+      MockContainer as any,
+      "MockContainer",
+      mockSocket as any,
+      loggers,
+      { MockItem: itemManager },
+      emitter,
+      { new: jest.fn(), update: jest.fn(), delete: jest.fn() },
+    );
+
+    const item1 = new MockItem(
+      MockItem,
+      mockSocket,
+      { _id: "item-10", title: "Active Child 1" },
+      loggers,
+      "MockItem",
+      itemManager,
+      { new: jest.fn(), update: jest.fn(), delete: jest.fn() },
+      emitter,
+    );
+    const item2 = new MockItem(
+      MockItem,
+      mockSocket,
+      { _id: "item-20", title: "Active Child 2" },
+      loggers,
+      "MockItem",
+      itemManager,
+      { new: jest.fn(), update: jest.fn(), delete: jest.fn() },
+      emitter,
+    );
+
+    (itemManager as any).objects_["item-10"] = item1;
+    (itemManager as any).objects_["item-20"] = item2;
+    globalCache.objects["item-10"] = { className: "MockItem", object: item1 as any };
+    globalCache.objects["item-20"] = { className: "MockItem", object: item2 as any };
+
+    const container = new MockContainer(
+      MockContainer,
+      mockSocket,
+      { _id: "container-99", items: ["item-10", "item-20"] },
+      loggers,
+      "MockContainer",
+      containerManager,
+      { new: jest.fn(), update: jest.fn(), delete: jest.fn() },
+      emitter,
+    );
+
+    // First read: both items resolved and cached
+    const itemsInitial = (container as any).items;
+    expect(itemsInitial.length).toBe(2);
+    expect(itemsInitial[0]).toBe(item1);
+    expect(itemsInitial[1]).toBe(item2);
+
+    // Destroy item1 via manager
+    await itemManager.deleteObject("item-10");
+    expect(globalCache.objects["item-10"]).toBeUndefined();
+
+    // Second read: cache must detect that item1 is destroyed and purge stale cache
+    const itemsAfterDelete = (container as any).items;
+    expect(itemsAfterDelete.length).toBe(1);
+    expect(itemsAfterDelete[0]).toBe(item2);
+    expect(itemsAfterDelete).not.toBe(itemsInitial);
   });
 });

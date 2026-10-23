@@ -1385,7 +1385,20 @@ export function setupClassAccessors(classParam: Constructor<any>): {
 
             const cached = this._refArrayCache.get(key);
             if (cached && cached.rawIdsHash === idsHash) {
-              return cached.proxy;
+              const hasStaleChild = cached.proxy.some((child: any) => {
+                if (!child) return true;
+                if (child.data?.Wiped) return true;
+                const childId = child._id
+                  ? child._id.toString()
+                  : child.data?._id?.toString();
+                if (childId && !globalCache.objects[childId]) return true;
+                return false;
+              });
+
+              if (!hasStaleChild) {
+                return cached.proxy;
+              }
+              this._refArrayCache.delete(key);
             }
 
             const rawResult: IAutoUpdatedClientObject<any>[] = [];
