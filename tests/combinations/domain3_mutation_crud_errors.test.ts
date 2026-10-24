@@ -1078,7 +1078,7 @@ describe("Domain 3 Combination Tests: Real-Time Mutation, Dynamic Sockets, CRUD 
       );
     });
 
-    test("Silent updates (silent: true) update in-memory values without socket broadcast", async () => {
+    test("Internal silent updates (setValue__ with silent: true) update in-memory values without socket broadcast", async () => {
       // Step 1: Create client entity with mock socket.
       const mockSocket = createMockSocket();
       const mockManager = {
@@ -1106,11 +1106,9 @@ describe("Domain 3 Combination Tests: Real-Time Mutation, Dynamic Sockets, CRUD 
         emitter,
       );
 
-      // Step 2: Execute silent mutation.
+      // Step 2: Execute internal silent mutation.
       mockSocket.emit.mockClear();
-      const res = await entity.setValue("name", "AfterSilent", {
-        silent: true,
-      });
+      const res = await (entity as any).setValue__("name", "AfterSilent", true);
 
       // Step 3: Verify in-memory state updated and socket emit bypassed.
       expect(res.success).toBe(true);

@@ -9,7 +9,7 @@ Protects against event injection using dynamic socket event whitelisting.
 - `setValue` / `setValue__`: Core mutation method updating entity properties and triggering persistence.
 - `EVENT_UPDATE`: Namespaced socket update event channel format (`update<ClassName><id>`).
 - `socket.eventNames()`: Dynamic event whitelist inspecting active listeners on connected sockets.
-- `silent` mutation flag: Executes in-memory state modifications without socket or database broadcasts.
+- Internal `silent` flag: Executes in-memory state modifications without socket or database broadcasts during internal synchronization.
 
 ## 3. Operational Rules
 - Validate property names against class schema before transmitting update payloads.

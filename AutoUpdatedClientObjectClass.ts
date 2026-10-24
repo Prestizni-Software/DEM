@@ -735,16 +735,13 @@ export abstract class AutoUpdatedClientObject<
    *
    * @param key - Property key to modify.
    * @param val - Value to assign.
-   * @param options - Optional update settings such as silent update.
    * @returns Promise resolving to modification result.
    */
   public async setValue<K extends string>(
     key: K,
     val: PathValueOf<IsData<T>, K>,
-    options?: { silent?: boolean },
   ): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }> {
-    const silent = Boolean(options?.silent);
-    return await this.setValue__(key as string, val, silent);
+    return await this.setValue__(key as string, val);
   }
 
   /**

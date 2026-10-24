@@ -20,7 +20,7 @@ This directory contains detailed technical specifications for all fourteen prima
    Client factories, multi-manager progress aggregation, socket reconnection handling, and deauthentication cleanup.
 
 6. [F06: Real-Time Mutation Engine & Dynamic Sockets](06_realtime_mutation_sockets.md)
-   Granular property updates, dynamic socket listeners, listener whitelists, and silent mutations.
+   Granular property updates, dynamic socket listeners, listener whitelists, and internal silent updates.
 
 7. [F07: Entity Lifecycle CRUD Operations](07_entity_lifecycle_crud.md)
    Local and remote entity creation, cascade deletion, echo suppression, and immediate destruction.

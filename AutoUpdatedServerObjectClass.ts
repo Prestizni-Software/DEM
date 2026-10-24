@@ -268,15 +268,12 @@ export abstract class AutoUpdatedServerObject<
    *
    * @param key - Property key to modify.
    * @param val - Value to set.
-   * @param options - Optional update settings such as silent update.
    * @returns Promise resolving to operation outcome.
    */
   public override async setValue<K extends string>(
     key: K,
     val: any,
-    options?: { silent?: boolean },
   ): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }> {
-    const silent = Boolean(options?.silent);
     if (
       this._isUpdating &&
       typeof (this as any).setValueQueueInternal === "function"
@@ -284,12 +281,12 @@ export abstract class AutoUpdatedServerObject<
       return (this as any).setValueQueueInternal(
         key,
         val,
-        silent,
+        false,
         false,
         true,
       );
     }
-    return await super.setValue(key as any, val, options);
+    return await super.setValue(key as any, val);
   }
 
   /**
