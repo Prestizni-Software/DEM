@@ -6,8 +6,8 @@ import {
   IsData,
   LoggersType,
   PathValueOf,
-  ServerUpdateRequest,
   Paths,
+  ServerUpdateRequest,
   ExtractedData,
   EVENT_INTERNAL_PRE_LOADED,
   EVENT_DELETE,
@@ -666,12 +666,12 @@ export abstract class AutoUpdatedClientObject<
    * Retrieves a property value by dot-notated or shallow key path.
    *
    * @param key_ - Property key or dot-delimited path.
-   * @returns Value at the requested path.
+   * @returns Value at requested path or never if property does not exist.
    */
   public getValue<K extends Paths<T, IAutoUpdatedClientObject<any>>>(
     key_: K,
   ): PathValueOf<T, K>;
-  public getValue(key_: string): any;
+  public getValue(key_: string): never;
   public getValue(key_: string): any {
     const key = key_ as string;
     const parts = key.split(".");

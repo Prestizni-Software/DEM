@@ -59,6 +59,7 @@ export interface IAutoUpdatedClientObject<
   getValue<K extends Paths<T, IAutoUpdatedClientObject<any>>>(
     key: K,
   ): PathValueOf<T, K>;
+  getValue(key: string): never;
   setValue<K extends Paths<T, IAutoUpdatedClientObject<any>>>(
     key: K,
     val: PathValueOf<IsData<T>, K>,

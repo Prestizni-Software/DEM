@@ -8,6 +8,7 @@ import { AutoUpdateServerManager } from "./AutoUpdateServerManagerClass.js";
 import {
   Constructor,
   IsData,
+  PathValueOf,
   LoggersType,
   EVENT_UPDATE,
   EVENT_DELETE,
@@ -267,12 +268,12 @@ export abstract class AutoUpdatedServerObject<
    * Sets a property value on the entity with deadlock-safe queueing during onUpdate hooks.
    *
    * @param key - Property key to modify.
-   * @param val - Value to set.
+   * @param val - Value to set matching property type or never for invalid property.
    * @returns Promise resolving to operation outcome.
    */
   public override async setValue<K extends string>(
     key: K,
-    val: any,
+    val: PathValueOf<IsData<T>, K>,
   ): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }> {
     if (
       this._isUpdating &&
