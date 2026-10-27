@@ -3,7 +3,7 @@ import { EventEmitter } from "eventemitter3";
 import { AutoUpdatedClientObject } from "../AutoUpdatedClientObjectClass.js";
 import { AutoUpdatedServerObject } from "../AutoUpdatedServerObjectClass.js";
 import { AutoUpdateClientManager } from "../AutoUpdateClientManagerClass.js";
-import { classProp, populatedRef, globalCache, DEMError, DEMErrorCode, DEMArray } from "../CommonTypes.js";
+import { classProp, populatedRef, globalCache, DEMError, DEMErrorCode, DEMArray, AsDEM, IsData } from "../CommonTypes.js";
 import { DEM_SERVER_VERSION } from "../version.js";
 
 function makeMockSocket() {
@@ -560,5 +560,53 @@ describe("DEMArray Reactive Array Wrapper & Mutation Pipeline", () => {
     expect(clientMgr.serverTimeOffset).toBeLessThan(6000);
     const syncTime = clientMgr.getSynchronizedTime();
     expect(syncTime).toBeGreaterThanOrEqual(Date.now() + 4000);
+  });
+
+  test("AsDEM utility type overtypes array properties to DEMArray while keeping scalar properties", () => {
+    class NormalArrayEntity extends AutoUpdatedClientObject<NormalArrayEntity> {
+      public name!: string;
+      public count!: number;
+      public tags!: string[];
+      public tasks!: MockTask[];
+    }
+
+    type DEMOvertyped = AsDEM<NormalArrayEntity>;
+
+    // Type assertions
+    const sample: DEMOvertyped = {} as any;
+    const tagsTypeCheck: DEMArray<string> = sample.tags;
+    const tasksTypeCheck: DEMArray<MockTask> = sample.tasks;
+    const nameTypeCheck: string = sample.name;
+    const countTypeCheck: number = sample.count;
+
+    expect(tagsTypeCheck).toBeUndefined();
+    expect(tasksTypeCheck).toBeUndefined();
+    expect(nameTypeCheck).toBeUndefined();
+    expect(countTypeCheck).toBeUndefined();
+  });
+
+  test("IsData allows standard array payloads when entity declares DEMArray properties", () => {
+    class DEMArrayEntity extends AutoUpdatedClientObject<DEMArrayEntity> {
+      public name!: string;
+      public objects!: DEMArray<MockTask>;
+      public tags!: DEMArray<string>;
+    }
+
+    type EntityCreationData = Omit<IsData<DEMArrayEntity>, "_id">;
+
+    // Standard plain arrays must be valid input payloads
+    const payloadWithEmptyArrays: EntityCreationData = {
+      name: "Site Construction",
+      objects: [],
+      tags: [],
+    };
+    expect(payloadWithEmptyArrays.objects).toEqual([]);
+
+    const payloadWithIds: EntityCreationData = {
+      name: "Site Construction 2",
+      objects: ["task-id-1", "task-id-2"],
+      tags: ["tag1", "tag2"],
+    };
+    expect(payloadWithIds.objects).toHaveLength(2);
   });
 });
