@@ -20,6 +20,24 @@ import {
 
 jest.setTimeout(240000);
 
+/**
+ * Writes benchmark timing metrics directly to standard output.
+ * Bypasses Jest runner console suppression in silent mode.
+ *
+ * @param label - Descriptive label for the measured execution phase.
+ * @param durationMs - Execution duration measured in milliseconds.
+ * @returns void
+ */
+function reportBenchmark(label: string, durationMs: number): void {
+  const formattedDuration = durationMs.toFixed(2).padStart(8);
+  process.stdout.write(`  [BENCHMARK] ${label.padEnd(65)} : ${formattedDuration} ms\n`);
+}
+
+/**
+ * Creates an in-memory mock implementation of IDBFactory for IndexedDB adapter testing.
+ *
+ * @returns An IDBFactory instance operating over in-memory maps.
+ */
 function createMockIDBFactory(): IDBFactory {
   const dbs = new Map<string, Map<string, Map<string, any>>>();
   return {
@@ -102,6 +120,12 @@ function createMockIDBFactory(): IDBFactory {
   } as unknown as IDBFactory;
 }
 
+/**
+ * Recursively converts MongoDB JSON export objects with $oid and $date tags into native types.
+ *
+ * @param obj - Arbitrary parsed JSON value or object structure.
+ * @returns Converted structure with ObjectId and Date instances.
+ */
 function processMongoJSON(obj: any): any {
   if (Array.isArray(obj)) {
     return obj.map(processMongoJSON);
@@ -148,6 +172,11 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
     warn: () => {},
   };
 
+  /**
+   * Creates a new isolated Socket.IO client instance connected to the test server.
+   *
+   * @returns Configured Socket.IO client socket.
+   */
   function createClientSocket(): any {
     return socketIOClient(`http://127.0.0.1:${serverPort}`, {
       transports: ["websocket"],
@@ -156,6 +185,11 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
     });
   }
 
+  /**
+   * Discovers and returns client object class constructors from ClientClasses export.
+   *
+   * @returns Dictionary of client class constructors indexed by class name.
+   */
   function getClientDefs(): Record<string, Constructor<IAutoUpdatedClientObjectBase>> {
     const defs: Record<string, Constructor<IAutoUpdatedClientObjectBase>> = {};
     for (const [name, cls] of Object.entries(ClientClasses)) {
@@ -170,6 +204,7 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
   }
 
   beforeAll(async () => {
+    const beforeAllStart = performance.now();
     if (mongoose.connection.readyState !== 0) {
       await mongoose.disconnect();
     }
@@ -177,6 +212,7 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
       serverSelectionTimeoutMS: 10000,
     });
 
+    const dataLoadStart = performance.now();
     const dataDir = path.join(process.cwd(), "tests", "testData");
     let initialCount = 0;
     const loadedData: Record<string, any[]> = {};
@@ -228,7 +264,9 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
         initialCount += clonedBatch.length;
       }
     }
+    reportBenchmark("Setup: MongoDB data load and scale to 8500+ objects", performance.now() - dataLoadStart);
 
+    const serverInitStart = performance.now();
     httpServer = new HttpServer();
     await new Promise<void>((resolve) => {
       httpServer.listen(0, () => {
@@ -262,6 +300,7 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
       serverIo,
       false,
     );
+    reportBenchmark("Setup: AUSManager server initialization", performance.now() - serverInitStart);
 
     let totalServerObjects = 0;
     for (const [name, mgr] of Object.entries(serverManagers)) {
@@ -269,6 +308,7 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
       totalServerObjects += count;
     }
     expect(totalServerObjects).toBeGreaterThan(8500);
+    reportBenchmark("Setup: Total beforeAll duration", performance.now() - beforeAllStart);
   });
 
   afterAll(async () => {
@@ -284,10 +324,12 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
   });
 
   test("1. Real Data Delta Sync with MemoryStorageAdapter (8500+ objects)", async () => {
+    const testStart = performance.now();
     const storage = new MemoryStorageAdapter();
     const clientDefs = getClientDefs();
 
     // Step A: Initial full sync
+    const stepAStart = performance.now();
     const clientSocket1 = createClientSocket();
     globalCache.clear();
     const clientManagers1 = await AUCManagerFactory(
@@ -308,15 +350,19 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
     expect(totalClient1).toBeGreaterThan(8500);
     for (const m of Object.values(clientManagers1)) (m as any).close?.();
     clientSocket1.disconnect();
+    reportBenchmark("Test 1 - Step A: Initial full sync (8500+ objects)", performance.now() - stepAStart);
 
     // Step B: Mutate objects on server while client is offline
+    const stepBStart = performance.now();
     const companies = serverManagers.Company.objectsAsArray;
     const testCompany = companies[0];
     const originalFullName = testCompany.fullName;
     const updatedFullName = originalFullName + " [DeltaSync Test]";
     await testCompany.setValue("fullName", updatedFullName);
+    reportBenchmark("Test 1 - Step B: Server mutation while client offline", performance.now() - stepBStart);
 
     // Step C: Reconnect client with same MemoryStorageAdapter
+    const stepCStart = performance.now();
     const clientSocket2 = createClientSocket();
     globalCache.clear();
     const clientManagers2 = await AUCManagerFactory(
@@ -344,9 +390,13 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
     await testCompany.setValue("fullName", originalFullName);
     for (const m of Object.values(clientManagers2)) (m as any).close?.();
     clientSocket2.disconnect();
+    reportBenchmark("Test 1 - Step C: Reconnect delta sync & validation", performance.now() - stepCStart);
+
+    reportBenchmark("Test 1: Total duration (MemoryStorageAdapter)", performance.now() - testStart);
   });
 
   test("2. Real Data Delta Sync with LocalStorageAdapter", async () => {
+    const testStart = performance.now();
     const localStore = new Map<string, string>();
     const mockLocalStorage = {
       getItem: (k: string) => localStore.get(k) ?? null,
@@ -363,6 +413,7 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
     const clientDefs = getClientDefs();
 
     // Step A: Initial full sync
+    const stepAStart = performance.now();
     const clientSocket1 = createClientSocket();
     globalCache.clear();
     const clientManagers1 = await AUCManagerFactory(
@@ -384,15 +435,19 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
     expect(localStore.size).toBeGreaterThan(0);
     for (const m of Object.values(clientManagers1)) (m as any).close?.();
     clientSocket1.disconnect();
+    reportBenchmark("Test 2 - Step A: Initial full sync (8500+ objects)", performance.now() - stepAStart);
 
     // Step B: Mutate Construction on server
+    const stepBStart = performance.now();
     const constructions = serverManagers.Construction.objectsAsArray;
     const testConstruction = constructions[0];
     const originalConstructionName = testConstruction.name;
     const updatedConstructionName = originalConstructionName + " [LocalStorage Delta]";
     await testConstruction.setValue("name", updatedConstructionName);
+    reportBenchmark("Test 2 - Step B: Server mutation while client offline", performance.now() - stepBStart);
 
     // Step C: Reconnect client with same LocalStorageAdapter
+    const stepCStart = performance.now();
     const clientSocket2 = createClientSocket();
     globalCache.clear();
     const clientManagers2 = await AUCManagerFactory(
@@ -414,14 +469,19 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
     await testConstruction.setValue("name", originalConstructionName);
     for (const m of Object.values(clientManagers2)) (m as any).close?.();
     clientSocket2.disconnect();
+    reportBenchmark("Test 2 - Step C: Reconnect delta sync & validation", performance.now() - stepCStart);
+
+    reportBenchmark("Test 2: Total duration (LocalStorageAdapter)", performance.now() - testStart);
   });
 
   test("3. Real Data Delta Sync with IndexedDbStorageAdapter", async () => {
+    const testStart = performance.now();
     const mockIdbFactory = createMockIDBFactory();
     const storage = new IndexedDbStorageAdapter({ idbFactory: mockIdbFactory });
     const clientDefs = getClientDefs();
 
     // Step A: Initial full sync
+    const stepAStart = performance.now();
     const clientSocket1 = createClientSocket();
     globalCache.clear();
     const clientManagers1 = await AUCManagerFactory(
@@ -442,15 +502,19 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
     expect(totalClient1).toBeGreaterThan(8500);
     for (const m of Object.values(clientManagers1)) (m as any).close?.();
     clientSocket1.disconnect();
+    reportBenchmark("Test 3 - Step A: Initial full sync (8500+ objects)", performance.now() - stepAStart);
 
     // Step B: Mutate Protocol on server
+    const stepBStart = performance.now();
     const protocols = serverManagers.Protocol.objectsAsArray;
     const testProtocol = protocols[0];
     const originalProtocolNumber = testProtocol.protocolNumber;
     const updatedProtocolNumber = (originalProtocolNumber || 100) + 999;
     await testProtocol.setValue("protocolNumber", updatedProtocolNumber);
+    reportBenchmark("Test 3 - Step B: Server mutation while client offline", performance.now() - stepBStart);
 
     // Step C: Reconnect client with IndexedDbStorageAdapter
+    const stepCStart = performance.now();
     const clientSocket2 = createClientSocket();
     globalCache.clear();
     const clientManagers2 = await AUCManagerFactory(
@@ -472,13 +536,18 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
     await testProtocol.setValue("protocolNumber", originalProtocolNumber);
     for (const m of Object.values(clientManagers2)) (m as any).close?.();
     clientSocket2.disconnect();
+    reportBenchmark("Test 3 - Step C: Reconnect delta sync & validation", performance.now() - stepCStart);
+
+    reportBenchmark("Test 3: Total duration (IndexedDbStorageAdapter)", performance.now() - testStart);
   });
 
   test("4. Stress Test: 5 Rounds of Rapid Disconnects, Server Mutations & Reconnections", async () => {
+    const testStart = performance.now();
     const storage = new MemoryStorageAdapter();
     const clientDefs = getClientDefs();
 
     // Initial connection
+    const initStart = performance.now();
     let clientSocket = createClientSocket();
     globalCache.clear();
     let clientManagers = await AUCManagerFactory(
@@ -491,8 +560,10 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
       undefined,
       { storage },
     );
+    reportBenchmark("Test 4 - Initial full sync connection (8500+ objects)", performance.now() - initStart);
 
     for (let round = 1; round <= 5; round++) {
+      const roundStart = performance.now();
       for (const m of Object.values(clientManagers)) (m as any).close?.();
       clientSocket.disconnect();
 
@@ -523,17 +594,21 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
 
       const clientConstruction = clientManagers.Construction.getObject(construction._id.toString());
       expect(clientConstruction?.name).toBe(`Stress Construction Round ${round}`);
+      reportBenchmark(`Test 4 - Round ${round}: Disconnect, mutate & reconnect sync`, performance.now() - roundStart);
     }
 
     for (const m of Object.values(clientManagers)) (m as any).close?.();
     clientSocket.disconnect();
+    reportBenchmark("Test 4: Total duration (Stress Test 5 rounds)", performance.now() - testStart);
   });
 
   test("5. Dynamic Limits Adjustment Mid-Run: Changing MB and TTL Limits Forces Clean Full-Sync Fallback", async () => {
+    const testStart = performance.now();
     const storage = new MemoryStorageAdapter();
     const clientDefs = getClientDefs();
 
     // Initial connection
+    const stepAStart = performance.now();
     const clientSocket1 = createClientSocket();
     globalCache.clear();
     const clientManagers1 = await AUCManagerFactory(
@@ -550,8 +625,10 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
     const initialCompanyRev = clientManagers1.Company.lastRevision;
     for (const m of Object.values(clientManagers1)) (m as any).close?.();
     clientSocket1.disconnect();
+    reportBenchmark("Test 5 - Step A: Initial full sync connection", performance.now() - stepAStart);
 
     // Perform multiple server mutations
+    const stepBStart = performance.now();
     const company = serverManagers.Company.objectsAsArray[0];
     for (let i = 1; i <= 5; i++) {
       await company.setValue("fullName", `Dynamic Limit Step ${i}`);
@@ -566,8 +643,10 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
     // Wait 5ms for TTL to expire
     await new Promise((resolve) => setTimeout(resolve, 5));
     serverManagers.Company.changeTracker.prune();
+    reportBenchmark("Test 5 - Step B: Server mutations and prune expiration", performance.now() - stepBStart);
 
     // Client reconnects with old revision
+    const stepCStart = performance.now();
     const clientSocket2 = createClientSocket();
     globalCache.clear();
     const clientManagers2 = await AUCManagerFactory(
@@ -595,5 +674,8 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
 
     for (const m of Object.values(clientManagers2)) (m as any).close?.();
     clientSocket2.disconnect();
+    reportBenchmark("Test 5 - Step C: Reconnect fallback full sync & validation", performance.now() - stepCStart);
+
+    reportBenchmark("Test 5: Total duration (Dynamic Limits Adjustment)", performance.now() - testStart);
   });
 });
