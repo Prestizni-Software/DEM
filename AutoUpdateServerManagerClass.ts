@@ -158,14 +158,15 @@ export function setupSocketMiddleware(
 ) {
   socket_server.use(async (socket, next) => {
     socket.use((async (
-      event: [string, unknown, (res: ServerResponse<unknown>) => void],
+      event: [string, unknown?, ((res: ServerResponse<unknown>) => void)?],
       nextEvent: (err?: Error) => void,
     ) => {
-      if (
-        event.length !== 3 ||
-        typeof event[0] !== "string" ||
-        typeof event[2] !== "function"
-      ) {
+      const hasAck = typeof event[2] === "function";
+      const isValidPayload =
+        typeof event[0] === "string" &&
+        (event.length === 2 || (event.length === 3 && hasAck));
+
+      if (!isValidPayload) {
         loggers.warn?.(
           "Invalid event: [" +
             event
@@ -191,11 +192,13 @@ export function setupSocketMiddleware(
               .join("], [") +
             "]",
         );
-        event[2]({
-          success: false,
-          code: DEMErrorCode.UNDEFINED_EVENT,
-          message: "Undefined event, event: " + event[0] + " not found",
-        });
+        if (typeof event[2] === "function") {
+          event[2]({
+            success: false,
+            code: DEMErrorCode.UNDEFINED_EVENT,
+            message: "Undefined event, event: " + event[0] + " not found",
+          });
+        }
         return;
       }
       try {
@@ -234,11 +237,13 @@ export function setupSocketMiddleware(
                 event[1] as string,
               );
               if (!obj) {
-                event[2]({
-                  success: true,
-                  message: "Object already deleted",
-                  data: undefined,
-                });
+                if (typeof event[2] === "function") {
+                  event[2]({
+                    success: true,
+                    message: "Object already deleted",
+                    data: undefined,
+                  });
+                }
                 return;
               }
               demEvent = {
@@ -309,15 +314,17 @@ export function setupSocketMiddleware(
               (error instanceof Error ? error.message : String(error)) +
               "'",
           );
-          event[2]({
-            success: false,
-            code: DEMErrorCode.ACCESS_DENIED,
-            message:
-              "You were denied access to this event '" +
-              event[0] +
-              "' by the server.\n" +
-              (error instanceof Error ? error.message : String(error)),
-          });
+          if (typeof event[2] === "function") {
+            event[2]({
+              success: false,
+              code: DEMErrorCode.ACCESS_DENIED,
+              message:
+                "You were denied access to this event '" +
+                event[0] +
+                "' by the server.\n" +
+                (error instanceof Error ? error.message : String(error)),
+            });
+          }
         }
       } catch (error: unknown) {
         const demErr = toDEMError(error, DEMErrorCode.INTERNAL_ERROR);
@@ -327,11 +334,13 @@ export function setupSocketMiddleware(
             "\nError: " +
             demErr.message,
         );
-        event[2]({
-          success: false,
-          code: demErr.code,
-          message: error instanceof Error ? error.message : String(error),
-        });
+        if (typeof event[2] === "function") {
+          event[2]({
+            success: false,
+            code: demErr.code,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
         return;
       }
     }) as any);

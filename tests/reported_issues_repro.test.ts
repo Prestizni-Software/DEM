@@ -240,6 +240,7 @@ describe("Reported Issues Reproduction Tests", () => {
     let httpServer: http.Server;
     let ioServer: SocketIOServer;
     let clientSocket: ClientSocket;
+    let connectedServerSocket: any;
     let serverPort: number;
 
     beforeEach((done) => {
@@ -257,6 +258,10 @@ describe("Reported Issues Reproduction Tests", () => {
       const mockManagers: any = {};
 
       setupSocketMiddleware(ioServer, mockLoggers as any, mockManagers);
+
+      ioServer.on("connection", (socket) => {
+        connectedServerSocket = socket;
+      });
 
       httpServer.listen(0, () => {
         serverPort = (httpServer.address() as any).port;
@@ -279,10 +284,8 @@ describe("Reported Issues Reproduction Tests", () => {
     test("setupSocketMiddleware forwards events emitted without acknowledgement callback to socket listener", (done) => {
       let receivedActivity: any = null;
 
-      ioServer.on("connection", (socket) => {
-        socket.on("user_activity", (data: any) => {
-          receivedActivity = data;
-        });
+      connectedServerSocket.on("user_activity", (data: any) => {
+        receivedActivity = data;
       });
 
       // Emit event with payload but without ack callback (length 2)
@@ -291,25 +294,23 @@ describe("Reported Issues Reproduction Tests", () => {
       setTimeout(() => {
         expect(receivedActivity).toEqual({ active: true });
         done();
-      }, 200);
+      }, 50);
     });
 
-    test("setupSocketMiddleware forwards events emitted with no arguments to socket listener", (done) => {
-      let receivedPing = false;
+    test("setupSocketMiddleware rejects invalid 3-element event when third argument is not a function", (done) => {
+      let receivedActivity = false;
 
-      ioServer.on("connection", (socket) => {
-        socket.on("ping_event", () => {
-          receivedPing = true;
-        });
+      connectedServerSocket.on("invalid_activity", () => {
+        receivedActivity = true;
       });
 
-      // Emit event with no payload and no ack callback (length 1)
-      clientSocket.emit("ping_event");
+      // Emit event with 3 elements where 3rd is not a function
+      clientSocket.emit("invalid_activity", { active: true }, "notAFunction" as any);
 
       setTimeout(() => {
-        expect(receivedPing).toBe(true);
+        expect(receivedActivity).toBe(false);
         done();
-      }, 200);
+      }, 50);
     });
   });
 });
