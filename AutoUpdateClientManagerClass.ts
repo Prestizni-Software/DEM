@@ -428,6 +428,7 @@ export class AutoUpdateClientManager<
               this.emitter,
             );
             stub.descriptor = description;
+            (stub as any).generateSettersAndGetters?.();
             this.objects_[id] = stub;
             globalCache.objects[id] = {
               className: this.className,
@@ -725,6 +726,7 @@ export class AutoUpdateClientManager<
                 this.emitter,
               );
               stub.descriptor = description;
+              (stub as any).generateSettersAndGetters?.();
               this.objects_[id] = stub;
               globalCache.objects[id] = {
                 className: this.className,

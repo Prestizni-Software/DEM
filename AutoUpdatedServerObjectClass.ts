@@ -546,6 +546,7 @@ export abstract class AutoUpdatedServerObject<
         }
 
         // Element anchoring for positional operations
+        let targetNotFound = false;
         if (mutation.op === "splice" || mutation.op === "set") {
           if (mutation.targetId) {
             const idx = currentArr.findIndex((el) => {
@@ -557,6 +558,8 @@ export abstract class AutoUpdatedServerObject<
             });
             if (idx !== -1) {
               mutation.index = idx;
+            } else {
+              targetNotFound = true;
             }
           }
         }
@@ -576,14 +579,20 @@ export abstract class AutoUpdatedServerObject<
             currentArr.unshift(...(mutation.items || []));
             break;
           case "splice":
-            currentArr.splice(
-              mutation.index ?? 0,
-              mutation.deleteCount ?? currentArr.length,
-              ...(mutation.items || []),
-            );
+            if (targetNotFound) {
+              if (mutation.items?.length) {
+                currentArr.splice(mutation.index ?? currentArr.length, 0, ...mutation.items);
+              }
+            } else {
+              currentArr.splice(
+                mutation.index ?? 0,
+                mutation.deleteCount ?? currentArr.length,
+                ...(mutation.items || []),
+              );
+            }
             break;
           case "set":
-            if (mutation.index !== undefined && mutation.items?.length) {
+            if (!targetNotFound && mutation.index !== undefined && mutation.items?.length) {
               currentArr[mutation.index] = mutation.items[0];
             }
             break;
@@ -615,6 +624,10 @@ export abstract class AutoUpdatedServerObject<
         }
         (this.data as any)[key] = currentArr;
         this._refArrayCache?.delete(key);
+        this._cachedExtractedData = null;
+        if (this.parentManager) {
+          (this.parentManager as any).startupPayloadCache = null;
+        }
 
         // Monotonic revision tracking
         let newRev: number | undefined;

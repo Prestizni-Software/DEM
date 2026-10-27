@@ -214,15 +214,17 @@ export function createDEMArray<T>(
         return async (options?: { depth?: number }) => {
           if (!isRef) return receiver;
           const current = getItems();
-          for (const item of current) {
-            if (
-              item &&
-              typeof item.ensureLoaded === "function" &&
-              item.isLazyStub
-            ) {
-              await item.ensureLoaded(options);
-            }
-          }
+          await Promise.all(
+            current.map(async (item) => {
+              if (
+                item &&
+                typeof item.ensureLoaded === "function" &&
+                item.isLazyStub
+              ) {
+                await item.ensureLoaded(options);
+              }
+            }),
+          );
           return receiver;
         };
       }
@@ -896,7 +898,17 @@ export abstract class AutoUpdatedClientObject<
     if (!id) return undefined;
     const idStr = typeof id === "string" ? id : id.toString();
     const cached = globalCache.objects[idStr];
-    if (cached?.object) return cached.object as IAutoUpdatedClientObject<any>;
+    if (cached?.object) {
+      const isSameClient =
+        !this.parentManager ||
+        !this.parentManager.managers ||
+        Object.keys(this.parentManager.managers).length === 0 ||
+        cached.object.parentManager === this.parentManager ||
+        Object.values(this.parentManager.managers).includes(cached.object.parentManager as any);
+      if (isSameClient) {
+        return cached.object as IAutoUpdatedClientObject<T>;
+      }
+    }
 
     const cacheKey = `${this.className}:${key}`;
     const cachedManager = this.parentManager?.cache?.references?.[cacheKey];
@@ -1061,6 +1073,7 @@ export abstract class AutoUpdatedClientObject<
         }
       }
 
+      const prevRawVal = (this.data as Record<string, unknown>)?.[key];
       const res = await this.setValueInternal(
         key,
         valueToStore,
@@ -1090,6 +1103,81 @@ export abstract class AutoUpdatedClientObject<
         if (this.isServer) {
           await this.findAndLoadReferences(key, valueToStore);
           if (isRef && this.parentManager.isLoaded) await this.contactChildren();
+        } else if (isRef) {
+          const parentId = (this.data?._id ?? this._id)?.toString();
+          if (Array.isArray(valueToStore)) {
+            const nextIds = (valueToStore as unknown[]).map((v) =>
+              v && typeof v === "object" && "_id" in v
+                ? String((v as any)._id)
+                : String(v),
+            );
+            const prevIds = Array.isArray(prevRawVal)
+              ? (prevRawVal as unknown[]).map((v) =>
+                  v && typeof v === "object" && "_id" in v
+                    ? String((v as any)._id)
+                    : String(v),
+                )
+              : [];
+            const addedIds = nextIds.filter((id) => !prevIds.includes(id));
+            const removedIds = prevIds.filter((id) => !nextIds.includes(id));
+
+            for (const id of nextIds) {
+              const child = this.findReference(id, key);
+              if (child && typeof child === "object") {
+                const props = (child as any).properties || [];
+                for (const cp of props) {
+                  const refsTo =
+                    Reflect.getMetadata("refsTo", child, cp) ||
+                    Reflect.getMetadata("refsTo", Object.getPrototypeOf(child), cp);
+                  if (
+                    refsTo === this.className ||
+                    refsTo?.startsWith?.(this.className + ":")
+                  ) {
+                    (child as any)[cp] = parentId;
+                    if ((child as any).data) {
+                      (child as any).data[cp] = parentId;
+                    }
+                  }
+                }
+              }
+            }
+
+            for (const id of removedIds) {
+              if (nextIds.includes(id)) continue;
+              const child = this.findReference(id, key);
+              if (child && typeof child === "object") {
+                const props = (child as any).properties || [];
+                for (const cp of props) {
+                  const refsTo =
+                    Reflect.getMetadata("refsTo", child, cp) ||
+                    Reflect.getMetadata("refsTo", Object.getPrototypeOf(child), cp);
+                  if (
+                    refsTo === this.className ||
+                    refsTo?.startsWith?.(this.className + ":")
+                  ) {
+                    const childParentVal = (child as any)[cp];
+                    const childParentId =
+                      childParentVal && typeof childParentVal === "object" && "_id" in childParentVal
+                        ? String((childParentVal as any)._id)
+                        : String(childParentVal);
+                    if (
+                      childParentId === parentId ||
+                      childParentVal === parentId ||
+                      childParentVal === this
+                    ) {
+                      (child as any)[cp] = undefined;
+                    }
+                    if (
+                      (child as any).data?.[cp] === parentId ||
+                      (child as any).data?.[cp]?.toString?.() === parentId
+                    ) {
+                      delete (child as any).data[cp];
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
         if (this.isLoaded) {
           this.callbacks.update(
@@ -1204,6 +1292,10 @@ export abstract class AutoUpdatedClientObject<
           const id = currentRawArray[i];
           removedEntities.push(this.findReference(id, key) || id);
         }
+      } else if (req.op === "clear") {
+        for (const id of currentRawArray) {
+          removedEntities.push(this.findReference(id, key) || id);
+        }
       }
     } else {
       if (req.op === "pop" && currentRawArray.length > 0) {
@@ -1213,6 +1305,8 @@ export abstract class AutoUpdatedClientObject<
       } else if (req.op === "splice" && req.index !== undefined) {
         const count = req.deleteCount ?? currentRawArray.length - req.index;
         removedEntities = currentRawArray.slice(req.index, req.index + count);
+      } else if (req.op === "clear") {
+        removedEntities = [...currentRawArray];
       }
     }
 
@@ -1232,13 +1326,21 @@ export abstract class AutoUpdatedClientObject<
     const resolvedEntities: any[] = [];
     if (isRef && req.items) {
       rawItemsToPersist = req.items.map((item: any) => {
-        if (item && typeof item === "object") {
-          if ("_id" in item) {
-            resolvedEntities.push(item);
-            return String((item as any)._id);
-          }
+        const isEntityInstance =
+          item instanceof AutoUpdatedClientObject ||
+          (item &&
+            typeof item === "object" &&
+            "className" in item &&
+            "data" in item);
+        if (isEntityInstance) {
+          resolvedEntities.push(item);
+          return String((item as any)._id);
         }
-        return String(item);
+        const resolved = this.findReference(item, key);
+        if (resolved) {
+          resolvedEntities.push(resolved);
+        }
+        return String(item && item.toString ? item.toString() : item);
       });
     }
 
@@ -1285,31 +1387,52 @@ export abstract class AutoUpdatedClientObject<
     const updatedArray = res.updatedArray ?? [];
     (this.data as Record<string, unknown>)[key] = updatedArray;
     this._refArrayCache?.delete(key);
+    if (Object.hasOwn(this, key)) {
+      delete (this as Record<string, unknown>)[key];
+    }
 
     // Synchronize child back-references
     if (isRef) {
       const parentId = (this.data?._id ?? this._id)?.toString();
-      if (
-        req.op === "push" ||
-        req.op === "unshift" ||
-        req.op === "splice" ||
-        req.op === "set"
-      ) {
-        for (const entity of resolvedEntities) {
-          if (entity && typeof entity === "object") {
-            const props = (entity as any).properties || [];
-            for (const cp of props) {
-              const refsTo =
-                Reflect.getMetadata("refsTo", entity, cp) ||
-                Reflect.getMetadata("refsTo", Object.getPrototypeOf(entity), cp);
-              if (
-                refsTo === this.className ||
-                refsTo?.startsWith?.(this.className + ":")
-              ) {
-                (entity as any)[cp] = parentId;
-                if ((entity as any).data) {
-                  (entity as any).data[cp] = parentId;
-                }
+      const currentIds = (updatedArray as unknown[]).map((v) =>
+        v && typeof v === "object" && "_id" in v
+          ? String((v as any)._id)
+          : String(v),
+      );
+      for (const id of currentIds) {
+        const child = this.findReference(id, key);
+        if (child && typeof child === "object") {
+          const props = (child as any).properties || [];
+          for (const cp of props) {
+            const refsTo =
+              Reflect.getMetadata("refsTo", child, cp) ||
+              Reflect.getMetadata("refsTo", Object.getPrototypeOf(child), cp);
+            if (
+              refsTo === this.className ||
+              refsTo?.startsWith?.(this.className + ":")
+            ) {
+              (child as any)[cp] = parentId;
+              if ((child as any).data) {
+                (child as any).data[cp] = parentId;
+              }
+            }
+          }
+        }
+      }
+      for (const entity of resolvedEntities) {
+        if (entity && typeof entity === "object") {
+          const props = (entity as any).properties || [];
+          for (const cp of props) {
+            const refsTo =
+              Reflect.getMetadata("refsTo", entity, cp) ||
+              Reflect.getMetadata("refsTo", Object.getPrototypeOf(entity), cp);
+            if (
+              refsTo === this.className ||
+              refsTo?.startsWith?.(this.className + ":")
+            ) {
+              (entity as any)[cp] = parentId;
+              if ((entity as any).data) {
+                (entity as any).data[cp] = parentId;
               }
             }
           }
@@ -1323,6 +1446,10 @@ export abstract class AutoUpdatedClientObject<
       ) {
         for (const entity of removedEntities) {
           if (entity && typeof entity === "object") {
+            const entId =
+              (entity as any)._id?.toString() ??
+              (entity as any).data?._id?.toString();
+            if (entId && currentIds.includes(entId)) continue;
             const props = (entity as any).properties || [];
             for (const cp of props) {
               const refsTo =
@@ -1332,10 +1459,24 @@ export abstract class AutoUpdatedClientObject<
                 refsTo === this.className ||
                 refsTo?.startsWith?.(this.className + ":")
               ) {
-                if ((entity as any)[cp] === parentId) {
+                const childParentVal = (entity as any)[cp];
+                const childParentId =
+                  childParentVal &&
+                  typeof childParentVal === "object" &&
+                  "_id" in childParentVal
+                    ? String((childParentVal as any)._id)
+                    : String(childParentVal);
+                if (
+                  childParentId === parentId ||
+                  childParentVal === parentId ||
+                  childParentVal === this
+                ) {
                   (entity as any)[cp] = undefined;
                 }
-                if ((entity as any).data?.[cp] === parentId) {
+                if (
+                  (entity as any).data?.[cp] === parentId ||
+                  (entity as any).data?.[cp]?.toString?.() === parentId
+                ) {
                   delete (entity as any).data[cp];
                 }
               }

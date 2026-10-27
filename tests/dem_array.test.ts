@@ -4,6 +4,7 @@ import { AutoUpdatedClientObject } from "../AutoUpdatedClientObjectClass.js";
 import { AutoUpdatedServerObject } from "../AutoUpdatedServerObjectClass.js";
 import { AutoUpdateClientManager } from "../AutoUpdateClientManagerClass.js";
 import { classProp, populatedRef, globalCache, DEMError, DEMErrorCode, DEMArray } from "../CommonTypes.js";
+import { DEM_SERVER_VERSION } from "../version.js";
 
 function makeMockSocket() {
   const handlers: Record<string, ((...args: any[]) => void)[]> = {};
@@ -545,7 +546,7 @@ describe("DEMArray Reactive Array Wrapper & Mutation Pipeline", () => {
             ids: [],
             objects: [],
             properties: ["_id", "name", "tags", "tasks"],
-            version: "0.11.0",
+            version: DEM_SERVER_VERSION,
             serverTime: serverNow,
           },
         });
