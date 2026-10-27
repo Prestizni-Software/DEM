@@ -187,11 +187,18 @@ describe("AutoUpdateServerManagerClass Full Coverage", () => {
                 await innerMiddleware(["newTest", {}, ack9], next);
                 expect(ack9).toHaveBeenCalledWith(expect.objectContaining({ success: false, message: expect.stringContaining("No Way") }));
 
-                // 10. Unknown event type in switch
+                // 10. Custom registered event type in switch (whitelisted via socket.eventNames())
+                next.mockClear();
                 const ack10 = jest.fn();
                 mockSocket.eventNames.mockReturnValue(["badTest"]);
                 await innerMiddleware(["badTest", {}, ack10], next);
-                expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Error with event: badTest"));
+                expect(next).toHaveBeenCalled();
+
+                // 11. Unknown event in default switch not matching eventNames
+                const ack11 = jest.fn();
+                mockSocket.eventNames.mockReturnValue(["badPrefix"]);
+                await innerMiddleware(["badPrefix123456789012345678901234", {}, ack11], next);
+                expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Error with event: badPrefix123456789012345678901234"));
             }
         }
     });

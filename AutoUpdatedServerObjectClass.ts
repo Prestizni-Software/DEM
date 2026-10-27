@@ -21,6 +21,7 @@ import {
   DEMError,
   DEMErrorCode,
   toDEMError,
+  DEMArrayMutationParams,
   DEMArrayMutationRequest,
   DEMArrayMutationResponse,
 } from "./CommonTypes.js";
@@ -38,7 +39,6 @@ export abstract class AutoUpdatedServerObject<
   declare public parentManager: AutoUpdateServerManager<T, any>;
   private saveLock: Promise<any> = Promise.resolve();
   private loadPromise: Promise<void> | null = null;
-  private _isUpdating: boolean = false;
 
   /**
    * Initializes an AutoUpdatedServerObject instance.
@@ -478,6 +478,25 @@ export abstract class AutoUpdatedServerObject<
         msg: "Error saving object: " + error.message,
       };
     }
+  }
+
+  /**
+   * Enqueues an array mutation in the entity write queue with deadlock-safe queueing during onUpdate hooks.
+   *
+   * @param key - Target array property key.
+   * @param req - Array mutation parameters payload.
+   * @param isRef - Whether the target property holds relational entities.
+   * @returns Promise resolving to mutation result.
+   */
+  public override async mutateArrayQueue(
+    key: string,
+    req: DEMArrayMutationParams,
+    isRef: boolean,
+  ): Promise<any> {
+    if (this._isUpdating) {
+      return (this as any).mutateArrayInternal(key, req, isRef);
+    }
+    return super.mutateArrayQueue(key, req, isRef);
   }
 
   /**

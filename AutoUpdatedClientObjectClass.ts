@@ -343,6 +343,7 @@ export abstract class AutoUpdatedClientObject<
   protected _preloadTimers: Set<ReturnType<typeof setTimeout>> = new Set();
   protected toChangeOnParents?: { key: string; value: unknown }[];
   public callbacks: DEMClientCallbacks<T>;
+  protected _isUpdating: boolean = false;
 
   private readonly loadReferencesAsync = async (): Promise<void> => {
     try {
@@ -1256,6 +1257,9 @@ export abstract class AutoUpdatedClientObject<
     req: DEMArrayMutationParams,
     isRef: boolean,
   ): Promise<any> {
+    if (this._isUpdating) {
+      return this.mutateArrayInternal(key, req, isRef);
+    }
     this.writeQueue = this.writeQueue
       .catch(() => {})
       .then(() => this.mutateArrayInternal(key, req, isRef));

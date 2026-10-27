@@ -99,8 +99,12 @@ describe("Reported Issues Reproduction Tests", () => {
       // Trigger setValue which calls onUpdate
       // Set a 3000ms race timeout to detect deadlock
       const updatePromise = entity.setValue("title" as any, "Updated Title" as any);
-      const res = await updatePromise;
-      console.log("UPDATE RES 2:", res);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("DEADLOCK_DETECTED")), 2000),
+      );
+
+      const res: any = await Promise.race([updatePromise, timeoutPromise]);
+      expect(res.success).toBe(true);
 
       expect(onUpdateCalled).toBe(true);
       expect(arrayMutatedSuccessfully).toBe(true);
@@ -213,7 +217,7 @@ describe("Reported Issues Reproduction Tests", () => {
     afterEach((done) => {
       clientSocket.disconnect();
       ioServer.close(() => {
-        httpServer.close(done);
+        done();
       });
     });
 

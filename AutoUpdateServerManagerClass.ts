@@ -274,6 +274,9 @@ export function setupSocketMiddleware(
             } as DEMEvent<any>;
             break;
           default:
+            if (socket.eventNames().some((name) => name.toString() === e)) {
+              return nextEvent();
+            }
             throw new DEMError(
               DEMErrorCode.UNKNOWN_EVENT,
               "Unknown event: " +

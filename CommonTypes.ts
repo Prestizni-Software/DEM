@@ -98,16 +98,16 @@ type IsAUCOBase<T> = T extends {
   : false;
 
 type AllowStringForRefs<V> =
-  NonNullable<V> extends Array<infer U>
+  NonNullable<V> extends ReadonlyArray<infer U>
     ? IsAUCOBase<NonNullable<U>> extends true
       ? (U | string | ObjectIdLike)[]
-      : V
+      : U[]
     : IsAUCOBase<NonNullable<V>> extends true
       ? V | string | ObjectIdLike
       : V;
 
 type OnlyStringForRefs<V> = V extends any
-  ? V extends Array<infer U>
+  ? V extends ReadonlyArray<infer U>
     ? OnlyStringForRefs<U>[]
     : V extends IAutoUpdatedClientObjectBase
       ? string
@@ -812,6 +812,30 @@ export interface DEMArray<T> extends ReadonlyArray<T> {
    * @throws {DEMError} Throws on server rejection.
    */
   sort(compareFn?: (a: T, b: T) => number): Promise<this>;
+
+  /**
+   * Synchronous fill is prohibited on reactive DEMArray.
+   * Declared for Array structural type compatibility.
+   *
+   * @param value - Value to fill array with.
+   * @param start - Start index.
+   * @param end - End index.
+   * @returns This DEMArray.
+   * @throws {DEMError} Throws CANNOT_SET_REF_DIRECTLY when invoked synchronously.
+   */
+  fill(value: T, start?: number, end?: number): this;
+
+  /**
+   * Synchronous copyWithin is prohibited on reactive DEMArray.
+   * Declared for Array structural type compatibility.
+   *
+   * @param target - Target start index.
+   * @param start - Source start index.
+   * @param end - Source end index.
+   * @returns This DEMArray.
+   * @throws {DEMError} Throws CANNOT_SET_REF_DIRECTLY when invoked synchronously.
+   */
+  copyWithin(target: number, start: number, end?: number): this;
 
   /**
    * Clears all elements from the array asynchronously and awaits server persistence.
