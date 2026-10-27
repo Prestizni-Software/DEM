@@ -118,3 +118,10 @@ Triplets represent multi-system synergy and edge-case convergence.
 - **T03-14 (F05 + F12 + F14)**: Incompatible client version during startup receiving typed `VERSION_MISMATCH` code.
 - **T03-15 (F04 + F13 + F14)**: Unauthorized client socket attempting mutation; server rejecting with `UNAUTHORIZED`.
 - **T03-16 (F05 + F09 + F10)**: Client reconnecting, restoring from storage, applying delta sync, and resuming normal operations.
+
+### Domain T4: DEMArray Reactive Mutations + Multi-Client Concurrency + Ecosystem Combinations
+- **T03-17 (F03 + F04 + F05 + F06)**: 4 concurrent clients executing simultaneous mutations on the same DEMArray; server serializing via saveLock; complete convergence.
+- **T03-18 (F03 + F08 + F02)**: DEMArray holding lazy stubs executing batch hydration via `ensureLoaded({ depth })` across graph levels.
+- **T03-19 (F03 + F09 + F10)**: DEMArray mutations tracked in delta change logs, restored from offline storage, and reconciled on reconnection.
+- **T03-20 (F03 + F02 + F07)**: DEMArray element-anchored mutations preventing index-drift during concurrent writes and cleaning dangling database tombstones.
+- **T03-21 (F03 + F12 + F13 + F14)**: Handshake clock synchronization via Cristian's algorithm, dynamic permission enforcement, and database error rollback.

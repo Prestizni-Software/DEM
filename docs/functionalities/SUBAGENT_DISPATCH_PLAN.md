@@ -42,6 +42,7 @@ To test all 2-way and 3-way combinations without exceeding system concurrency li
 | **Subagent 4** | Smart Lazy Loading Combinations | F08 combined with F01-F07, F11-F14 | `tests/combinations/domain4_lazy_combinations.test.ts` |
 | **Subagent 5** | Delta Sync & Monotonic Revision Combinations | F09 combined with F01-F07, F10-F14 | `tests/combinations/domain5_delta_sync_combinations.test.ts` |
 | **Subagent 6** | Triplet Convergence: Lazy + Delta + Storage + Self-Contained | F08 + F09 + F10 + F11 + F13 + F14 | `tests/combinations/domain6_convergence_triplets.test.ts` |
+| **Subagent 7** | DEMArray Concurrency & Ecosystem Combinations | F03 combined with F01, F02, F04-F14 (4-client concurrent writes, anchoring, lazy hydration, delta sync, clock sync) | `tests/combinations/domain7_demarray_combinations.test.ts` |
 
 ---
 
