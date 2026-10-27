@@ -182,12 +182,18 @@ export type ServerResponse<T> =
       code?: DEMErrorCode;
       success: true;
       related?: Record<string, any[]>;
+      updatedArray?: unknown[];
+      newRevision?: number;
+      newHash?: string;
     }
   | {
       message: string;
       code?: DEMErrorCode;
       details?: unknown;
       success: false;
+      updatedArray?: unknown[];
+      newRevision?: number;
+      newHash?: string;
     };
 
 /**
@@ -618,6 +624,211 @@ export class DEMGlobalCache {
 export type GlobalCache = DEMGlobalCache;
 
 export const globalCache = new DEMGlobalCache();
+
+/**
+ * Permitted operation types for DEMArray asynchronous mutations.
+ */
+export type DEMArrayMutationOp =
+  | "push"
+  | "pop"
+  | "shift"
+  | "unshift"
+  | "splice"
+  | "set"
+  | "reverse"
+  | "sort"
+  | "clear";
+
+/**
+ * Socket payload structure for an array mutation request.
+ */
+export type DEMArrayMutationParams = Omit<DEMArrayMutationRequest, "key">;
+
+export interface DEMArrayMutationRequest {
+  /**
+   * The specific mutation operator to execute.
+   */
+  op: DEMArrayMutationOp;
+
+  /**
+   * Target property key holding the array.
+   */
+  key: string;
+
+  /**
+   * Optional items to insert or append (primitive values, entity instances, or string IDs).
+   */
+  items?: unknown[];
+
+  /**
+   * Optional anchor entity identifier for positional mutations (splice/set).
+   */
+  targetId?: string;
+
+  /**
+   * Optional list of anchor identifiers for multi-item splices.
+   */
+  targetIds?: string[];
+
+  /**
+   * Optional zero-based target offset.
+   */
+  index?: number;
+
+  /**
+   * Optional count of elements to delete.
+   */
+  deleteCount?: number;
+
+  /**
+   * Monotonic revision counter of the client state prior to mutation.
+   */
+  baseRevision?: number;
+
+  /**
+   * Content hash of the array prior to mutation for concurrency verification.
+   */
+  baseHash?: string;
+
+  /**
+   * Synchronized client timestamp when mutation was initiated.
+   */
+  clientTimestamp?: number;
+}
+
+/**
+ * Server acknowledgment payload returned for an array mutation request.
+ */
+export interface DEMArrayMutationResponse {
+  /**
+   * Whether the mutation succeeded and was persisted.
+   */
+  success: boolean;
+
+  /**
+   * Optional error code on failure.
+   */
+  code?: DEMErrorCode;
+
+  /**
+   * Optional descriptive message.
+   */
+  message?: string;
+
+  /**
+   * The authoritative updated array state resolved and persisted by the server.
+   */
+  updatedArray?: unknown[];
+
+  /**
+   * Incremented monotonic revision counter after applying the mutation.
+   */
+  newRevision?: number;
+
+  /**
+   * Content hash of the updated array.
+   */
+  newHash?: string;
+}
+
+/**
+ * Reactive array wrapper for DEM entity array properties.
+ * Exposes synchronous ReadonlyArray queries and asynchronous mutation Promises.
+ */
+export interface DEMArray<T> extends ReadonlyArray<T> {
+  /**
+   * Appends elements asynchronously and awaits server persistence.
+   *
+   * @param items - Elements to append (entity instances, string IDs, or primitive values).
+   * @returns Promise resolving to the new length of the array.
+   * @throws {DEMError} Throws on network failure, validation rejection, or database error.
+   */
+  push(...items: (T | string | ObjectId)[]): Promise<number>;
+
+  /**
+   * Removes the last element asynchronously and awaits server persistence.
+   *
+   * @returns Promise resolving to the removed element, or undefined if empty.
+   * @throws {DEMError} Throws on server rejection.
+   */
+  pop(): Promise<T | undefined>;
+
+  /**
+   * Removes the first element asynchronously and awaits server persistence.
+   *
+   * @returns Promise resolving to the removed element, or undefined if empty.
+   * @throws {DEMError} Throws on server rejection.
+   */
+  shift(): Promise<T | undefined>;
+
+  /**
+   * Inserts elements at the start asynchronously and awaits server persistence.
+   *
+   * @param items - Elements to prepend.
+   * @returns Promise resolving to the new length of the array.
+   * @throws {DEMError} Throws on server rejection.
+   */
+  unshift(...items: (T | string | ObjectId)[]): Promise<number>;
+
+  /**
+   * Removes and/or inserts elements at an index asynchronously and awaits server persistence.
+   * Anchors mutations to target element identifiers to eliminate positional drift under concurrency.
+   *
+   * @param start - Zero-based index at which to start changing the array.
+   * @param deleteCount - Number of elements to remove.
+   * @param items - Elements to insert.
+   * @returns Promise resolving to an array containing the removed elements.
+   * @throws {DEMError} Throws on server rejection.
+   */
+  splice(
+    start: number,
+    deleteCount?: number,
+    ...items: (T | string | ObjectId)[]
+  ): Promise<T[]>;
+
+  /**
+   * Replaces an element at a specific index asynchronously and awaits server persistence.
+   *
+   * @param index - Target index to replace.
+   * @param item - New value or entity to assign.
+   * @returns Promise resolving to the assigned item.
+   * @throws {DEMError} Throws on server rejection.
+   */
+  set(index: number, item: T | string | ObjectId): Promise<T>;
+
+  /**
+   * Reverses array elements in place asynchronously and awaits server persistence.
+   *
+   * @returns Promise resolving to this DEMArray.
+   * @throws {DEMError} Throws on server rejection.
+   */
+  reverse(): Promise<this>;
+
+  /**
+   * Sorts array elements in place asynchronously and awaits server persistence.
+   *
+   * @param compareFn - Optional comparison function determining order.
+   * @returns Promise resolving to this DEMArray.
+   * @throws {DEMError} Throws on server rejection.
+   */
+  sort(compareFn?: (a: T, b: T) => number): Promise<this>;
+
+  /**
+   * Clears all elements from the array asynchronously and awaits server persistence.
+   *
+   * @returns Promise resolving once the array is cleared.
+   * @throws {DEMError} Throws on server rejection.
+   */
+  clear(): Promise<void>;
+
+  /**
+   * Hydrates all referenced entities in the array up to designated reference depth.
+   *
+   * @param options - Hydration options containing graph depth.
+   * @returns Promise resolving to this DEMArray once all entities are hydrated.
+   */
+  ensureLoaded(options?: { depth?: number }): Promise<this>;
+}
 
 export * from "./sync/types.js";
 export * from "./sync/storage/IClientStorageAdapter.js";

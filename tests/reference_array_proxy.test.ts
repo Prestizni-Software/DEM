@@ -2,7 +2,10 @@ import { jest } from "@jest/globals";
 import { EventEmitter } from "eventemitter3";
 import { AutoUpdatedClientObject } from "../AutoUpdatedClientObjectClass.js";
 import { AutoUpdateClientManager } from "../AutoUpdateClientManagerClass.js";
-import { DEM_RAW_ARRAY } from "../AutoUpdatedClientObjectClass.js";
+import {
+  DEM_RAW_ARRAY,
+  createReadOnlyArrayProxy,
+} from "../AutoUpdatedClientObjectClass.js";
 import { globalCache, DEMError } from "../CommonTypes.js";
 
 function makeMockSocket() {
@@ -168,24 +171,27 @@ describe("Reference Array Getter Referential Stability & Proxy Immutability", ()
 
     const items = (container as any).items;
 
-    // Mutating method calls must throw DEMError
-    expect(() => items.push({} as any)).toThrow(/Cannot mutate DEM reference array 'items' directly/);
-    expect(() => items.pop()).toThrow(/Cannot mutate DEM reference array 'items' directly/);
-    expect(() => items.shift()).toThrow(/Cannot mutate DEM reference array 'items' directly/);
-    expect(() => items.unshift({} as any)).toThrow(/Cannot mutate DEM reference array 'items' directly/);
-    expect(() => items.splice(0, 1)).toThrow(/Cannot mutate DEM reference array 'items' directly/);
-    expect(() => items.sort()).toThrow(/Cannot mutate DEM reference array 'items' directly/);
-    expect(() => items.reverse()).toThrow(/Cannot mutate DEM reference array 'items' directly/);
+    // Legacy createReadOnlyArrayProxy blocks mutating methods synchronously
+    const legacyProxy = createReadOnlyArrayProxy([], "items");
+    expect(() => legacyProxy.push({} as any)).toThrow(/Cannot mutate DEM reference array 'items' directly/);
+    expect(() => legacyProxy.pop()).toThrow(/Cannot mutate DEM reference array 'items' directly/);
+    expect(() => legacyProxy.shift()).toThrow(/Cannot mutate DEM reference array 'items' directly/);
+    expect(() => legacyProxy.unshift({} as any)).toThrow(/Cannot mutate DEM reference array 'items' directly/);
+    expect(() => legacyProxy.splice(0, 1)).toThrow(/Cannot mutate DEM reference array 'items' directly/);
+    expect(() => legacyProxy.sort()).toThrow(/Cannot mutate DEM reference array 'items' directly/);
+    expect(() => legacyProxy.reverse()).toThrow(/Cannot mutate DEM reference array 'items' directly/);
 
-    // Index assignment must throw DEMError
+    // DEMArray blocks direct index assignment and deletion with DEMError
     expect(() => {
       items[0] = {} as any;
-    }).toThrow(/Cannot assign index on DEM reference array 'items'/);
+    }).toThrow(/Cannot assign index directly on DEMArray/);
 
-    // Element deletion must throw DEMError
     expect(() => {
       delete items[0];
-    }).toThrow(/Cannot delete elements from DEM reference array 'items'/);
+    }).toThrow(/Cannot delete elements directly from DEMArray/);
+
+    // Unsupported synchronous array mutations throw DEMError
+    expect(() => (items as any).fill({})).toThrow(/Cannot mutate DEMArray 'items' synchronously/);
   });
 
   test("Underlying mutable array is accessible to the library via DEM_RAW_ARRAY", async () => {

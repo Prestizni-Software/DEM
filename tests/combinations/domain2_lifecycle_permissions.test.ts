@@ -663,11 +663,12 @@ describe("Domain 2: Lifecycle, Versioning, Permissions & Handshakes", () => {
       serverManager.registerSocket(pair.serverSocket as any);
 
       // Client sends compatible patch version.
+      const [maj, min] = DEM_SERVER_VERSION.split(".");
       let response: ServerResponse<unknown> | null = null;
       await new Promise<void>((resolve) => {
         pair.clientSocket.emit(
           EVENT_STARTUP + "User",
-          { clientVersion: "0.10.0" },
+          { clientVersion: `${maj}.${min}.99` },
           (res: ServerResponse<unknown>) => {
             response = res;
             resolve();

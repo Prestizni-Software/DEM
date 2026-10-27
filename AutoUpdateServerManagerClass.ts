@@ -911,6 +911,7 @@ export class AutoUpdateServerManager<
             revision?: number;
             changes?: ChangeEntry<any>[];
             manifest?: EntityDescriptor[];
+            serverTime?: number;
           }>,
         ) => void,
       ) => {
@@ -980,6 +981,7 @@ export class AutoUpdateServerManager<
                       properties: this.properties as string[],
                       version: DEM_VERSION,
                       protocolVersion: DEM_PROTOCOL_VERSION,
+                      serverTime: Date.now(),
                     },
                     success: true,
                   });
@@ -1002,6 +1004,7 @@ export class AutoUpdateServerManager<
                       properties: this.properties as string[],
                       version: DEM_VERSION,
                       protocolVersion: DEM_PROTOCOL_VERSION,
+                      serverTime: Date.now(),
                     },
                     success: true,
                   });
@@ -1066,6 +1069,7 @@ export class AutoUpdateServerManager<
                   properties: this.properties as string[],
                   version: DEM_VERSION,
                   protocolVersion: DEM_PROTOCOL_VERSION,
+                  serverTime: Date.now(),
                 },
                 success: true,
               });
@@ -1086,6 +1090,7 @@ export class AutoUpdateServerManager<
                 properties: this.properties as string[],
                 version: DEM_VERSION,
                 protocolVersion: DEM_PROTOCOL_VERSION,
+                serverTime: Date.now(),
               },
               success: true,
             });
@@ -1229,23 +1234,34 @@ export class AutoUpdateServerManager<
                 DEMErrorCode.OBJECT_GET_FAILED,
                 `Never... failed to get object somehow: ${id}`,
               );
-            const res = await (obj as any).setValue(
-              (data as any).key,
-              (data as any).value,
-            );
+            let res: any;
+            if ((data as any)?.mutation) {
+              res = await (obj as any).mutateArray(
+                (data as any).key,
+                (data as any).mutation,
+              );
+            } else {
+              res = await (obj as any).setValue(
+                (data as any).key,
+                (data as any).value,
+              );
+            }
             if (typeof ack === "function") {
               res.success
                 ? ack({
-                    data: null,
+                    data: res.updatedArray ?? null,
+                    updatedArray: res.updatedArray,
+                    newRevision: res.newRevision,
+                    newHash: res.newHash,
                     success: res.success,
                     code: (res as any).code,
-                    message: res.msg,
+                    message: res.msg ?? res.message,
                   })
                 : ack({
                     data: null,
                     success: res.success,
                     code: (res as any).code ?? DEMErrorCode.DB_SAVE_FAILED,
-                    message: res.msg,
+                    message: res.msg ?? res.message,
                   });
             }
           } catch (error: unknown) {

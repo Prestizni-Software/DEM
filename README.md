@@ -45,6 +45,14 @@ DEM isolates responsibilities into two distinct packages:
 - Resolves entity relations through `@populatedRef` decorators.
 - Supports self-contained snapshot entities using raw `@classProp` attributes.
 
+### 5. Reactive DEMArray Wrappers (v0.11.0+)
+- Wraps primitive and relational arrays in `DEMArray<T>`.
+- Provides synchronous queries (`length`, `map`, `filter`, `find`, `includes`, `slice`).
+- Intercepts mutations (`push`, `pop`, `shift`, `unshift`, `splice`, `set`, `reverse`, `sort`, `clear`) returning Promises.
+- Executes mutations pessimistically after server confirmation.
+- Uses element-anchored operations (`targetId`) to eliminate index-drift under concurrent writes.
+- Synchronizes client and server clocks using Cristian's algorithm during handshake.
+
 ---
 
 ## Packages
@@ -153,6 +161,7 @@ await task.setValue("completed", true);
 Detailed architectural guides exist in the `docs/` directory:
 - [Object Loading Process](docs/LOADING_PROCESS.md)
 - [ADR 0001: Smart Lazy Loading & Static Snapshots](docs/adr/0001-smart-lazy-loading-and-static-snapshots.md)
+- [ADR 0002: DEMArray Reactive Mutation Architecture](docs/adr/0002-demarray-reactive-mutation-architecture.md)
 - [Delta Synchronization Architecture](docs/DELTA_SYNC_ARCHITECTURE.md)
 - [Delta Synchronization User Guide](docs/DELTA_SYNC.md)
 - [Database States and Error Handling](docs/ERRORS_AND_DB_STATE.md)

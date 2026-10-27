@@ -24,6 +24,11 @@ import {
   DEMError,
   DEMErrorCode,
   toDEMError,
+  DEMArray,
+  DEMArrayMutationRequest,
+  DEMArrayMutationResponse,
+  DEMArrayMutationOp,
+  DEMArrayMutationParams,
 } from "./CommonTypes.js";
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
@@ -98,6 +103,187 @@ export function createReadOnlyArrayProxy<T>(
   });
 }
 
+/**
+ * Constructs a reactive DEMArray Proxy wrapper around entity array properties.
+ * Exposes synchronous queries on committed local state and asynchronous mutation Promises.
+ *
+ * @param parent - The entity object containing this array.
+ * @param propertyName - The name identifier of the array property.
+ * @param isRef - Whether this property holds cross-entity reference pointers.
+ * @param getItems - Function returning the currently resolved array items.
+ * @returns Reactive DEMArray proxy instance.
+ */
+export function createDEMArray<T>(
+  parent: AutoUpdatedClientObject<any>,
+  propertyName: string,
+  isRef: boolean,
+  getItems: () => any[],
+): DEMArray<T> {
+  const dummyTarget: any[] = [];
+  return new Proxy(dummyTarget, {
+    get(_target, prop, receiver) {
+      if (prop === DEM_RAW_ARRAY) {
+        return ((parent as any).data as Record<string, unknown>)?.[propertyName] ?? [];
+      }
+      if (prop === "push") {
+        return async (...items: any[]) => {
+          return parent.mutateArrayQueue(propertyName, { op: "push", items }, isRef);
+        };
+      }
+      if (prop === "pop") {
+        return async () => {
+          return parent.mutateArrayQueue(propertyName, { op: "pop" }, isRef);
+        };
+      }
+      if (prop === "shift") {
+        return async () => {
+          return parent.mutateArrayQueue(propertyName, { op: "shift" }, isRef);
+        };
+      }
+      if (prop === "unshift") {
+        return async (...items: any[]) => {
+          return parent.mutateArrayQueue(propertyName, { op: "unshift", items }, isRef);
+        };
+      }
+      if (prop === "splice") {
+        return async (start: number, deleteCount?: number, ...items: any[]) => {
+          const current = getItems();
+          const actualDeleteCount =
+            deleteCount !== undefined ? deleteCount : Math.max(0, current.length - start);
+          const targetIds: string[] = [];
+          for (
+            let i = start;
+            i < start + actualDeleteCount && i < current.length;
+            i++
+          ) {
+            const el = current[i];
+            if (el && typeof el === "object" && "_id" in el) {
+              targetIds.push(String((el as any)._id));
+            } else if (el) {
+              targetIds.push(String(el));
+            }
+          }
+          const targetId = targetIds[0];
+          return parent.mutateArrayQueue(
+            propertyName,
+            {
+              op: "splice",
+              index: start,
+              deleteCount: actualDeleteCount,
+              items,
+              targetId,
+              targetIds,
+            },
+            isRef,
+          );
+        };
+      }
+      if (prop === "set") {
+        return async (index: number, item: any) => {
+          const current = getItems();
+          const targetEl = current[index];
+          const targetId =
+            targetEl && typeof targetEl === "object" && "_id" in targetEl
+              ? String((targetEl as any)._id)
+              : targetEl
+                ? String(targetEl)
+                : undefined;
+          return parent.mutateArrayQueue(
+            propertyName,
+            { op: "set", index, items: [item], targetId },
+            isRef,
+          );
+        };
+      }
+      if (prop === "reverse") {
+        return async () => {
+          return parent.mutateArrayQueue(propertyName, { op: "reverse" }, isRef);
+        };
+      }
+      if (prop === "sort") {
+        return async (compareFn?: (a: any, b: any) => number) => {
+          return parent.mutateArrayQueue(propertyName, { op: "sort" }, isRef);
+        };
+      }
+      if (prop === "clear") {
+        return async () => {
+          return parent.mutateArrayQueue(propertyName, { op: "clear" }, isRef);
+        };
+      }
+      if (prop === "ensureLoaded") {
+        return async (options?: { depth?: number }) => {
+          if (!isRef) return receiver;
+          const current = getItems();
+          for (const item of current) {
+            if (
+              item &&
+              typeof item.ensureLoaded === "function" &&
+              item.isLazyStub
+            ) {
+              await item.ensureLoaded(options);
+            }
+          }
+          return receiver;
+        };
+      }
+      if (MUTATING_ARRAY_METHODS.has(prop)) {
+        throw new DEMError(
+          DEMErrorCode.CANNOT_SET_REF_DIRECTLY,
+          `Cannot mutate DEMArray '${propertyName}' synchronously via ${String(prop)}(). Use await array.${String(prop)}(...).`,
+        );
+      }
+
+      const current = getItems();
+      if (prop === "length") {
+        return current.length;
+      }
+      if (typeof prop === "string" && !isNaN(Number(prop))) {
+        return current[Number(prop)];
+      }
+      const val = Reflect.get(current, prop);
+      if (typeof val === "function") {
+        return val.bind(current);
+      }
+      return val;
+    },
+    set(_target, prop) {
+      if (prop === "length" || !isNaN(Number(prop))) {
+        throw new DEMError(
+          DEMErrorCode.CANNOT_SET_REF_DIRECTLY,
+          `Cannot assign index directly on DEMArray '${propertyName}'. Use await array.set(index, value) or await array.splice(...).`,
+        );
+      }
+      return false;
+    },
+    deleteProperty(_target, prop) {
+      throw new DEMError(
+        DEMErrorCode.CANNOT_SET_REF_DIRECTLY,
+        `Cannot delete elements directly from DEMArray '${propertyName}'. Use await array.splice(...) or await array.clear().`,
+      );
+    },
+    has(_target, prop) {
+      const current = getItems();
+      return Reflect.has(current, prop);
+    },
+    ownKeys(_target) {
+      const current = getItems();
+      return Reflect.ownKeys(current);
+    },
+    getOwnPropertyDescriptor(_target, prop) {
+      const current = getItems();
+      if (prop === "length") {
+        _target.length = current.length;
+        return Reflect.getOwnPropertyDescriptor(_target, "length");
+      }
+      const desc = Reflect.getOwnPropertyDescriptor(current, prop);
+      if (desc) {
+        return { ...desc, configurable: true };
+      }
+      return undefined;
+    },
+  }) as unknown as DEMArray<T>;
+}
+
 type SocketType = Socket;
 
 export abstract class AutoUpdatedClientObject<
@@ -108,7 +294,10 @@ export abstract class AutoUpdatedClientObject<
   >,
 > implements IAutoUpdatedClientObject<T> {
   protected entry: unknown;
-  public _refArrayCache?: Map<string, { rawIdsHash: string; proxy: any[] }>;
+  public _refArrayCache?: Map<
+    string,
+    { rawIdsHash: string; proxy: any[]; resolvedChildren?: any[] }
+  >;
 
   protected readonly socket: SocketType;
   protected data: IsData<T>;
@@ -959,6 +1148,229 @@ export abstract class AutoUpdatedClientObject<
     });
   }
 
+  /**
+   * Enqueues an array mutation in the entity write queue to ensure sequential execution.
+   *
+   * @param key - Target array property key.
+   * @param req - Array mutation request payload.
+   * @param isRef - Whether the target property is a relational reference array.
+   * @returns Promise resolving to the mutation result.
+   */
+  public async mutateArrayQueue(
+    key: string,
+    req: DEMArrayMutationParams,
+    isRef: boolean,
+  ): Promise<any> {
+    this.writeQueue = this.writeQueue
+      .catch(() => {})
+      .then(() => this.mutateArrayInternal(key, req, isRef));
+    return this.writeQueue;
+  }
+
+  /**
+   * Internal execution handler for array mutations following pessimistic convergence semantics.
+   * Transmits mutation request to server, awaits acknowledgment, and updates local state.
+   *
+   * @param key - Target array property key.
+   * @param req - Array mutation parameters payload.
+   * @param isRef - Whether the target property holds relational entities.
+   * @returns Promise resolving to the operator return value or updated array.
+   * @throws {DEMError} Throws when server rejects mutation or write fails.
+   */
+  private async mutateArrayInternal(
+    key: string,
+    req: DEMArrayMutationParams,
+    isRef: boolean,
+  ): Promise<any> {
+    const rawVal = (this.data as Record<string, unknown>)?.[key];
+    const currentRawArray = Array.isArray(rawVal) ? [...rawVal] : [];
+
+    // Capture items prior to mutation for pop/shift/splice return values
+    let removedEntities: any[] = [];
+    if (isRef) {
+      if (req.op === "pop" && currentRawArray.length > 0) {
+        const lastId = currentRawArray[currentRawArray.length - 1];
+        removedEntities = [this.findReference(lastId, key) || lastId];
+      } else if (req.op === "shift" && currentRawArray.length > 0) {
+        const firstId = currentRawArray[0];
+        removedEntities = [this.findReference(firstId, key) || firstId];
+      } else if (req.op === "splice" && req.index !== undefined) {
+        const count = req.deleteCount ?? currentRawArray.length - req.index;
+        for (
+          let i = req.index;
+          i < req.index + count && i < currentRawArray.length;
+          i++
+        ) {
+          const id = currentRawArray[i];
+          removedEntities.push(this.findReference(id, key) || id);
+        }
+      }
+    } else {
+      if (req.op === "pop" && currentRawArray.length > 0) {
+        removedEntities = [currentRawArray[currentRawArray.length - 1]];
+      } else if (req.op === "shift" && currentRawArray.length > 0) {
+        removedEntities = [currentRawArray[0]];
+      } else if (req.op === "splice" && req.index !== undefined) {
+        const count = req.deleteCount ?? currentRawArray.length - req.index;
+        removedEntities = currentRawArray.slice(req.index, req.index + count);
+      }
+    }
+
+    // Compute baseHash
+    const baseHash = isRef
+      ? currentRawArray
+          .map((item) =>
+            item && typeof item === "object" && "_id" in item
+              ? String((item as any)._id)
+              : String(item),
+          )
+          .join(",")
+      : JSON.stringify(currentRawArray);
+
+    // Extract raw string IDs for relational items
+    let rawItemsToPersist: unknown[] = req.items || [];
+    const resolvedEntities: any[] = [];
+    if (isRef && req.items) {
+      rawItemsToPersist = req.items.map((item: any) => {
+        if (item && typeof item === "object") {
+          if ("_id" in item) {
+            resolvedEntities.push(item);
+            return String((item as any)._id);
+          }
+        }
+        return String(item);
+      });
+    }
+
+    const payload: DEMArrayMutationRequest = {
+      ...req,
+      key,
+      items: rawItemsToPersist,
+      baseHash,
+      clientTimestamp:
+        typeof (this.parentManager as any)?.getSynchronizedTime === "function"
+          ? (this.parentManager as any).getSynchronizedTime()
+          : Date.now(),
+    };
+
+    let res: DEMArrayMutationResponse;
+    if (this.isServer) {
+      res = await (this as any).executeServerArrayMutation(key, payload, isRef);
+    } else {
+      const id = this.data?._id ?? this._id;
+      if (!id) {
+        throw new DEMError(
+          DEMErrorCode.MISSING_ID,
+          `Cannot mutate array on ${this.className} because _id is missing.`,
+        );
+      }
+      res = await new Promise((resolve) => {
+        this.socket.emit(
+          EVENT_UPDATE + this.className + id,
+          { _id: id.toString(), key, mutation: payload },
+          (response: DEMArrayMutationResponse) => {
+            resolve(response);
+          },
+        );
+      });
+    }
+
+    if (!res || !res.success) {
+      throw new DEMError(
+        res?.code ?? DEMErrorCode.ARRAY_MUTATION_FAILED,
+        res?.message || `Array mutation '${req.op}' on '${key}' failed on server.`,
+      );
+    }
+
+    const updatedArray = res.updatedArray ?? [];
+    (this.data as Record<string, unknown>)[key] = updatedArray;
+    this._refArrayCache?.delete(key);
+
+    // Synchronize child back-references
+    if (isRef) {
+      const parentId = (this.data?._id ?? this._id)?.toString();
+      if (
+        req.op === "push" ||
+        req.op === "unshift" ||
+        req.op === "splice" ||
+        req.op === "set"
+      ) {
+        for (const entity of resolvedEntities) {
+          if (entity && typeof entity === "object") {
+            const props = (entity as any).properties || [];
+            for (const cp of props) {
+              const refsTo =
+                Reflect.getMetadata("refsTo", entity, cp) ||
+                Reflect.getMetadata("refsTo", Object.getPrototypeOf(entity), cp);
+              if (
+                refsTo === this.className ||
+                refsTo?.startsWith?.(this.className + ":")
+              ) {
+                (entity as any)[cp] = parentId;
+                if ((entity as any).data) {
+                  (entity as any).data[cp] = parentId;
+                }
+              }
+            }
+          }
+        }
+      }
+      if (
+        req.op === "pop" ||
+        req.op === "shift" ||
+        req.op === "splice" ||
+        req.op === "clear"
+      ) {
+        for (const entity of removedEntities) {
+          if (entity && typeof entity === "object") {
+            const props = (entity as any).properties || [];
+            for (const cp of props) {
+              const refsTo =
+                Reflect.getMetadata("refsTo", entity, cp) ||
+                Reflect.getMetadata("refsTo", Object.getPrototypeOf(entity), cp);
+              if (
+                refsTo === this.className ||
+                refsTo?.startsWith?.(this.className + ":")
+              ) {
+                if ((entity as any)[cp] === parentId) {
+                  (entity as any)[cp] = undefined;
+                }
+                if ((entity as any).data?.[cp] === parentId) {
+                  delete (entity as any).data[cp];
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (this.isLoaded) {
+      this.callbacks.update(this as unknown as IAutoUpdatedClientObject<T>, key);
+      await this.onUpdate(false, key);
+    }
+
+    switch (req.op) {
+      case "push":
+      case "unshift":
+        return updatedArray.length;
+      case "pop":
+      case "shift":
+        return removedEntities[0];
+      case "splice":
+        return removedEntities;
+      case "set":
+        return req.items?.[0];
+      case "reverse":
+      case "sort":
+        return (this as any)[key];
+      case "clear":
+        return undefined;
+      default:
+        return updatedArray;
+    }
+  }
+
   protected makeUpdate(key: string, value: unknown): ServerUpdateRequest<T> {
     const id = this.data?._id ?? this._id;
     if (!id) {
@@ -1398,7 +1810,8 @@ export function setupClassAccessors(classParam: Constructor<any>): {
 
             const cached = this._refArrayCache.get(key);
             if (cached && cached.rawIdsHash === idsHash) {
-              const hasStaleChild = cached.proxy.some((child: any) => {
+              const childrenToCheck = cached.resolvedChildren || cached.proxy;
+              const hasStaleChild = childrenToCheck.some((child: any) => {
                 if (!child) return true;
                 if (child.data?.Wiped) return true;
                 const childId = child._id
@@ -1414,20 +1827,54 @@ export function setupClassAccessors(classParam: Constructor<any>): {
               this._refArrayCache.delete(key);
             }
 
-            const rawResult: IAutoUpdatedClientObject<any>[] = [];
-            for (let i = 0; i < val.length; i++) {
-              const item = val[i];
-              if (item) {
-                const ref = this.findReference(item, key);
-                if (ref) rawResult.push(ref);
+            const getResolvedItems = () => {
+              const rawList = (this.data as Record<string, unknown>)?.[key];
+              if (!Array.isArray(rawList)) return [];
+              const rawResult: IAutoUpdatedClientObject<any>[] = [];
+              for (let i = 0; i < rawList.length; i++) {
+                const item = rawList[i];
+                if (item) {
+                  const ref = this.findReference(item, key);
+                  if (
+                    ref &&
+                    !(ref as any).data?.Wiped &&
+                    (!ref._id || globalCache.objects[ref._id.toString()])
+                  ) {
+                    rawResult.push(ref);
+                  }
+                }
               }
-            }
-            const proxy = createReadOnlyArrayProxy(rawResult, key);
-            this._refArrayCache.set(key, { rawIdsHash: idsHash, proxy });
+              return rawResult;
+            };
+
+            const resolvedChildren = getResolvedItems();
+            const proxy = createDEMArray(this, key, true, getResolvedItems);
+            this._refArrayCache.set(key, {
+              rawIdsHash: idsHash,
+              proxy: proxy as any,
+              resolvedChildren,
+            });
             return proxy;
           } else {
             return this.findReference(val as string | ObjectId, key);
           }
+        }
+        if (Array.isArray(val)) {
+          const idsHash = JSON.stringify(val);
+          if (!this._refArrayCache) {
+            this._refArrayCache = new Map();
+          }
+          const cached = this._refArrayCache.get(key);
+          if (cached && cached.rawIdsHash === idsHash) {
+            return cached.proxy;
+          }
+          const getPrimitiveItems = () => {
+            const raw = (this.data as Record<string, unknown>)?.[key];
+            return Array.isArray(raw) ? raw : [];
+          };
+          const proxy = createDEMArray(this, key, false, getPrimitiveItems);
+          this._refArrayCache.set(key, { rawIdsHash: idsHash, proxy: proxy as any });
+          return proxy;
         }
         return val;
       },

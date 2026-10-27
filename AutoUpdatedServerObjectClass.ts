@@ -21,6 +21,8 @@ import {
   DEMError,
   DEMErrorCode,
   toDEMError,
+  DEMArrayMutationRequest,
+  DEMArrayMutationResponse,
 } from "./CommonTypes.js";
 import { DocumentType } from "@typegoose/typegoose";
 import { ObjectId } from "mongodb";
@@ -476,6 +478,170 @@ export abstract class AutoUpdatedServerObject<
         msg: "Error saving object: " + error.message,
       };
     }
+  }
+
+  /**
+   * Internal isomorphic hook executing an array mutation on the server.
+   *
+   * @param key - Target array property key.
+   * @param mutation - Structured array mutation request.
+   * @param isRef - Whether target property is a relational reference array.
+   * @returns Promise resolving to mutation response.
+   */
+  public async executeServerArrayMutation(
+    key: string,
+    mutation: DEMArrayMutationRequest,
+    isRef?: boolean,
+  ): Promise<DEMArrayMutationResponse> {
+    return this.mutateArray(key, mutation, isRef);
+  }
+
+  /**
+   * Executes atomic or positional array mutation on server entity and persists to MongoDB.
+   *
+   * @param key - Target array property key.
+   * @param mutation - Structured array mutation request.
+   * @param isRef - Optional flag indicating relational reference array.
+   * @returns Promise resolving to mutation response with updated array state.
+   */
+  public async mutateArray(
+    key: string,
+    mutation: DEMArrayMutationRequest,
+    isRef?: boolean,
+  ): Promise<DEMArrayMutationResponse> {
+    this.saveLock = (this.saveLock ?? Promise.resolve())
+      .catch(() => {})
+      .then(async () => {
+        let currentArr: any[] = [];
+        if (this.entry && Array.isArray((this.entry as any)[key])) {
+          currentArr = [...(this.entry as any)[key]];
+        } else if (this.data && Array.isArray((this.data as any)[key])) {
+          currentArr = [...(this.data as any)[key]];
+        }
+
+        const isRefField =
+          isRef ??
+          Boolean(
+            Reflect.getMetadata("isRef", this, key) ||
+              Reflect.getMetadata("isRef", Object.getPrototypeOf(this), key) ||
+              getMetadataRecursive("isRef", this, key),
+          );
+
+        // Tombstone cleanup for relational arrays
+        if (isRefField) {
+          const refsTo =
+            Reflect.getMetadata("refsTo", this, key) ||
+            Reflect.getMetadata("refsTo", Object.getPrototypeOf(this), key) ||
+            getMetadataRecursive("refsTo", this, key);
+          const targetManager = refsTo
+            ? (this.parentManager.managers as any)?.[refsTo]
+            : undefined;
+          if (targetManager) {
+            currentArr = currentArr.filter((id) => {
+              const idStr =
+                id && (id as any)._id ? (id as any)._id.toString() : String(id);
+              return Boolean(targetManager.getObject(idStr));
+            });
+          }
+        }
+
+        // Element anchoring for positional operations
+        if (mutation.op === "splice" || mutation.op === "set") {
+          if (mutation.targetId) {
+            const idx = currentArr.findIndex((el) => {
+              const idStr =
+                el && typeof el === "object" && "_id" in el
+                  ? String((el as any)._id)
+                  : String(el);
+              return idStr === mutation.targetId;
+            });
+            if (idx !== -1) {
+              mutation.index = idx;
+            }
+          }
+        }
+
+        // Execute mutation operator
+        switch (mutation.op) {
+          case "push":
+            currentArr.push(...(mutation.items || []));
+            break;
+          case "pop":
+            currentArr.pop();
+            break;
+          case "shift":
+            currentArr.shift();
+            break;
+          case "unshift":
+            currentArr.unshift(...(mutation.items || []));
+            break;
+          case "splice":
+            currentArr.splice(
+              mutation.index ?? 0,
+              mutation.deleteCount ?? currentArr.length,
+              ...(mutation.items || []),
+            );
+            break;
+          case "set":
+            if (mutation.index !== undefined && mutation.items?.length) {
+              currentArr[mutation.index] = mutation.items[0];
+            }
+            break;
+          case "reverse":
+            currentArr.reverse();
+            break;
+          case "sort":
+            currentArr.sort();
+            break;
+          case "clear":
+            currentArr = [];
+            break;
+        }
+
+        // Persist to MongoDB
+        const _id = this.data?._id ?? this._id;
+        if (typeof this.parentManager.model?.updateOne === "function") {
+          await this.parentManager.model.updateOne(
+            { _id },
+            { $set: { [key]: currentArr } },
+          );
+        } else if (this.entry && typeof (this.entry as any).save === "function") {
+          (this.entry as any)[key] = currentArr;
+          await (this.entry as any).save();
+        }
+
+        if (this.entry) {
+          (this.entry as any)[key] = currentArr;
+        }
+        (this.data as any)[key] = currentArr;
+        this._refArrayCache?.delete(key);
+
+        // Monotonic revision tracking
+        let newRev: number | undefined;
+        if (this.parentManager && (this.parentManager as any).changeTracker) {
+          const tracker = (this.parentManager as any).changeTracker;
+          tracker.recordChange("update", _id.toString(), { [key]: currentArr });
+          newRev = tracker.getCurrentRevision();
+        }
+
+        const newHash = currentArr
+          .map((x) => String(x && (x as any)._id ? (x as any)._id : x))
+          .join(",");
+
+        // Broadcast to peer clients
+        const update = this.makeUpdate(key, currentArr);
+        const event = EVENT_UPDATE + this.className + _id.toString();
+        (this.socket as any).emit(event, update);
+
+        return {
+          success: true,
+          updatedArray: currentArr,
+          newRevision: newRev,
+          newHash,
+        };
+      });
+
+    return (await this.saveLock) as DEMArrayMutationResponse;
   }
 
   /**

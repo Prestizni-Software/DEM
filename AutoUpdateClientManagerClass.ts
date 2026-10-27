@@ -281,6 +281,10 @@ export class AutoUpdateClientManager<
   public readonly defaultHydrationDepth: number = 2;
   public manifest: EntityDescriptor[] = [];
   public lastRevision: number = 0;
+  /**
+   * Clock offset in milliseconds between client local time and server clock calculated via Cristian's algorithm.
+   */
+  public serverTimeOffset: number = 0;
   totalObjects: number = 0;
   loadedObjects: number = 0;
   private pendingMissingFetches = new Map<string, Promise<T>>();
@@ -494,6 +498,15 @@ export class AutoUpdateClientManager<
   }
 
   /**
+   * Retrieves the current time in milliseconds synchronized with the server clock via Cristian's algorithm.
+   *
+   * @returns Synchronized server timestamp in milliseconds.
+   */
+  public getSynchronizedTime(): number {
+    return Date.now() + (this.serverTimeOffset ?? 0);
+  }
+
+  /**
    * Deletes an object by ID from local cache, socket events, and persistent storage adapter.
    *
    * @param _id - Identifier of object to delete.
@@ -560,6 +573,7 @@ export class AutoUpdateClientManager<
         startupPayload.lastRevision = this.lastRevision;
       }
 
+      const t0 = Date.now();
       this.socket.emit(
         "startup" + this.className,
         startupPayload,
@@ -574,8 +588,10 @@ export class AutoUpdateClientManager<
             revision?: number;
             changes?: ChangeEntry<any>[];
             manifest?: EntityDescriptor[];
+            serverTime?: number;
           }>,
         ) => {
+          const t1 = Date.now();
           clearTimeout(timer);
           if (!res || !res.success) {
             const err = res?.message || "Failed to load startup data";
@@ -586,6 +602,10 @@ export class AutoUpdateClientManager<
           }
 
           const data = res.data;
+          if (data && typeof data.serverTime === "number") {
+            const rtt = t1 - t0;
+            this.serverTimeOffset = data.serverTime + rtt / 2 - t1;
+          }
 
           // DEM Version Verification
           if (data.version) {

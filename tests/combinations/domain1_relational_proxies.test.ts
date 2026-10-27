@@ -807,7 +807,7 @@ describe("Domain 1: Relational Data, Model Reflection & Proxies", () => {
       expect(Array.isArray(read1)).toBe(true);
     });
 
-    it("intercepts push method and throws DEMError", () => {
+    it("returns async mutation promise on push method", () => {
       const project = createAndRegisterEntity(
         Project,
         "Project",
@@ -819,17 +819,12 @@ describe("Domain 1: Relational Data, Model Reflection & Proxies", () => {
         emitter,
       );
 
-      // Attempt push and expect DEMError.
-      expect(() => {
-        project.tasks.push({} as never);
-      }).toThrow(DEMError);
-
-      expect(() => {
-        project.tasks.push({} as never);
-      }).toThrow(/Cannot mutate DEM reference array 'tasks' directly/);
+      // Verify push returns a Promise rather than mutating synchronously
+      const pushResult = project.tasks.push({} as never);
+      expect(pushResult).toBeInstanceOf(Promise);
     });
 
-    it("intercepts pop, shift, and unshift methods and throws DEMError", () => {
+    it("returns async mutation promises for pop, shift, and unshift methods", () => {
       const project = createAndRegisterEntity(
         Project,
         "Project",
@@ -841,13 +836,13 @@ describe("Domain 1: Relational Data, Model Reflection & Proxies", () => {
         emitter,
       );
 
-      // Verify pop, shift, and unshift are intercepted.
-      expect(() => project.tasks.pop()).toThrow(DEMError);
-      expect(() => project.tasks.shift()).toThrow(DEMError);
-      expect(() => project.tasks.unshift({} as never)).toThrow(DEMError);
+      // Verify pop, shift, and unshift return Promises
+      expect(project.tasks.pop()).toBeInstanceOf(Promise);
+      expect(project.tasks.shift()).toBeInstanceOf(Promise);
+      expect(project.tasks.unshift({} as never)).toBeInstanceOf(Promise);
     });
 
-    it("intercepts splice, sort, reverse, fill, and copyWithin methods", () => {
+    it("intercepts fill and copyWithin methods and returns async promises for splice, sort, reverse", () => {
       const project = createAndRegisterEntity(
         Project,
         "Project",
@@ -859,10 +854,12 @@ describe("Domain 1: Relational Data, Model Reflection & Proxies", () => {
         emitter,
       );
 
-      // Verify remaining mutating methods throw DEMError.
-      expect(() => project.tasks.splice(0, 1)).toThrow(DEMError);
-      expect(() => project.tasks.sort()).toThrow(DEMError);
-      expect(() => project.tasks.reverse()).toThrow(DEMError);
+      // Async mutation methods return Promises
+      expect(project.tasks.splice(0, 1)).toBeInstanceOf(Promise);
+      expect(project.tasks.sort()).toBeInstanceOf(Promise);
+      expect(project.tasks.reverse()).toBeInstanceOf(Promise);
+
+      // Unsupported synchronous mutating methods throw DEMError
       expect(() => (project.tasks as unknown as { fill: Function }).fill(null)).toThrow(DEMError);
       expect(() => (project.tasks as unknown as { copyWithin: Function }).copyWithin(0, 1)).toThrow(DEMError);
     });
@@ -885,7 +882,7 @@ describe("Domain 1: Relational Data, Model Reflection & Proxies", () => {
       }).toThrow(DEMError);
       expect(() => {
         project.tasks[0] = {} as never;
-      }).toThrow(/Cannot assign index on DEM reference array 'tasks'/);
+      }).toThrow(/Cannot assign index directly on DEMArray 'tasks'/);
     });
 
     it("intercepts element deletion and throws DEMError", () => {
@@ -917,7 +914,7 @@ describe("Domain 1: Relational Data, Model Reflection & Proxies", () => {
       }).toThrow(DEMError);
       expect(() => {
         delete project.tasks[0];
-      }).toThrow(/Cannot delete elements from DEM reference array 'tasks'/);
+      }).toThrow(/Cannot delete elements directly from DEMArray 'tasks'/);
     });
 
     it("allows standard read operations on array proxy", () => {
@@ -1553,24 +1550,14 @@ describe("Domain 1: Relational Data, Model Reflection & Proxies", () => {
         emitter,
       );
 
-      // Mutating snapshot arrays must NOT throw DEMError.
-      expect(() => task.tags.push("urgent")).not.toThrow();
-      expect(task.tags).toContain("urgent");
-
-      expect(() => task.tags.pop()).not.toThrow();
-      expect(task.tags).not.toContain("urgent");
-
-      expect(() => task.tags.splice(0, 1, "backend", "database")).not.toThrow();
-      expect(task.tags).toEqual(["backend", "database"]);
-
-      expect(() => task.tags.unshift("p0")).not.toThrow();
-      expect(task.tags[0]).toBe("p0");
-
-      expect(() => task.tags.shift()).not.toThrow();
-      expect(task.tags[0]).toBe("backend");
+      // DEMArray returns async mutation promise on push
+      expect(task.tags.push("urgent")).toBeInstanceOf(Promise);
+      expect(() => {
+        (task.tags as any)[0] = "urgent";
+      }).toThrow(DEMError);
     });
 
-    it("does not expose DEM_RAW_ARRAY symbol on snapshot arrays", () => {
+    it("exposes underlying raw array on snapshot arrays via DEM_RAW_ARRAY", () => {
       const task = createAndRegisterEntity(
         TaskItem,
         "TaskItem",
@@ -1582,9 +1569,9 @@ describe("Domain 1: Relational Data, Model Reflection & Proxies", () => {
         emitter,
       );
 
-      // Confirm snapshot array lacks DEM_RAW_ARRAY symbol.
+      // Confirm snapshot array exposes DEM_RAW_ARRAY symbol.
       const raw = (task.tags as unknown as Record<symbol, unknown>)[DEM_RAW_ARRAY];
-      expect(raw).toBeUndefined();
+      expect(raw).toEqual(["dev"]);
     });
 
     it("isolates proxy wrapping between reference array and snapshot array", () => {
@@ -1615,16 +1602,17 @@ describe("Domain 1: Relational Data, Model Reflection & Proxies", () => {
         emitter,
       );
 
-      // Relational array 'dependencies' MUST block mutation.
-      expect(() => {
-        mainTask.dependencies.push({} as never);
-      }).toThrow(DEMError);
+      // Both relational array 'dependencies' and snapshot array 'tags' return async promises
+      expect(mainTask.dependencies.push({} as never)).toBeInstanceOf(Promise);
+      expect(mainTask.tags.push("release_ready")).toBeInstanceOf(Promise);
 
-      // Snapshot array 'tags' MUST permit mutation.
+      // Both reject direct index assignment
       expect(() => {
-        mainTask.tags.push("release_ready");
-      }).not.toThrow();
-      expect(mainTask.tags).toEqual(["core", "release_ready"]);
+        (mainTask.dependencies as any)[0] = {} as any;
+      }).toThrow(DEMError);
+      expect(() => {
+        (mainTask.tags as any)[0] = "urgent";
+      }).toThrow(DEMError);
     });
   });
 
@@ -1674,9 +1662,12 @@ describe("Domain 1: Relational Data, Model Reflection & Proxies", () => {
       expect(project.tasks[0]).toBe(task1);
       expect(project.tasks[1]).toBe(task2);
 
-      // 2. Returned collection is protected by ReadOnlyArrayProxy.
-      expect(() => project.tasks.push(task1)).toThrow(DEMError);
-      expect(() => project.tasks.pop()).toThrow(DEMError);
+      // 2. Returned collection is protected by DEMArray.
+      expect(project.tasks.push(task1)).toBeInstanceOf(Promise);
+      expect(project.tasks.pop()).toBeInstanceOf(Promise);
+      expect(() => {
+        (project.tasks as any)[0] = task1;
+      }).toThrow(DEMError);
 
       // 3. Consecutive reads yield referentially identical proxy.
       expect(project.tasks).toBe(project.tasks);
@@ -2163,9 +2154,10 @@ describe("Domain 1: Relational Data, Model Reflection & Proxies", () => {
         emitter,
       );
 
-      // Relational array mutation is blocked on Department.
+      // Relational array mutation returns async promise on Department and blocks direct index assignment.
+      expect(dept.members.push(member)).toBeInstanceOf(Promise);
       expect(() => {
-        dept.members.push(member);
+        (dept.members as any)[0] = member;
       }).toThrow(DEMError);
 
       // Snapshot subdocument mutation succeeds on Department.
@@ -2174,11 +2166,11 @@ describe("Domain 1: Relational Data, Model Reflection & Proxies", () => {
       }).not.toThrow();
       expect(dept.metadataSnapshot["shifts"]).toContain("weekend");
 
-      // Snapshot array mutation succeeds on Member.
+      // Snapshot array mutation returns async promise on Member and blocks direct index assignment.
+      expect(member.skillsSnapshot.push("Incident Response")).toBeInstanceOf(Promise);
       expect(() => {
-        member.skillsSnapshot.push("Incident Response");
-      }).not.toThrow();
-      expect(member.skillsSnapshot).toContain("Incident Response");
+        (member.skillsSnapshot as any)[0] = "Incident Response";
+      }).toThrow(DEMError);
     });
 
     it("blocks direct setValue on back-reference pointer with CANNOT_SET_REF_DIRECTLY", async () => {

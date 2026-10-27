@@ -51,6 +51,11 @@ export enum DEMErrorCode {
   STORAGE_OPERATION_FAILED = "DEM_ERR_STORAGE_OPERATION_FAILED",
   DELTA_SYNC_FAILED = "DEM_ERR_DELTA_SYNC_FAILED",
 
+  // Array and mutation errors
+  ARRAY_MUTATION_FAILED = "DEM_ERR_ARRAY_MUTATION_FAILED",
+  CONCURRENT_MODIFICATION = "DEM_ERR_CONCURRENT_MODIFICATION",
+  INDEX_OUT_OF_BOUNDS = "DEM_ERR_INDEX_OUT_OF_BOUNDS",
+
   // General internal error
   INTERNAL_ERROR = "DEM_ERR_INTERNAL_ERROR",
 }
@@ -129,6 +134,12 @@ export const DEM_ERROR_DESCRIPTIONS: Record<DEMErrorCode, string> = {
     "Storage read or write operation failed.",
   [DEMErrorCode.DELTA_SYNC_FAILED]:
     "Delta synchronization reconciliation failed.",
+  [DEMErrorCode.ARRAY_MUTATION_FAILED]:
+    "Array mutation operation failed.",
+  [DEMErrorCode.CONCURRENT_MODIFICATION]:
+    "Concurrent modification conflict detected.",
+  [DEMErrorCode.INDEX_OUT_OF_BOUNDS]:
+    "Specified array index is out of bounds.",
   [DEMErrorCode.INTERNAL_ERROR]:
     "Internal DEM library error occurred.",
 };

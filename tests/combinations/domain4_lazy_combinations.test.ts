@@ -1040,11 +1040,12 @@ describe("Domain 4: Smart Lazy Loading Combinations", () => {
       // Verify proxy access to raw array symbol
       expect((tasks as any)[DEM_RAW_ARRAY]).toBeDefined();
 
-      // Verify mutating methods throw DEMError
-      expect(() => (tasks as any).push({ title: "New Task" })).toThrow(DEMError);
+      // Verify async mutation methods return Promises and index assignment throws DEMError
+      expect((tasks as any).push({ title: "New Task" })).toBeInstanceOf(Promise);
       expect(() => {
         (tasks as any)[0] = { title: "Overwritten" };
       }).toThrow(DEMError);
+      expect(() => (tasks as any).fill({})).toThrow(DEMError);
 
       // Verify referential stability on repeated reads
       const tasksSecondRead = project.tasks;
@@ -1698,8 +1699,11 @@ describe("Domain 4: Smart Lazy Loading Combinations", () => {
       expect(taskTitles).toEqual(["Migrate DB", "Refactor Services"]);
       expect(project.tasks.length).toBe(2);
 
-      // Verify read-only array proxy immutability
-      expect(() => (project.tasks as any).splice(0, 1)).toThrow(DEMError);
+      // Verify DEMArray async mutation and index assignment protection
+      expect((project.tasks as any).splice(0, 1)).toBeInstanceOf(Promise);
+      expect(() => {
+        (project.tasks as any)[0] = {} as any;
+      }).toThrow(DEMError);
     });
 
     it("triplet F08+F04+F13: combines lazy server manager, getDescriptor, and permissions", async () => {
