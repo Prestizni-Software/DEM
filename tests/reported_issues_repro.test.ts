@@ -235,4 +235,81 @@ describe("Reported Issues Reproduction Tests", () => {
       );
     });
   });
+
+  describe("Issue 5: setupSocketMiddleware drops events without acknowledgement callback", () => {
+    let httpServer: http.Server;
+    let ioServer: SocketIOServer;
+    let clientSocket: ClientSocket;
+    let serverPort: number;
+
+    beforeEach((done) => {
+      httpServer = http.createServer();
+      ioServer = new SocketIOServer(httpServer, {
+        cors: { origin: "*" },
+      });
+
+      const mockLoggers = {
+        info: jest.fn(),
+        debug: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+      };
+      const mockManagers: any = {};
+
+      setupSocketMiddleware(ioServer, mockLoggers as any, mockManagers);
+
+      httpServer.listen(0, () => {
+        serverPort = (httpServer.address() as any).port;
+        clientSocket = ClientIO(`http://localhost:${serverPort}`, {
+          transports: ["websocket"],
+        });
+        clientSocket.on("connect", () => {
+          done();
+        });
+      });
+    });
+
+    afterEach((done) => {
+      clientSocket.disconnect();
+      ioServer.close(() => {
+        done();
+      });
+    });
+
+    test("setupSocketMiddleware forwards events emitted without acknowledgement callback to socket listener", (done) => {
+      let receivedActivity: any = null;
+
+      ioServer.on("connection", (socket) => {
+        socket.on("user_activity", (data: any) => {
+          receivedActivity = data;
+        });
+      });
+
+      // Emit event with payload but without ack callback (length 2)
+      clientSocket.emit("user_activity", { active: true });
+
+      setTimeout(() => {
+        expect(receivedActivity).toEqual({ active: true });
+        done();
+      }, 200);
+    });
+
+    test("setupSocketMiddleware forwards events emitted with no arguments to socket listener", (done) => {
+      let receivedPing = false;
+
+      ioServer.on("connection", (socket) => {
+        socket.on("ping_event", () => {
+          receivedPing = true;
+        });
+      });
+
+      // Emit event with no payload and no ack callback (length 1)
+      clientSocket.emit("ping_event");
+
+      setTimeout(() => {
+        expect(receivedPing).toBe(true);
+        done();
+      }, 200);
+    });
+  });
 });
