@@ -51,16 +51,16 @@ beforeAll(async () => {
         } catch (e) {}
     }
 
-    const init = await initFullServerManagers(3001);
+    const init = await initFullServerManagers(3003);
     serverManagers = init.managers;
     serverIo = init.io;
     server = init.server;
 
-    const c1 = await initFullClientManagers(3001);
+    const c1 = await initFullClientManagers(3003);
     clientManagers1 = c1.managers;
     socket1 = c1.socket;
 
-    const c2 = await initFullClientManagers(3001);
+    const c2 = await initFullClientManagers(3003);
     clientManagers2 = c2.managers;
     socket2 = c2.socket;
 
@@ -389,3 +389,4 @@ describe("DEM Library Tests with New Data Structure", () => {
     expect(finalC1Ids).toContain(constructionObject._id.toString());
   });
 });
+

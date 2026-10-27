@@ -292,6 +292,7 @@ export class AutoUpdateClientManager<
   private _cachedObjectsArray: T[] | null = null;
   private _reconnectHandler?: () => Promise<void>;
   private _deauthHandler?: (payload?: unknown) => void;
+  public _isClosed: boolean = false;
 
   /**
    * Initializes an AutoUpdateClientManager instance.
@@ -405,6 +406,7 @@ export class AutoUpdateClientManager<
     this.socket.on(
       "new" + this.className,
       async (payload: string | { _id: string; description?: string }) => {
+        if (this._isClosed) return;
         const id = typeof payload === "string" ? payload : payload._id;
         if (this.getObject(id)) return;
         this.loggers.debug(
@@ -459,6 +461,7 @@ export class AutoUpdateClientManager<
             );
           }
         } catch (error: unknown) {
+          if (this._isClosed) return;
           this.loggers.error(
             "Error loading object " +
               id +
@@ -1259,6 +1262,7 @@ export class AutoUpdateClientManager<
    * Closes the manager and unbinds all socket event listeners.
    */
   public override close() {
+    this._isClosed = true;
     if (this._deauthHandler) {
       this.socket?.off?.(EVENT_DEAUTHENTICATE, this._deauthHandler);
       this._deauthHandler = undefined;
@@ -1271,7 +1275,13 @@ export class AutoUpdateClientManager<
     this.socket?.off?.("delete" + this.className);
     for (const id of this.objectIDs) {
       this.socket?.off?.(EVENT_UPDATE + this.className + id);
+      const obj = this.objects_[id];
+      if (obj && typeof (obj as any).destroyImmediate === "function") {
+        (obj as any).destroyImmediate();
+      }
     }
+    this.pendingMissingFetches.clear();
+    this.pendingHydrations.clear();
     super.close();
   }
 }

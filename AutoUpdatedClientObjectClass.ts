@@ -340,6 +340,7 @@ export abstract class AutoUpdatedClientObject<
     }
   }
   protected readonly EmitterID: string = `dem_e_${++AutoUpdatedClientObject._emitterCounter}`;
+  protected _preloadTimers: Set<ReturnType<typeof setTimeout>> = new Set();
   protected toChangeOnParents?: { key: string; value: unknown }[];
   public callbacks: DEMClientCallbacks<T>;
 
@@ -586,18 +587,24 @@ export abstract class AutoUpdatedClientObject<
     if (this.loadError)
       throw new DEMError(DEMErrorCode.OBJECT_LOAD_FAILED, this.loadError);
     if (this.isLoaded) return;
+    if ((this.parentManager as any)?._isClosed) {
+      throw new DEMError(DEMErrorCode.OBJECT_LOAD_FAILED, "Manager is closed");
+    }
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
+        this._preloadTimers.delete(timer);
         const errorMsg = `Timeout waiting for object preloading (${this.className})`;
         this.loadError = errorMsg;
         this.isLoading = false;
         reject(new DEMError(DEMErrorCode.PRELOAD_TIMEOUT, errorMsg));
       }, timeoutMs);
+      this._preloadTimers.add(timer);
 
       this.emitter.once(
         EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
         (failed: boolean, reason: string) => {
           clearTimeout(timer);
+          this._preloadTimers.delete(timer);
           if (failed)
             reject(new DEMError(DEMErrorCode.OBJECT_LOAD_FAILED, reason));
           else resolve();
@@ -1557,6 +1564,15 @@ export abstract class AutoUpdatedClientObject<
 
   protected async wipeSelf(): Promise<void> {
     this._refArrayCache?.clear();
+    for (const timer of this._preloadTimers) {
+      clearTimeout(timer);
+    }
+    this._preloadTimers.clear();
+    this.emitter.emit(
+      EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
+      true,
+      "Object destroyed",
+    );
     if ((this.data as unknown as { Wiped: boolean }).Wiped) return;
     const id = this.data?._id ?? this._id;
     const _id = id ? id.toString() : "unknown";

@@ -1214,6 +1214,16 @@ export class AutoUpdateServerManager<
         const getPrefix = EVENT_GET + this.className;
 
         if (event.startsWith(updatePrefix)) {
+          if (this.managers) {
+            const hasMoreSpecificManager = Object.keys(this.managers).some(
+              (otherName) =>
+                otherName !== this.className &&
+                otherName.length > this.className.length &&
+                otherName.startsWith(this.className) &&
+                event.startsWith(EVENT_UPDATE + otherName),
+            );
+            if (hasMoreSpecificManager) return;
+          }
           const id = event.slice(updatePrefix.length);
           if (!id) return;
           this.loggers.debug(
@@ -1278,6 +1288,16 @@ export class AutoUpdateServerManager<
             }
           }
         } else if (event.startsWith(getPrefix)) {
+          if (this.managers) {
+            const hasMoreSpecificManager = Object.keys(this.managers).some(
+              (otherName) =>
+                otherName !== this.className &&
+                otherName.length > this.className.length &&
+                otherName.startsWith(this.className) &&
+                event.startsWith(EVENT_GET + otherName),
+            );
+            if (hasMoreSpecificManager) return;
+          }
           const id = event.slice(getPrefix.length);
           if (!id) return;
           try {
