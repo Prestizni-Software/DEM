@@ -545,6 +545,7 @@ export abstract class AutoUpdatedClientObject<
    */
   protected handleDataCleanup(data: IsData<T>): IsData<T> {
     this._refArrayCache?.clear();
+    this._cachedExtractedData = null;
     if (!data || typeof data !== "object") return data;
 
     const meta = this.classParam ? setupClassAccessors(this.classParam) : null;
@@ -689,12 +690,24 @@ export abstract class AutoUpdatedClientObject<
     );
   }
 
+  protected _cachedExtractedData: ExtractedData<
+    T,
+    IAutoUpdatedClientObject<any>
+  > | null = null;
+
   /**
-   * Returns a deep clone of the entity's extracted data with reference objects converted to IDs.
+   * Internal cached serialized data payload without deep cloning.
+   * Safe for read-only serialization.
    *
-   * @returns Serialized entity representation.
+   * @returns Raw extracted data representation of the entity.
    */
-  public get extractedData(): ExtractedData<T, IAutoUpdatedClientObject<any>> {
+  public getRawExtractedData(): ExtractedData<
+    T,
+    IAutoUpdatedClientObject<any>
+  > {
+    if (this._cachedExtractedData) {
+      return this._cachedExtractedData;
+    }
     const extracted = processIsRefProperties(
       this.data,
       this,
@@ -702,14 +715,21 @@ export abstract class AutoUpdatedClientObject<
       [],
       {},
       this.loggers,
-    ).newData;
+    ).newData as ExtractedData<T, IAutoUpdatedClientObject<any>>;
     if (this.data?._id && !(extracted as any)._id) {
       (extracted as any)._id = (this.data._id as any)?.toString?.() ?? String(this.data._id);
     }
-    return _.cloneDeep(extracted) as unknown as ExtractedData<
-      T,
-      IAutoUpdatedClientObject<any>
-    >;
+    this._cachedExtractedData = extracted;
+    return extracted;
+  }
+
+  /**
+   * Returns a deep clone of the entity's extracted data with reference objects converted to IDs.
+   *
+   * @returns Serialized entity representation.
+   */
+  public get extractedData(): ExtractedData<T, IAutoUpdatedClientObject<any>> {
+    return _.cloneDeep(this.getRawExtractedData());
   }
 
   /**
@@ -772,11 +792,16 @@ export abstract class AutoUpdatedClientObject<
     this.generateSettersAndGetters();
   }
 
+  private _hasUpdateSocketListener = false;
+
   private openSockets() {
     const id = this.data?._id ?? this._id;
     if (!id || !this.socket) return;
     const event = EVENT_UPDATE + this.className + id.toString();
-    this.socket.off(event);
+    if (this._hasUpdateSocketListener) {
+      this.socket.off(event);
+    }
+    this._hasUpdateSocketListener = true;
     this.socket.on(
       event,
       async (update: unknown, ack: (res: ServerResponse<unknown>) => void) => {
@@ -1132,6 +1157,7 @@ export abstract class AutoUpdatedClientObject<
           obj[pathArr[pathArr.length - 1]] = valueToStore;
         }
         this._refArrayCache?.delete(rootProp);
+        this._cachedExtractedData = null;
         if (this.isServer) {
           await this.findAndLoadReferences(key, valueToStore);
           if (isRef && this.parentManager.isLoaded) await this.contactChildren();
@@ -1422,6 +1448,7 @@ export abstract class AutoUpdatedClientObject<
     const updatedArray = res.updatedArray ?? [];
     (this.data as Record<string, unknown>)[key] = updatedArray;
     this._refArrayCache?.delete(key);
+    this._cachedExtractedData = null;
     if (Object.hasOwn(this, key)) {
       delete (this as Record<string, unknown>)[key];
     }
@@ -1591,23 +1618,30 @@ export abstract class AutoUpdatedClientObject<
   }
 
   protected async wipeSelf(): Promise<void> {
+    if ((this.data as unknown as { Wiped?: boolean })?.Wiped) return;
     this._refArrayCache?.clear();
-    for (const timer of this._preloadTimers) {
-      clearTimeout(timer);
+    this._cachedExtractedData = null;
+    if (this._preloadTimers.size > 0) {
+      for (const timer of this._preloadTimers) {
+        clearTimeout(timer);
+      }
+      this._preloadTimers.clear();
     }
-    this._preloadTimers.clear();
-    this.emitter.emit(
-      EVENT_INTERNAL_PRE_LOADED + this.EmitterID,
-      true,
-      "Object destroyed",
-    );
-    if ((this.data as unknown as { Wiped: boolean }).Wiped) return;
+    const preloadedEvent = EVENT_INTERNAL_PRE_LOADED + this.EmitterID;
+    if (this.emitter.listenerCount(preloadedEvent) > 0) {
+      this.emitter.emit(
+        preloadedEvent,
+        true,
+        "Object destroyed",
+      );
+    }
     const id = this.data?._id ?? this._id;
-    const _id = id ? id.toString() : "unknown";
-    for (const key of Object.keys(this.data as Record<string, unknown>)) {
-      delete (this.data as Record<string, unknown>)[key];
+    if (this._hasUpdateSocketListener && id && this.socket) {
+      this.socket.off(EVENT_UPDATE + this.className + id.toString());
+      this._hasUpdateSocketListener = false;
     }
     (this.data as unknown as { Wiped: boolean }) = { Wiped: true };
+    const _id = id ? id.toString() : "unknown";
     this.loggers.info?.(`[${_id}] ${this.className} object wiped`);
   }
 
@@ -2190,6 +2224,7 @@ export function setupClassAccessors(classParam: Constructor<any>): {
           }
           (this.data as Record<string, unknown>)[key] = valueToSet;
           this._refArrayCache?.delete(key);
+          (this as any)._cachedExtractedData = null;
         }
       },
       enumerable: true,

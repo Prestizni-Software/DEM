@@ -1273,9 +1273,9 @@ export class AutoUpdateClientManager<
     }
     this.socket?.off?.("new" + this.className);
     this.socket?.off?.("delete" + this.className);
-    for (const id of this.objectIDs) {
-      this.socket?.off?.(EVENT_UPDATE + this.className + id);
-      const obj = this.objects_[id];
+    const objs = Object.values(this.objects_);
+    for (const element of objs) {
+      const obj = element;
       if (obj && typeof (obj as any).destroyImmediate === "function") {
         (obj as any).destroyImmediate();
       }

@@ -138,6 +138,8 @@ export type Pure<T extends object, Base = IAutoUpdatedClientObject<any>> = Omit<
   | "properties"
   | "isLoaded"
   | "extractedData"
+  | "rawExtractedData"
+  | "getRawExtractedData"
   | "getValue"
   | "setValue"
   | "loadFromDB"

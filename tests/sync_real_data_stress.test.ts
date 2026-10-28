@@ -217,21 +217,25 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
     let initialCount = 0;
     const loadedData: Record<string, any[]> = {};
 
-    for (const [name, fileName] of Object.entries(fileMapping)) {
-      const cls = (ServerClasses as any)[name];
-      if (!cls) continue;
-      const filePath = path.join(dataDir, fileName);
-      const model = getModelForClass(cls);
-      await model.deleteMany({});
-      if (fs.existsSync(filePath)) {
-        const rawContent = JSON.parse(fs.readFileSync(filePath, "utf8"));
-        const processed = processMongoJSON(rawContent);
-        loadedData[name] = processed;
-        initialCount += processed.length;
-        if (processed.length > 0) {
-          await model.insertMany(processed, { ordered: false });
+    await Promise.all(
+      Object.entries(fileMapping).map(async ([name, fileName]) => {
+        const cls = (ServerClasses as any)[name];
+        if (!cls) return;
+        const filePath = path.join(dataDir, fileName);
+        const model = getModelForClass(cls);
+        await model.collection.deleteMany({});
+        if (fs.existsSync(filePath)) {
+          const rawContent = JSON.parse(fs.readFileSync(filePath, "utf8"));
+          const processed = processMongoJSON(rawContent);
+          loadedData[name] = processed;
+          if (processed.length > 0) {
+            await model.collection.insertMany(processed);
+          }
         }
-      }
+      }),
+    );
+    for (const items of Object.values(loadedData)) {
+      initialCount += items.length;
     }
 
     // Scale dataset to 8500+ objects by cloning valid schema records
@@ -245,24 +249,30 @@ describe("DEM Real Production Data Delta Sync & Stress Benchmarks (8500+ Objects
       "ConstructionObject",
     ];
 
-    while (initialCount < targetTotal) {
-      const remaining = targetTotal - initialCount;
+    const remainingNeeded = targetTotal - initialCount;
+    if (remainingNeeded > 0) {
+      const perClass = Math.ceil(remainingNeeded / cloneClasses.length);
+      const clonePromises: Promise<any>[] = [];
       for (const name of cloneClasses) {
         const cls = (ServerClasses as any)[name];
         const baseItems = loadedData[name];
         if (!baseItems || baseItems.length === 0 || !cls) continue;
         const model = getModelForClass(cls);
-        const batchSize = Math.min(baseItems.length, Math.ceil(remaining / cloneClasses.length));
-        const clonedBatch = baseItems.slice(0, batchSize).map((item) => {
+        const clonedBatch: any[] = [];
+        let itemIdx = 0;
+        for (let i = 0; i < perClass; i++) {
+          const item = baseItems[itemIdx % baseItems.length];
+          itemIdx++;
           const copy = JSON.parse(JSON.stringify(item));
           copy._id = new mongoose.Types.ObjectId();
           if (copy.whenCreated) copy.whenCreated = new Date();
           if (copy.lastEdited) copy.lastEdited = new Date();
-          return copy;
-        });
-        await model.insertMany(clonedBatch, { ordered: false });
+          clonedBatch.push(copy);
+        }
         initialCount += clonedBatch.length;
+        clonePromises.push(model.collection.insertMany(clonedBatch));
       }
+      await Promise.all(clonePromises);
     }
     reportBenchmark("Setup: MongoDB data load and scale to 8500+ objects", performance.now() - dataLoadStart);
 

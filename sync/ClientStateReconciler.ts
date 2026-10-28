@@ -53,21 +53,29 @@ export class ClientStateReconciler {
       }
       manager.objects_ = {};
 
-      const objectMap = new Map<string, any>();
-      if (state.objects) {
-        for (const objData of state.objects) {
-          if (objData?._id) {
-            objectMap.set(objData._id.toString(), objData);
+      let objectMap: Map<string, any> | null = null;
+      const getObjData = (id: string, index: number): any => {
+        if (!state.objects) return undefined;
+        const candidate = state.objects[index];
+        if (candidate && String(candidate._id) === id) return candidate;
+        if (!objectMap) {
+          objectMap = new Map<string, any>();
+          for (const obj of state.objects) {
+            if (obj?._id) {
+              objectMap.set(obj._id.toString(), obj);
+            }
           }
         }
-      }
+        return objectMap.get(id);
+      };
 
       if (state.manifest && Array.isArray(state.manifest)) {
         manager.manifest = [...state.manifest];
       }
 
-      for (const id of state.ids) {
-        const objData = objectMap.get(id);
+      for (let i = 0; i < state.ids.length; i++) {
+        const id = state.ids[i];
+        const objData = getObjData(id, i);
         const instance = new manager.classParam(
           manager.classParam,
           manager.socket,
@@ -123,29 +131,33 @@ export class ClientStateReconciler {
   ): Promise<void> {
     try {
       const objectsAsArray = manager.objectsAsArray;
-      const ids = objectsAsArray.map((o) => (o._id ? o._id.toString() : (o as any).data?._id?.toString())).filter(Boolean);
-      const objects = objectsAsArray.map((o: any) => {
+      const ids: string[] = [];
+      const objects: any[] = [];
+      for (const element of objectsAsArray) {
+        const o: any = element;
         const idStr = o._id ? o._id.toString() : (o.data?._id?.toString() ?? "unknown");
+        if (idStr !== "unknown") {
+          ids.push(idStr);
+        }
         if (o.isLazyStub) {
-          return {
+          objects.push({
             _id: idStr,
             __isLazyStub: true,
             descriptor: o.descriptor,
-          };
+          });
+          continue;
         }
-        if (typeof o.extractedData !== "undefined") {
-          const extracted = { ...o.extractedData };
+        const extracted = o.getRawExtractedData?.() ?? o.extractedData ?? o.data;
+        if (extracted) {
           if (!extracted._id && idStr !== "unknown") {
-            extracted._id = idStr;
+            objects.push({ ...extracted, _id: idStr });
+          } else {
+            objects.push(extracted);
           }
-          return extracted;
+        } else {
+          objects.push({ _id: idStr });
         }
-        const data = o.data ? { ...o.data } : { _id: idStr };
-        if (!data._id && idStr !== "unknown") {
-          data._id = idStr;
-        }
-        return data;
-      });
+      }
 
       const state: StoredManagerState<any> = {
         className: manager.className,
@@ -293,15 +305,21 @@ export class ClientStateReconciler {
     for (const key of Object.keys(patchData)) {
       if (key === "_id") continue;
       const val = patchData[key];
-      if (targetObj.data) {
-        targetObj.data[key] = val;
-      }
       if (typeof targetObj.setValue__ === "function") {
         await targetObj.setValue__(key, val, true);
+        if (!targetObj.isLoaded) {
+          callbacks?.update?.(targetObj, key);
+        }
       } else {
+        if (targetObj.data) {
+          targetObj.data[key] = val;
+        }
         targetObj[key] = val;
+        callbacks?.update?.(targetObj, key);
       }
-      callbacks?.update?.(targetObj, key);
+      if ("_cachedExtractedData" in targetObj) {
+        targetObj._cachedExtractedData = null;
+      }
     }
   }
 }

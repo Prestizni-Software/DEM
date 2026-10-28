@@ -34,7 +34,7 @@ export class MemoryStorageAdapter implements IClientStorageAdapter {
   ): Promise<StoredManagerState<T> | null> {
     const state = this.store.get(className);
     if (!state) return null;
-    return JSON.parse(JSON.stringify(state)) as StoredManagerState<T>;
+    return state as StoredManagerState<T>;
   }
 
   /**

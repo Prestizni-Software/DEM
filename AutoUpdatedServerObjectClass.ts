@@ -223,33 +223,18 @@ export abstract class AutoUpdatedServerObject<
     this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
   }
 
-  private _cachedExtractedData: ExtractedData<
-    T,
-    IAutoUpdatedClientObject<any>
-  > | null = null;
-
   /**
-   * Cleans raw object data and invalidates the cached extracted data representation.
+   * Internal cached serialized data payload without deep cloning.
+   * Safe for read-only serialization.
    *
-   * @param data - Raw entity data object.
-   * @returns Cleaned entity data object.
+   * @returns Raw extracted data representation of the entity.
    */
-  public override handleDataCleanup(data: IsData<T>): IsData<T> {
-    this._cachedExtractedData = null;
-    return super.handleDataCleanup(data);
-  }
-
-  /**
-   * Serialized data payload with resolved reference identifiers, cached for performance.
-   *
-   * @returns Extracted data representation of the entity.
-   */
-  public override get extractedData(): ExtractedData<
+  public override getRawExtractedData(): ExtractedData<
     T,
     IAutoUpdatedClientObject<any>
   > {
     if (this._cachedExtractedData) {
-      return _.cloneDeep(this._cachedExtractedData);
+      return this._cachedExtractedData;
     }
     const extracted = processIsRefProperties(
       this.data as any,
@@ -263,7 +248,19 @@ export abstract class AutoUpdatedServerObject<
       (extracted as any)._id = ((this.data as any)._id as any)?.toString?.() ?? String((this.data as any)._id);
     }
     this._cachedExtractedData = extracted;
-    return _.cloneDeep(extracted);
+    return extracted;
+  }
+
+  /**
+   * Serialized data payload with resolved reference identifiers, cached for performance.
+   *
+   * @returns Extracted data representation of the entity.
+   */
+  public override get extractedData(): ExtractedData<
+    T,
+    IAutoUpdatedClientObject<any>
+  > {
+    return _.cloneDeep(this.getRawExtractedData());
   }
 
   /**

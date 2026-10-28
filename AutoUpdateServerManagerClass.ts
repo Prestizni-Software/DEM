@@ -1078,7 +1078,7 @@ export class AutoUpdateServerManager<
               : this.objectsAsArray;
 
             ids = allowedObjects.map((obj) => obj._id.toString()).filter(Boolean);
-            objects = allowedObjects.map((obj) => (obj as any).extractedData).filter(Boolean);
+            objects = allowedObjects.map((obj) => (obj as any).getRawExtractedData?.() ?? (obj as any).extractedData).filter(Boolean);
 
             if (!this.options?.accessDefinitions?.startupMiddleware) {
               this.startupPayloadCache = {
@@ -1722,7 +1722,7 @@ export class AutoUpdateServerManager<
       this.changeTracker.recordChange(
         "create",
         id,
-        (object as any).extractedData || (object as any).data,
+        (object as any).getRawExtractedData?.() || (object as any).extractedData || (object as any).data,
       );
     }
 
