@@ -532,6 +532,8 @@ export abstract class AutoUpdatedClientObject<
 
     Promise.resolve().then(() => {
       this.generateSettersAndGetters();
+      // The derived constructors are complete, so no class field can shadow the accessors again.
+      this._ownShadowsCleared = true;
     });
   }
 
@@ -813,6 +815,10 @@ export abstract class AutoUpdatedClientObject<
   }
 
   private _gettersGenerated = false;
+  /**
+   * True after the post-construction pass removed all own properties that shadow prototype accessors.
+   */
+  private _ownShadowsCleared = false;
   private writeQueue: Promise<unknown> = Promise.resolve();
 
   public get updateEventName(): string {
@@ -848,13 +854,31 @@ export abstract class AutoUpdatedClientObject<
     return String(val);
   }
 
+  /**
+   * Installs prototype accessors for the class and removes own properties that shadow them.
+   * ES2022 class field declarations in derived classes create these own properties.
+   * After the post-construction pass, the method returns immediately.
+   *
+   * @returns void
+   */
   public generateSettersAndGetters(): void {
+    if (this._ownShadowsCleared) return;
     if (this.classParam) {
       setupClassAccessors(this.classParam);
     }
-    if (this.properties) {
-      for (const key of this.properties as string[]) {
-        if (typeof key === "string" && Object.hasOwn(this, key)) {
+    const properties = this.properties as string[] | undefined;
+    if (properties && properties.length > 0) {
+      let propertySet = propertySetCache.get(properties);
+      if (!propertySet) {
+        propertySet = new Set(properties);
+        propertySetCache.set(properties, propertySet);
+      }
+      // Delete in reverse definition order: V8 removes the last-added property
+      // without a change to dictionary mode, so the instance keeps a fast shape.
+      const ownKeys = Object.keys(this);
+      for (let i = ownKeys.length - 1; i >= 0; i--) {
+        const key = ownKeys[i];
+        if (propertySet.has(key)) {
           delete (this as Record<string, unknown>)[key];
         }
       }
@@ -1753,13 +1777,23 @@ export abstract class AutoUpdatedClientObject<
     });
   }
 
+  /**
+   * Resolves empty pointer properties (declared with refsTo) from owner entities.
+   *
+   * @returns Promise resolving when all pointer properties are examined.
+   */
   private async checkForMissingRefs() {
+    const ownProto = Object.getPrototypeOf(this);
+    const refsToMap =
+      this.classParam && ownProto === this.classParam.prototype
+        ? setupClassAccessors(this.classParam).refsToMap
+        : null;
     for (const prop of this.properties as string[]) {
-      const pointer = getMetadataRecursive(
-        "refsTo",
-        this,
-        prop.toString(),
-      ) as string;
+      const pointer = (
+        refsToMap
+          ? refsToMap.get(prop)
+          : getMetadataRecursive("refsTo", this, prop.toString())
+      ) as string | undefined;
       if (pointer && !(this.data as Record<string, unknown>)?.[prop]) {
         const parts = pointer.split(":");
         if (parts.length === 2)
@@ -1768,6 +1802,15 @@ export abstract class AutoUpdatedClientObject<
     }
   }
 
+  /**
+   * Finds the owner entity that lists this entity and writes the owner ID into a pointer property.
+   * In an open reverse reference index scope, the lookup uses a cached reverse index.
+   * Otherwise, the lookup scans all entities of the owner manager.
+   *
+   * @param prop - Pointer property on this entity.
+   * @param pointer - Pointer parts: [owner class name, owner property name].
+   * @returns Promise resolving when the lookup completes.
+   */
   private async findMissingObjectReference(prop: string, pointer: string[]) {
     this.checkedMissingProperties ??= {};
     if (this.checkedMissingProperties[prop]) return;
@@ -1781,6 +1824,18 @@ export abstract class AutoUpdatedClientObject<
     if (!ac) return;
     const targetId = (this.data._id as any)?.toString?.() ?? String(this.data._id);
     const allObjects = ac.objectsAsArray;
+
+    const scope = reverseReferenceIndexScopes.get(this.parentManager.managers);
+    if (scope) {
+      const index = getReverseReferenceIndex(scope, pointer, allObjects);
+      const owner = index.owners.get(targetId);
+      if (owner) {
+        (this.data as Record<string, unknown>)[prop] = owner._id;
+        recordReverseReference(scope, this.className, prop, owner._id, this);
+      }
+      return;
+    }
+
     for (let i = 0; i < allObjects.length; i++) {
       const obj = allObjects[i];
       const rawData = (obj as any).data as Record<string, unknown> | undefined;
@@ -1860,17 +1915,20 @@ export function processIsRefProperties(
   newData: Record<string, unknown>,
   loggers: LoggersType,
 ): { allProps: string[]; newData: Record<string, unknown> } {
-  const props = (Reflect.getMetadata("props", target) as string[]) || [];
-  for (const prop of props) {
+  const meta = getRefPropertiesMeta(target);
+  const props = meta.props;
+  for (let i = 0; i < props.length; i++) {
+    const prop = props[i];
     const path = prefix ? `${prefix}.${prop}` : prop;
     allProps.push(path);
+    const value = instance[prop];
     newData[prop] =
-      instance[prop] && ObjectId.isValid(instance[prop] as any)
-        ? (instance[prop] as { toString(): string })?.toString()
-        : instance[prop];
-    if (Reflect.getMetadata("isRef", target, prop)) {
-      if (Array.isArray(instance[prop]))
-        newData[prop] = (instance[prop] as unknown[])
+      value && isValidObjectId(value)
+        ? (value as { toString(): string })?.toString()
+        : value;
+    if (meta.isRef[i]) {
+      if (Array.isArray(value))
+        newData[prop] = (value as unknown[])
           .map(
             (item: unknown) =>
               (
@@ -1882,28 +1940,103 @@ export function processIsRefProperties(
       else
         newData[prop] =
           (
-            instance[prop] as { _id?: { toString(): string } | string }
+            value as { _id?: { toString(): string } | string }
           )?._id?.toString() ??
-          (instance[prop] as { toString(): string })?.toString();
+          (value as { toString(): string })?.toString();
     }
-    const type = Reflect.getMetadata("design:type", target, prop) as {
-      prototype?: object;
-    };
-    if (type?.prototype) {
-      const nestedProps = Reflect.getMetadata("props", type.prototype);
-      if (nestedProps && instance[prop]) {
-        newData[prop] = processIsRefProperties(
-          instance[prop] as Record<string, unknown>,
-          type.prototype,
-          path,
-          allProps,
-          {},
-          loggers,
-        ).newData;
-      }
+    const nestedPrototype = meta.nestedPrototypes[i];
+    if (nestedPrototype && value) {
+      newData[prop] = processIsRefProperties(
+        value as Record<string, unknown>,
+        nestedPrototype,
+        path,
+        allProps,
+        {},
+        loggers,
+      ).newData;
     }
   }
   return { allProps, newData };
+}
+
+/**
+ * Reflection metadata resolved for one reflection target in processIsRefProperties.
+ */
+interface RefPropertiesMeta {
+  /** Registered property names (the "props" metadata). */
+  props: string[];
+  /** Flags that show which property at the same index is a reference. */
+  isRef: boolean[];
+  /** Prototype of the nested decorated type for the property at the same index, or null. */
+  nestedPrototypes: (object | null)[];
+}
+
+/**
+ * Cache of resolved reflection metadata, keyed by reflection target.
+ * Decorators write metadata on prototypes at class definition time only.
+ */
+const refPropertiesMetaCache = new WeakMap<object, RefPropertiesMeta>();
+
+/**
+ * Cache of property-name sets, keyed by the cached class property list from setupClassAccessors.
+ */
+const propertySetCache = new WeakMap<string[], Set<string>>();
+
+/**
+ * Resolves and caches the reflection metadata that processIsRefProperties reads.
+ * An instance target without own metadata resolves to its prototype.
+ * This removes repeated prototype-chain walks in reflect-metadata for each property.
+ *
+ * @param target - Reflection target (entity instance or prototype).
+ * @returns Cached metadata for the target.
+ */
+function getRefPropertiesMeta(target: object): RefPropertiesMeta {
+  let key: object = target;
+  const proto = Object.getPrototypeOf(target);
+  if (
+    proto &&
+    !Object.hasOwn(target, "constructor") &&
+    Reflect.getOwnMetadataKeys(target).length === 0
+  ) {
+    key = proto;
+  }
+  const cached = refPropertiesMetaCache.get(key);
+  if (cached) return cached;
+
+  const props = (Reflect.getMetadata("props", key) as string[]) || [];
+  const isRef: boolean[] = [];
+  const nestedPrototypes: (object | null)[] = [];
+  for (const prop of props) {
+    isRef.push(Boolean(Reflect.getMetadata("isRef", key, prop)));
+    const type = Reflect.getMetadata("design:type", key, prop) as
+      | { prototype?: object }
+      | undefined;
+    nestedPrototypes.push(
+      type?.prototype && Reflect.getMetadata("props", type.prototype)
+        ? type.prototype
+        : null,
+    );
+  }
+  const meta: RefPropertiesMeta = { props, isRef, nestedPrototypes };
+  refPropertiesMetaCache.set(key, meta);
+  return meta;
+}
+
+/**
+ * Determines whether a value is a valid BSON ObjectId input.
+ * Returns the same result as ObjectId.isValid.
+ * Does not construct (and catch) a throwing ObjectId for values that can never be valid.
+ *
+ * @param value - Value to examine.
+ * @returns True if ObjectId.isValid returns true for the value.
+ */
+export function isValidObjectId(value: unknown): boolean {
+  if (value == null) return false;
+  const kind = typeof value;
+  if (kind === "string") return ObjectId.isValid(value as string);
+  if (kind !== "object") return false;
+  if (!("id" in (value as object)) && !ArrayBuffer.isView(value)) return false;
+  return ObjectId.isValid(value as Parameters<typeof ObjectId.isValid>[0]);
 }
 
 /**
@@ -2090,4 +2223,146 @@ export function getMetadataRecursive(
     proto = Object.getPrototypeOf(proto);
   }
   return undefined;
+}
+
+/**
+ * Reverse index from a referenced entity ID to the first owner entity that lists the ID.
+ */
+interface ReverseReferenceIndex {
+  /** Owner array snapshot (objectsAsArray) that the index was built from. */
+  source: readonly IAutoUpdatedClientObject<any>[];
+  /** Map from referenced entity ID to the first owner in source order. */
+  owners: Map<string, IAutoUpdatedClientObject<any>>;
+  /** Map from owner entity to its position in source. */
+  positions: Map<IAutoUpdatedClientObject<any>, number>;
+}
+
+/**
+ * Bulk reference resolution scope that holds reverse indexes keyed by "ClassName:property".
+ */
+interface ReverseReferenceIndexScope {
+  /** Count of open begin calls for this scope. */
+  depth: number;
+  /** Reverse indexes keyed by "ClassName:property". */
+  indexes: Map<string, ReverseReferenceIndex>;
+}
+
+/**
+ * Open bulk reference resolution scopes, keyed by the shared managers record.
+ */
+const reverseReferenceIndexScopes = new WeakMap<object, ReverseReferenceIndexScope>();
+
+/**
+ * Converts a raw reference value (ID, ObjectId, or populated object) to an ID string.
+ *
+ * @param value - Raw reference value.
+ * @returns ID string, or undefined if the value has no ID.
+ */
+function referenceValueToId(value: unknown): string | undefined {
+  return (value as any)?._id?.toString?.() ?? (value as any)?.toString?.();
+}
+
+/**
+ * Opens a bulk reference resolution scope for a managers record.
+ * In the scope, missing back-reference lookups use cached reverse indexes.
+ * This replaces one full scan of the target manager for each entity (O(N*M)).
+ * Use the scope only when no external writer changes reference data (for example, during startup).
+ *
+ * @param managers - Shared managers record of the factory.
+ * @returns void
+ */
+export function beginReverseReferenceIndexScope(managers: object): void {
+  const scope = reverseReferenceIndexScopes.get(managers);
+  if (scope) {
+    scope.depth++;
+    return;
+  }
+  reverseReferenceIndexScopes.set(managers, { depth: 1, indexes: new Map() });
+}
+
+/**
+ * Closes a bulk reference resolution scope that beginReverseReferenceIndexScope opened.
+ * The cached reverse indexes are discarded when the last open call closes.
+ *
+ * @param managers - Shared managers record of the factory.
+ * @returns void
+ */
+export function endReverseReferenceIndexScope(managers: object): void {
+  const scope = reverseReferenceIndexScopes.get(managers);
+  if (!scope) return;
+  scope.depth--;
+  if (scope.depth <= 0) reverseReferenceIndexScopes.delete(managers);
+}
+
+/**
+ * Returns the reverse index for a "ClassName:property" pointer.
+ * Builds a new index when none exists or when the owner array changed.
+ *
+ * @param scope - Open bulk reference resolution scope.
+ * @param pointer - Pointer parts: [owner class name, owner property name].
+ * @param source - Current objectsAsArray of the owner manager.
+ * @returns Reverse index for the pointer.
+ */
+function getReverseReferenceIndex(
+  scope: ReverseReferenceIndexScope,
+  pointer: string[],
+  source: readonly IAutoUpdatedClientObject<any>[],
+): ReverseReferenceIndex {
+  const key = pointer[0] + ":" + pointer[1];
+  const existing = scope.indexes.get(key);
+  if (existing && existing.source === source) return existing;
+
+  const owners = new Map<string, IAutoUpdatedClientObject<any>>();
+  const positions = new Map<IAutoUpdatedClientObject<any>, number>();
+  const ownerProp = pointer[1];
+  for (let i = 0; i < source.length; i++) {
+    const obj = source[i];
+    positions.set(obj, i);
+    const rawData = (obj as any).data as Record<string, unknown> | undefined;
+    if (!rawData) continue;
+    const val = rawData[ownerProp];
+    if (!val) continue;
+    if (Array.isArray(val)) {
+      for (let j = 0; j < val.length; j++) {
+        const id = referenceValueToId(val[j]);
+        if (id !== undefined && !owners.has(id)) owners.set(id, obj);
+      }
+    } else {
+      const id = referenceValueToId(val);
+      if (id !== undefined && !owners.has(id)) owners.set(id, obj);
+    }
+  }
+  const index: ReverseReferenceIndex = { source, owners, positions };
+  scope.indexes.set(key, index);
+  return index;
+}
+
+/**
+ * Updates a cached reverse index after a back-reference write on an owner entity.
+ * Keeps the first-owner-in-source-order rule of the full scan.
+ *
+ * @param scope - Open bulk reference resolution scope.
+ * @param ownerClassName - Class name of the entity that received the write.
+ * @param ownerProp - Property that received the write.
+ * @param value - Written reference value.
+ * @param owner - Entity that received the write.
+ * @returns void
+ */
+function recordReverseReference(
+  scope: ReverseReferenceIndexScope,
+  ownerClassName: string,
+  ownerProp: string,
+  value: unknown,
+  owner: IAutoUpdatedClientObject<any>,
+): void {
+  const index = scope.indexes.get(ownerClassName + ":" + ownerProp);
+  if (!index) return;
+  const id = referenceValueToId(value);
+  if (id === undefined) return;
+  const ownerPos = index.positions.get(owner);
+  if (ownerPos === undefined) return;
+  const current = index.owners.get(id);
+  if (!current || ownerPos < (index.positions.get(current) ?? Infinity)) {
+    index.owners.set(id, owner);
+  }
 }

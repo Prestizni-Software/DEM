@@ -37,6 +37,8 @@ import { getModelForClass } from "@typegoose/typegoose";
 import { Paths } from "./CommonTypes.js";
 import {
   AutoUpdatedClientObject,
+  beginReverseReferenceIndexScope,
+  endReverseReferenceIndexScope,
   getMetadataRecursive,
   setupClassAccessors,
 } from "./AutoUpdatedClientObjectClass.js";
@@ -460,22 +462,40 @@ export async function AUSManagerFactory<
     }),
   );
 
-  // 3. Load references for all managers in parallel
-  await Promise.all(
-    Object.values(managers).map(async (manager) => {
-      try {
-        await (manager as any).loadReferences();
-      } catch (error: unknown) {
-        loggers.error?.(
-          "Error loading DB for manager: " +
-            (manager as any).className +
-            " (loadReferences)",
-        );
-        loggers.error?.(error instanceof Error ? error.message : String(error));
-        if (error instanceof Error && error.stack) loggers.error?.(error.stack);
-      }
-    }),
-  );
+  // 3. Load references for all managers in parallel.
+  // Phase 1 (initial references) completes on all managers before phase 2 starts.
+  // Phase 2 has no external writers, so missing back-reference lookups use cached reverse indexes.
+  const runReferencePhase = async (
+    phase: "loadInitialReferences" | "loadPointerReferences",
+  ): Promise<void> => {
+    await Promise.all(
+      (Object.values(managers) as AutoUpdateServerManager<any>[]).map(
+        async (manager) => {
+          try {
+            await manager[phase]();
+          } catch (error: unknown) {
+            loggers.error?.(
+              "Error loading DB for manager: " +
+                manager.className +
+                " (loadReferences)",
+            );
+            loggers.error?.(
+              error instanceof Error ? error.message : String(error),
+            );
+            if (error instanceof Error && error.stack)
+              loggers.error?.(error.stack);
+          }
+        },
+      ),
+    );
+  };
+  await runReferencePhase("loadInitialReferences");
+  beginReverseReferenceIndexScope(managers);
+  try {
+    await runReferencePhase("loadPointerReferences");
+  } finally {
+    endReverseReferenceIndexScope(managers);
+  }
 
   socket.on("connection", async (socket: Socket) => {
     loggers.debug?.(`Client connected: ${socket?.id}`);
@@ -671,13 +691,29 @@ export class AutoUpdateServerManager<
    * @returns Promise resolving when reference resolution completes.
    */
   public override async loadReferences(): Promise<void> {
-    // Phase 1: Initial reference resolution (including back-references/createdWithParent)
-    // This MUST happen after all managers have finished preLoad so that all objects exist in globalCache.
+    await this.loadInitialReferences();
+    await this.loadPointerReferences();
+  }
+
+  /**
+   * Phase 1 of reference loading: initial reference resolution on all entities.
+   * Includes back-references (createdWithParent) and queued parent changes.
+   * Run this only after all managers have finished preLoad, so that all objects exist in globalCache.
+   *
+   * @returns Promise resolving when phase 1 completes for all entities of this manager.
+   */
+  public async loadInitialReferences(): Promise<void> {
     await Promise.all(
       this.objectsAsArray.map((object) => object.isPreLoadedAsync()),
     );
+  }
 
-    // Phase 2: Resolve missing references (pointers) and set isLoaded_ = true
+  /**
+   * Phase 2 of reference loading: resolves missing pointers and marks the manager as loaded.
+   *
+   * @returns Promise resolving when phase 2 completes for all entities of this manager.
+   */
+  public async loadPointerReferences(): Promise<void> {
     await super.loadReferences();
   }
 
