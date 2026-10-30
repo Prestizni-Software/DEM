@@ -17,7 +17,8 @@ export interface ReconcilableClientManager<T extends IAutoUpdatedClientObjectBas
   manifest?: EntityDescriptor[];
   isLazyLoadingEnabled?: boolean;
   getObject(id: string): T | undefined;
-  deleteObject(id: any, isRemote?: boolean): Promise<any>;
+  deleteObject(id: any): Promise<any>;
+  evictObject?(id: any): Promise<any>;
   registerDynamicProperty?(prop: string): void;
   properties?: string[];
 }
@@ -198,7 +199,11 @@ export class ClientStateReconciler {
       if (change.type === "delete") {
         const existing = manager.getObject(id);
         if (existing) {
-          await manager.deleteObject(id, true);
+          if (typeof manager.evictObject === "function") {
+            await manager.evictObject(id);
+          } else {
+            await manager.deleteObject(id);
+          }
           manager.totalObjects = Math.max(0, manager.totalObjects - 1);
           manager.loadedObjects = Math.max(0, manager.loadedObjects - 1);
           if ("_cachedObjectsArray" in manager) {

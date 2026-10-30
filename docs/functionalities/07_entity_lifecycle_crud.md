@@ -7,20 +7,21 @@ Suppresses deletion echo storms during distributed entity removals.
 
 ## 2. Core Components
 - `createObject`: Instantiates new entity, persists database document, and emits creation broadcasts.
-- `deleteObject`: Destroys entity instance, cleans local caches, and invalidates relational pointers.
+- `deleteObject`: Issues remote entity deletion mutation across network and purges confirmed instances.
+- `evictObject`: Evicts entity instance from local cache and storage without outbound network emission.
 - `destroyImmediate`: Performs synchronous teardown of entity listeners and cache references.
-- `isRemote` deletion flag: Suppresses re-emitting deletion socket events on remote broadcasts.
 
 ## 3. Operational Rules
 - Persist new documents to MongoDB and assign monotonic revisions before client broadcast.
 - Emit `new<ClassName>` events containing entity identifiers or manifest descriptors.
 - Remove deleted entity identifiers from `globalCache` and parent manager collections.
-- Set `isRemote = true` when processing remote deletion events to prevent echo storms.
+- Execute `evictObject` when processing remote deletion socket events or delta sync to prevent deletion echo storms.
 
 ## 4. Key Interfaces
 - `createObject(data: Partial<T>): Promise<T>`: Entity creation method.
-- `deleteObject(_id: MongoId, isRemote?: boolean)`: Entity deletion method.
-- `destroy(once?: boolean, isRemote?: boolean)`: Entity instance destruction method.
+- `deleteObject(_id: MongoId)`: Active network mutation deletion method.
+- `evictObject(_id: MongoId)`: Local state cache eviction method.
+- `destroy(once?: boolean)`: Entity instance destruction method.
 
 ## 5. Edge Cases
 - Deleting an already deleted entity must return success with an idempotent confirmation.

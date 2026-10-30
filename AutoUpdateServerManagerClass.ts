@@ -1465,14 +1465,27 @@ export class AutoUpdateServerManager<
   }
 
   /**
-   * Deletes an entity from database, manager cache, and mutation tracker.
+   * Evicts an object from local server memory and cache without deleting from database or emitting broadcasts.
+   *
+   * @param _id - Identifier of object to evict.
+   * @returns Promise resolving to eviction outcome.
+   */
+  public override async evictObject(
+    _id: MongoId,
+  ): Promise<{ success: boolean; message: string }> {
+    this._cachedObjectsArray = null;
+    this.startupPayloadCache = null;
+    return await super.evictObject(_id);
+  }
+
+  /**
+   * Deletes an object by its identifier, cleans server cache, updates revision tracker, and purges from database.
    *
    * @param _id - Identifier of entity to delete.
    * @returns Promise resolving to deletion outcome object.
    */
   public override async deleteObject(
     _id: MongoId,
-    isRemote: boolean = false,
   ): Promise<{ success: boolean; message: string; code?: DEMErrorCode }> {
     this._cachedObjectsArray = null;
     this.startupPayloadCache = null;
@@ -1482,7 +1495,7 @@ export class AutoUpdateServerManager<
     const inMemoryObj = this.objects_[idStr];
 
     if (inMemoryObj && typeof inMemoryObj.destroy === "function") {
-      res = await super.deleteObject(_id, isRemote);
+      res = await super.deleteObject(_id);
     } else {
       // Unhydrated or lazy object: delete directly from database
       try {

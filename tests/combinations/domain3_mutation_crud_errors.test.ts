@@ -398,9 +398,9 @@ describe("Domain 3 Combination Tests: Real-Time Mutation, Dynamic Sockets, CRUD 
         object: entity,
       };
 
-      // Step 2: Execute remote deletion with isRemote set to true.
+      // Step 2: Execute local eviction via evictObject.
       mockSocket.emit.mockClear();
-      const outcome = await clientManager.deleteObject("remote-del-01", true);
+      const outcome = await clientManager.evictObject("remote-del-01");
 
       expect(outcome.success).toBe(true);
       expect((clientManager as any).objects_["remote-del-01"]).toBeUndefined();
@@ -421,19 +421,16 @@ describe("Domain 3 Combination Tests: Real-Time Mutation, Dynamic Sockets, CRUD 
       const clientManager = {
         managers: {},
         cache: { references: {} },
-        deleteObject: jest.fn(async (_id: MongoId, isRemote = false) => {
-          if (!isRemote) {
-            return new Promise((resolve) => {
-              mockSocket.emit(
-                `${EVENT_DELETE}MockClientEntity`,
-                _id,
-                (res: ServerResponse<undefined>) => {
-                  resolve({ success: res.success, message: res.message });
-                },
-              );
-            });
-          }
-          return { success: true, message: "Cleaned locally" };
+        deleteObject: jest.fn(async (_id: MongoId) => {
+          return new Promise((resolve) => {
+            mockSocket.emit(
+              `${EVENT_DELETE}MockClientEntity`,
+              _id,
+              (res: ServerResponse<undefined>) => {
+                resolve({ success: res.success, message: res.message });
+              },
+            );
+          });
         }),
       };
 
@@ -465,6 +462,61 @@ describe("Domain 3 Combination Tests: Real-Time Mutation, Dynamic Sockets, CRUD 
         "local-del-01",
         expect.any(Function),
       );
+    });
+
+    test("clientManager.deleteObject has single parameter and emits outbound delete event", async () => {
+      const mockSocket = createMockSocket();
+      const callbacks: DEMClientCallbacks<any> = {
+        update: jest.fn(),
+        delete: jest.fn(),
+        new: jest.fn(),
+        progress: jest.fn(),
+      };
+      const clientManager = new AutoUpdateClientManager(
+        MockClientEntity,
+        "MockClientEntity",
+        mockSocket,
+        loggers,
+        {} as any,
+        emitter,
+        callbacks,
+      );
+
+      const entity = new MockClientEntity(
+        MockClientEntity,
+        mockSocket,
+        { _id: "manager-del-01", name: "Target" } as any,
+        loggers,
+        "MockClientEntity",
+        clientManager,
+        callbacks,
+        emitter,
+      );
+
+      (clientManager as any).objects_["manager-del-01"] = entity;
+      globalCache.objects["manager-del-01"] = {
+        className: "MockClientEntity",
+        object: entity,
+      };
+
+      mockSocket.emit.mockImplementation(
+        (event: string, _data: any, ack: any) => {
+          if (event === `${EVENT_DELETE}MockClientEntity` && ack) {
+            ack({ success: true, message: "Deleted on server" });
+          }
+        },
+      );
+
+      const outcome = await clientManager.deleteObject("manager-del-01");
+      expect(outcome.success).toBe(true);
+      expect(mockSocket.emit).toHaveBeenCalledWith(
+        `${EVENT_DELETE}MockClientEntity`,
+        "manager-del-01",
+        expect.any(Function),
+      );
+      expect((clientManager as any).objects_["manager-del-01"]).toBeUndefined();
+      expect(globalCache.objects["manager-del-01"]).toBeUndefined();
+      expect((entity as any).data.Wiped).toBe(true);
     });
   });
 

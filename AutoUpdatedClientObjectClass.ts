@@ -1780,27 +1780,22 @@ export abstract class AutoUpdatedClientObject<
    * Destroys the entity and notifies server socket of deletion.
    *
    * @param once - Internal flag preventing infinite recursion.
-   * @param isRemote - Whether the deletion originates from a remote server broadcast or delta sync.
    * @returns Promise resolving to deletion outcome.
    */
   public async destroy(
     once = false,
-    isRemote = false,
   ): Promise<{ success: boolean; message: string; code?: DEMErrorCode }> {
     if (!once) {
-      return isRemote
-        ? await (this.parentManager as any).deleteObject(this.data._id.toString(), true)
-        : await this.parentManager.deleteObject(this.data._id.toString());
-    }
-    if (isRemote) {
-      await this.wipeSelf();
-      return { success: true, message: "Cleaned locally" };
+      return await this.parentManager.deleteObject(this.data._id.toString());
     }
     return new Promise((resolve) => {
       this.socket.emit(
         EVENT_DELETE + this.className,
         this.data._id,
-        (res: ServerResponse<undefined>) => {
+        async (res: ServerResponse<undefined>) => {
+          if (res?.success) {
+            await this.wipeSelf();
+          }
           resolve({
             success: res?.success ?? false,
             code: (res as any)?.code,

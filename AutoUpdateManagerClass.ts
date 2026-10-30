@@ -140,18 +140,16 @@ export abstract class AutoUpdateManager<
    * Deletes an object by its identifier, destroys the instance, and clears global caches.
    *
    * @param _id - The unique identifier of the object to delete.
-   * @param isRemote - Whether the deletion originates from a remote source.
    * @returns A promise resolving to the deletion result object.
    */
   public async deleteObject(
     _id: MongoId,
-    isRemote: boolean = false,
   ): Promise<{ success: boolean; message: string; code?: DEMErrorCode }> {
     const _idStr = _id.toString();
     const o = this.objects_[_idStr];
     let res: { success: boolean; message: string } | undefined;
     if (o && typeof o.destroy === "function") {
-      res = await (o as any).destroy(true, isRemote);
+      res = await (o as any).destroy(true);
     }
     if (res?.success || !o || typeof o?.destroy !== "function") {
       delete this.objects_[_idStr];
@@ -159,6 +157,30 @@ export abstract class AutoUpdateManager<
     }
     o?.callbacks?.delete?.(this);
     return res ?? { success: true, message: "Already gone" };
+  }
+
+  /**
+   * Evicts an object from local memory and caches without emitting outbound network mutation events.
+   *
+   * @param _id - The unique identifier of the object to evict.
+   * @returns A promise resolving to the eviction result object.
+   */
+  public async evictObject(
+    _id: MongoId,
+  ): Promise<{ success: boolean; message: string }> {
+    const _idStr = _id.toString();
+    const o = this.objects_[_idStr];
+    if (o) {
+      if (typeof (o as any).destroyImmediate === "function") {
+        (o as any).destroyImmediate();
+      } else if (typeof (o as any).wipeSelf === "function") {
+        await (o as any).wipeSelf();
+      }
+    }
+    delete this.objects_[_idStr];
+    delete globalCache.objects[_idStr];
+    o?.callbacks?.delete?.(this);
+    return { success: true, message: "Cleaned locally" };
   }
 
   /**

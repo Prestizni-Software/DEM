@@ -16,7 +16,8 @@ export interface IAutoUpdateManager<T extends IAutoUpdatedClientObjectBase> {
   >;
   getObject(_id?: MongoId): T | null | undefined;
   loadObject?(_id: MongoId, options?: { depth?: number }): Promise<T>;
-  deleteObject(_id: MongoId, isRemote?: boolean): Promise<{ success: boolean; message: string; code?: DEMErrorCode }>;
+  deleteObject(_id: MongoId): Promise<{ success: boolean; message: string; code?: DEMErrorCode }>;
+  evictObject(_id: MongoId): Promise<{ success: boolean; message: string }>;
   readonly objectsAsArray: T[];
   readonly isLoaded: boolean;
   readonly manifest?: EntityDescriptor[];

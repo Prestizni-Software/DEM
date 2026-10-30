@@ -484,7 +484,7 @@ export class AutoUpdateClientManager<
       try {
         this.totalObjects -= 1;
         this.loadedObjects -= 1;
-        await this.deleteObject(id, true);
+        await this.evictObject(id);
       } catch (error: unknown) {
         this.loggers.error(
           "Error applying object deletion from manager " +
@@ -511,15 +511,13 @@ export class AutoUpdateClientManager<
   }
 
   /**
-   * Deletes an object by ID from local cache, socket events, and persistent storage adapter.
+   * Deletes an object by ID from local cache, socket events, and persistent storage adapter via remote mutation.
    *
    * @param _id - Identifier of object to delete.
-   * @param isRemote - Whether the deletion originates from a remote server broadcast or delta sync.
    * @returns Promise resolving to deletion outcome.
    */
   public override async deleteObject(
     _id: MongoId,
-    isRemote: boolean = false,
   ): Promise<{ success: boolean; message: string; code?: DEMErrorCode }> {
     const _idStr = _id.toString();
     this.socket.off(EVENT_UPDATE + this.className + _idStr);
@@ -527,7 +525,33 @@ export class AutoUpdateClientManager<
     if (this.manifest && Array.isArray(this.manifest)) {
       this.manifest = this.manifest.filter((m) => String(m._id) !== _idStr);
     }
-    const res = await super.deleteObject(_id, isRemote);
+    const res = await super.deleteObject(_id);
+    if (this.storageAdapter) {
+      await ClientStateReconciler.persistToStorage(
+        this as any,
+        this.lastRevision,
+        this.storageAdapter,
+      );
+    }
+    return res;
+  }
+
+  /**
+   * Evicts an object by ID from local cache, socket events, and persistent storage adapter without network emission.
+   *
+   * @param _id - Identifier of object to evict.
+   * @returns Promise resolving to eviction outcome.
+   */
+  public override async evictObject(
+    _id: MongoId,
+  ): Promise<{ success: boolean; message: string }> {
+    const _idStr = _id.toString();
+    this.socket.off(EVENT_UPDATE + this.className + _idStr);
+    this._cachedObjectsArray = null;
+    if (this.manifest && Array.isArray(this.manifest)) {
+      this.manifest = this.manifest.filter((m) => String(m._id) !== _idStr);
+    }
+    const res = await super.evictObject(_id);
     if (this.storageAdapter) {
       await ClientStateReconciler.persistToStorage(
         this as any,
