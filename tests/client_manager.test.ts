@@ -88,12 +88,13 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
       }
     });
 
-    const managers = await AUCManagerFactory(
-      { Test: TestClientObject },
-      loggers,
-      mockSocket
-    );
-    Object.values(managers).forEach(m => managersToClose.push(m));
+    await expect(
+      AUCManagerFactory(
+        { Test: TestClientObject },
+        loggers,
+        mockSocket
+      )
+    ).rejects.toThrow("Load error");
     expect(loggers.error).toHaveBeenCalled();
   });
 

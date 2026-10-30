@@ -24,6 +24,7 @@ import {
   toDEMError,
   EntityDescriptor,
   LazyLoadingOptions,
+  DEMClientOptions,
 } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
 import {
@@ -57,7 +58,10 @@ const inFlightFactories = new WeakMap<Socket, Promise<WrappedInstances<any>>>();
  * @param callbacks - Optional event callbacks (new, update, delete, progress).
  * @param versionOptions - Version compatibility validation options.
  * @param deltaSyncOptions - Delta sync storage and caching configuration.
+ * @param lazyLoadingOptions - Lazy loading manifest and hydration configuration.
+ * @param clientOptions - Optional client options, timeout in ms, or per-manager options.
  * @returns Promise resolving to the initialized client manager map.
+ * @throws {DEMError} Throws DEMError when manager loading fails or times out.
  */
 export async function AUCManagerFactory<
   T extends Record<string, Constructor<IAutoUpdatedClientObjectBase>>,
@@ -78,6 +82,10 @@ export async function AUCManagerFactory<
     | LazyLoadingOptions
     | boolean
     | Partial<Record<keyof T, LazyLoadingOptions | boolean>>,
+  clientOptions?:
+    | DEMClientOptions
+    | number
+    | Partial<Record<keyof T, DEMClientOptions | number>>,
 ): Promise<WrappedInstances<T>> {
   if (socket && inFlightFactories.has(socket)) {
     loggers.debug?.(
@@ -147,6 +155,21 @@ export async function AUCManagerFactory<
           key in lazyLoadingOptions
             ? (lazyLoadingOptions as any)[key]
             : (lazyLoadingOptions as any);
+        let managerClientOptions: DEMClientOptions | number | undefined;
+        if (typeof clientOptions === "number") {
+          managerClientOptions = clientOptions;
+        } else if (typeof clientOptions === "object" && clientOptions !== null) {
+          if (
+            "startupTimeoutMs" in clientOptions &&
+            typeof (clientOptions as DEMClientOptions).startupTimeoutMs === "number"
+          ) {
+            managerClientOptions = clientOptions as DEMClientOptions;
+          } else if (key in clientOptions) {
+            managerClientOptions = (
+              clientOptions as Record<string, DEMClientOptions | number>
+            )[key];
+          }
+        }
         const c = new AutoUpdateClientManager(
           Model,
           key,
@@ -165,6 +188,7 @@ export async function AUCManagerFactory<
           versionOptions,
           deltaSyncOptions,
           managerLazyOpts,
+          managerClientOptions,
         );
         managers[key] = c as any;
       } catch (error: unknown) {
@@ -205,13 +229,9 @@ export async function AUCManagerFactory<
             "ms",
         );
       } catch (error: unknown) {
-        if (
-          error instanceof Error &&
-          error.message.includes(
-            "Local type does not match server type for manager",
-          )
-        )
-          throw error;
+        if (temp2.f === 0) {
+          temp2.f = Date.now();
+        }
         let message = "Error loading data from server for manager: " + key;
         message +=
           "\n " + (error instanceof Error ? error.message : String(error));
@@ -219,6 +239,7 @@ export async function AUCManagerFactory<
         loggers.error?.(message);
         if (error instanceof Error && error.stack)
           loggers.error?.(message + "\n" + error.stack);
+        throw error;
       }
     });
 
@@ -293,6 +314,10 @@ export class AutoUpdateClientManager<
   private _reconnectHandler?: () => Promise<void>;
   private _deauthHandler?: (payload?: unknown) => void;
   public _isClosed: boolean = false;
+  /**
+   * Timeout in milliseconds for startup data loading from server (default: 5000 ms).
+   */
+  public startupTimeoutMs: number = 5000;
 
   /**
    * Initializes an AutoUpdateClientManager instance.
@@ -307,6 +332,7 @@ export class AutoUpdateClientManager<
    * @param versionOptions - Version compatibility options.
    * @param deltaSyncOptions - Delta sync storage adapter configuration.
    * @param lazyLoadingOptions - Lazy loading manifest and hydration configuration.
+   * @param clientOptions - Optional client options, startup timeout in milliseconds, or configuration object.
    */
   constructor(
     classParam: Constructor<T>,
@@ -319,6 +345,7 @@ export class AutoUpdateClientManager<
     versionOptions?: DEMVersionOptions,
     deltaSyncOptions?: ClientDeltaSyncOptions | boolean,
     lazyLoadingOptions?: LazyLoadingOptions | boolean,
+    clientOptions?: DEMClientOptions | number,
   ) {
     if (!classParam)
       throw new DEMError(
@@ -358,6 +385,14 @@ export class AutoUpdateClientManager<
       }
     } else {
       this.deltaSyncEnabled = false;
+    }
+
+    if (typeof clientOptions === "number") {
+      this.startupTimeoutMs = clientOptions;
+    } else if (typeof clientOptions === "object" && clientOptions !== null) {
+      if (typeof clientOptions.startupTimeoutMs === "number") {
+        this.startupTimeoutMs = clientOptions.startupTimeoutMs;
+      }
     }
 
     this._reconnectHandler = async () => {
@@ -566,9 +601,16 @@ export class AutoUpdateClientManager<
    * Fetches startup data from the server or applies delta updates from local storage.
    *
    * @param t - Optional benchmark timer tracking object.
+   * @param timeoutMs - Optional timeout in milliseconds override for this load operation.
    * @returns Promise resolving when data has been loaded and initialized.
+   * @throws {DEMError} Throws DEMErrorCode.TIMEOUT if data loading exceeds timeout.
+   * @throws {DEMError} Throws DEMErrorCode.STARTUP_FAILED if server rejected startup.
+   * @throws {DEMError} Throws DEMErrorCode.VERSION_MISMATCH if versions are incompatible.
    */
-  async loadFromServer(t?: { s: number; f: number }): Promise<void> {
+  async loadFromServer(
+    t?: { s: number; f: number },
+    timeoutMs?: number,
+  ): Promise<void> {
     let hasRestoredFromStorage = false;
     if (this.storageAdapter && Object.keys(this.objects_).length === 0) {
       const restored = await ClientStateReconciler.restoreFromStorage(
@@ -584,15 +626,17 @@ export class AutoUpdateClientManager<
       }
     }
 
+    const effectiveTimeout = timeoutMs ?? this.startupTimeoutMs ?? 5000;
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
+        if (t) t.f = Date.now();
         reject(
           new DEMError(
             DEMErrorCode.TIMEOUT,
             `Timeout waiting for startup data from server for ${this.className}`,
           ),
         );
-      }, 5000);
+      }, effectiveTimeout);
 
       const startupPayload: Record<string, unknown> = {
         clientVersion: DEM_CLIENT_VERSION,
@@ -622,6 +666,7 @@ export class AutoUpdateClientManager<
           const t1 = Date.now();
           clearTimeout(timer);
           if (!res || !res.success) {
+            if (t) t.f = Date.now();
             const err = res?.message || "Failed to load startup data";
             this.loggers.error("Error loading ids from server for manager");
             this.loggers.error(err);
@@ -643,6 +688,7 @@ export class AutoUpdateClientManager<
               this.versionOptions,
             );
             if (!verResult.compatible) {
+              if (t) t.f = Date.now();
               const errMsg =
                 verResult.message ||
                 `DEM Version Incompatibility: Client (${DEM_CLIENT_VERSION}) is incompatible with Server (${data.version})`;
@@ -667,6 +713,7 @@ export class AutoUpdateClientManager<
               `Connected to DEM server for ${this.className} without version payload.`,
             );
             if (this.versionOptions?.strictVersionMatch) {
+              if (t) t.f = Date.now();
               const errMsg = `Strict DEM version match required for ${this.className}, but server did not provide a version.`;
               this.loggers.error?.(errMsg);
               reject(new DEMError(DEMErrorCode.VERSION_MISMATCH, errMsg));
@@ -800,6 +847,7 @@ export class AutoUpdateClientManager<
             { properties: serverPropsCopy },
           );
           if (!allowedToLoad) {
+            if (t) t.f = Date.now();
             this.loggers.error?.(errorMessage);
             reject(new DEMError(DEMErrorCode.STARTUP_FAILED, errorMessage));
             return;

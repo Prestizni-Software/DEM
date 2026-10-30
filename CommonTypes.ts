@@ -214,6 +214,16 @@ export interface EntityDescriptor {
 }
 
 /**
+ * Configuration options for DEM client manager instances.
+ */
+export interface DEMClientOptions {
+  /**
+   * Timeout in milliseconds for startup data loading from server (default: 5000 ms).
+   */
+  startupTimeoutMs?: number;
+}
+
+/**
  * Configuration options governing smart lazy loading behavior.
  */
 export interface LazyLoadingOptions {
