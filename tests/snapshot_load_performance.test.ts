@@ -287,3 +287,157 @@ describe("Part 4: restoreAndRevalidate", () => {
   });
 });
 
+describe("Part 5: Delta Sync Compaction and Callback Batching", () => {
+  it("coalesces redundant change entries per entity in coalesceChanges", () => {
+    const rawChanges = [
+      // Entity 1: created then updated 3 times -> single create with merged data
+      { revision: 1, type: "create" as const, id: "e1", data: { _id: "e1", name: "v1", count: 0 }, timestamp: 1, estimatedBytes: 20 },
+      { revision: 2, type: "update" as const, id: "e1", data: { name: "v2" }, timestamp: 2, estimatedBytes: 20 },
+      { revision: 3, type: "update" as const, id: "e1", data: { count: 1 }, timestamp: 3, estimatedBytes: 20 },
+      { revision: 4, type: "update" as const, id: "e1", data: { name: "v3", extra: true }, timestamp: 4, estimatedBytes: 20 },
+      // Entity 2: created, updated, then deleted -> completely omitted
+      { revision: 5, type: "create" as const, id: "e2", data: { _id: "e2", name: "temp" }, timestamp: 5, estimatedBytes: 20 },
+      { revision: 6, type: "update" as const, id: "e2", data: { name: "temp2" }, timestamp: 6, estimatedBytes: 20 },
+      { revision: 7, type: "delete" as const, id: "e2", timestamp: 7, estimatedBytes: 20 },
+      // Entity 3: existing entity updated 100 times -> single update with merged data
+      ...Array.from({ length: 100 }, (_, i) => ({
+        revision: 8 + i,
+        type: "update" as const,
+        id: "e3",
+        data: { step: i + 1, [`k${i % 5}`]: i },
+        timestamp: 8 + i,
+        estimatedBytes: 20,
+      })),
+      // Entity 4: existing entity updated then deleted -> single delete
+      { revision: 108, type: "update" as const, id: "e4", data: { name: "beforeDel" }, timestamp: 108, estimatedBytes: 20 },
+      { revision: 109, type: "delete" as const, id: "e4", timestamp: 109, estimatedBytes: 20 },
+    ];
+
+    const compacted = ClientStateReconciler.coalesceChanges(rawChanges);
+    expect(compacted.length).toBe(3);
+
+    const c1 = compacted.find((c) => c.id === "e1");
+    expect(c1?.type).toBe("create");
+    expect(c1?.revision).toBe(4);
+    expect(c1?.data).toEqual({ _id: "e1", name: "v3", count: 1, extra: true });
+
+    const c2 = compacted.find((c) => c.id === "e2");
+    expect(c2).toBeUndefined();
+
+    const c3 = compacted.find((c) => c.id === "e3");
+    expect(c3?.type).toBe("update");
+    expect(c3?.revision).toBe(107);
+    expect(c3?.data).toEqual({
+      step: 100,
+      k0: 95,
+      k1: 96,
+      k2: 97,
+      k3: 98,
+      k4: 99,
+    });
+
+    const c4 = compacted.find((c) => c.id === "e4");
+    expect(c4?.type).toBe("delete");
+    expect(c4?.revision).toBe(109);
+  });
+
+  it("applies 500 sequential updates across 10 entities in O(U * K) instead of O(C * K) and supports batchCallbacks", async () => {
+    const socket = { on: jest.fn(), off: jest.fn(), emit: jest.fn() };
+    const loggers = { info: jest.fn(), debug: jest.fn(), error: jest.fn(), warn: jest.fn() };
+    const emitter = new EventEmitter();
+    const updateCb = jest.fn();
+    const newCb = jest.fn();
+    const deleteCb = jest.fn();
+    const batchUpdateCb = jest.fn();
+
+    const manager: ReconcilableClientManager<any> = {
+      className: "Subordinate",
+      properties: ["_id", "name"],
+      classParam: Subordinate,
+      socket,
+      loggers,
+      callbacks: {
+        new: newCb,
+        update: updateCb,
+        delete: deleteCb,
+        batchUpdate: batchUpdateCb,
+      },
+      emitter,
+      objects_: {},
+      get objectsAsArray() {
+        return Object.values(this.objects_);
+      },
+      totalObjects: 10,
+      loadedObjects: 10,
+      isLoaded_: true,
+      getObject(id: string) {
+        return this.objects_[id];
+      },
+      deleteObject: jest.fn(async (id: string) => {
+        delete manager.objects_[id];
+      }),
+    };
+
+    for (let i = 0; i < 10; i++) {
+      const id = `sub_${i}`;
+      manager.objects_[id] = new (Subordinate as any)(
+        Subordinate,
+        socket,
+        { _id: id, name: `Initial_${i}` },
+        loggers,
+        "Subordinate",
+        manager,
+        manager.callbacks,
+        emitter,
+      );
+    }
+    await Promise.resolve();
+
+    // Generate 500 updates (50 per entity)
+    const changes = [];
+    for (let i = 0; i < 500; i++) {
+      const targetIdx = i % 10;
+      changes.push({
+        revision: i + 1,
+        type: "update" as const,
+        id: `sub_${targetIdx}`,
+        data: { name: `Updated_${targetIdx}_rev_${i}` },
+        timestamp: i + 1,
+        estimatedBytes: 32,
+      });
+    }
+
+    const setValueSpy = jest.spyOn(
+      Object.getPrototypeOf(Object.getPrototypeOf(manager.objects_["sub_0"])),
+      "setValue__",
+    );
+
+    await ClientStateReconciler.applyDelta(
+      manager,
+      { status: "delta", revision: 500, changes },
+      undefined,
+      { batchCallbacks: true },
+    );
+
+    // Because of compaction, setValue__ is called only once per unique entity (10 times total, not 500!)
+    expect(setValueSpy).toHaveBeenCalledTimes(10);
+    setValueSpy.mockRestore();
+
+    // Because batchCallbacks: true is enabled, per-property updateCb is suppressed and batchUpdateCb fires once
+    expect(updateCb).not.toHaveBeenCalled();
+    expect(batchUpdateCb).toHaveBeenCalledTimes(1);
+    expect(batchUpdateCb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        updated: expect.any(Array),
+        created: [],
+        deletedIds: [],
+      }),
+    );
+    expect(batchUpdateCb.mock.calls[0][0].updated.length).toBe(10);
+
+    for (let i = 0; i < 10; i++) {
+      expect(manager.objects_[`sub_${i}`].name).toBe(`Updated_${i}_rev_${490 + i}`);
+    }
+  });
+});
+

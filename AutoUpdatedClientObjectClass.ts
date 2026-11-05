@@ -41,6 +41,9 @@ export type DEMClientCallbacks<T extends object> = {
   ) => Promise<void> | void;
   delete: (manager: IAutoUpdateManager<any>) => Promise<void> | void;
   progress: (percent: number) => void;
+  batchUpdate?: (
+    summary: import("./sync/types.js").DeltaBatchSummary<IAutoUpdatedClientObject<T>>,
+  ) => Promise<void> | void;
 };
 
 export const DEM_RAW_ARRAY: unique symbol = Symbol("DEM_RAW_ARRAY");

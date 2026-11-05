@@ -54,6 +54,15 @@ Four parts. Execute them in order. Each part starts with a failing test.
 - The caller decides how to load the full data.
 - Test: the result returns before `fetchDelta` resolves. A late delta updates the objects.
 
+### Part 5: Delta Sync Compaction & Callback Batching
+
+- Add `ClientStateReconciler.coalesceChanges(changes)` and `ServerChangeTracker.coalesceEntries(changes)`.
+- Compact chronological delta entries per entity ID before applying them on the client or sending them on startup.
+- Add `ApplyDeltaOptions` (`coalesce`, `batchCallbacks`) and `DeltaBatchSummary` (`batchUpdate` callback).
+- Complexity reduction:
+  - Unbatched: $\mathcal{O}(C \cdot K)$ async `writeQueue` ticks and $\mathcal{O}(C \cdot K \cdot N_{\text{UI}})$ UI re-renders, where $C$ is total change entries, $K$ is properties per entry, and $N_{\text{UI}}$ is collection size.
+  - Batched: $\mathcal{O}(C)$ compaction + $\mathcal{O}(U \cdot K)$ property writes (where $U \le N$ is unique mutated entities) + $\mathcal{O}(1)$ batch callback invocation.
+
 ## Application follow-up (`ukolnicek-geodeta`, outside this repo)
 
 1. Publish `DB_HANDLER` after hydration. Run the delta sync in the background.

@@ -71,6 +71,42 @@ export interface ClientDeltaSyncOptions {
    * Optional custom identifier for cache namespace.
    */
   cacheKeyPrefix?: string;
+  /**
+   * When true, suppresses per-property callbacks during delta application and invokes a single batch summary callback.
+   */
+  batchCallbacks?: boolean;
+}
+
+/**
+ * Summary of mutations applied during a batched delta synchronization pass.
+ */
+export interface DeltaBatchSummary<T = unknown> {
+  /**
+   * Entities created during the delta pass.
+   */
+  created: T[];
+  /**
+   * Entities updated during the delta pass along with their changed property keys.
+   */
+  updated: Array<{ object: T; keys: string[] }>;
+  /**
+   * Identifiers of entities deleted during the delta pass.
+   */
+  deletedIds: string[];
+}
+
+/**
+ * Options controlling how `ClientStateReconciler.applyDelta` processes changes and dispatches callbacks.
+ */
+export interface ApplyDeltaOptions {
+  /**
+   * Coalesces multiple mutations per entity into a single net mutation before applying (default: true).
+   */
+  coalesce?: boolean;
+  /**
+   * Suppresses per-property/per-entity callbacks during the loop and fires a single summary notification at the end (default: false).
+   */
+  batchCallbacks?: boolean;
 }
 
 export interface ServerDeltaSyncOptions extends ChangeLogOptions {

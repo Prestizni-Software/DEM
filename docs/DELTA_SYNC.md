@@ -193,11 +193,12 @@ await ClientStateReconciler.persistToStorage(
   storage,
 );
 
-// Apply a delta sync payload manually
+// Apply a delta sync payload manually with change coalescing and callback batching
 await ClientStateReconciler.applyDelta(
   clientManager,
   deltaPayload,
   storage,
+  { coalesce: true, batchCallbacks: true },
 );
 ```
 

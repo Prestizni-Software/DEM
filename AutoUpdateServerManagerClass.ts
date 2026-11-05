@@ -1010,6 +1010,7 @@ export class AutoUpdateServerManager<
             const changesResult = this.changeTracker.getChangesSince(
               clientLastRev,
               allowedIdsSet,
+              true,
             );
 
             if (!changesResult.isExpired) {

@@ -173,11 +173,13 @@ export class ServerChangeTracker<T = unknown> {
    *
    * @param clientRevision - The last revision known by the client.
    * @param allowedIds - Optional Set of allowed IDs for permission filtering.
+   * @param coalesce - When true, compacts multiple entries per entity ID into a single net entry.
    * @returns Object containing isExpired flag and array of change entries.
    */
   public getChangesSince(
     clientRevision: number,
     allowedIds?: Set<string>,
+    coalesce = false,
   ): { isExpired: boolean; changes: ChangeEntry<T>[] } {
     if (clientRevision >= this.currentRevision) {
       return { isExpired: false, changes: [] };
@@ -193,10 +195,63 @@ export class ServerChangeTracker<T = unknown> {
       filtered = filtered.filter((e) => allowedIds.has(e.id));
     }
 
+    if (coalesce && filtered.length > 1) {
+      filtered = this.coalesceEntries(filtered);
+    }
+
     return {
       isExpired: false,
       changes: filtered,
     };
+  }
+
+  /**
+   * Coalesces a chronological list of change entries into at most one net entry per entity ID.
+   *
+   * @param changes - Chronological change entries.
+   * @returns Compacted array of change entries.
+   */
+  public coalesceEntries(changes: ChangeEntry<T>[]): ChangeEntry<T>[] {
+    const byId = new Map<string, ChangeEntry<T>>();
+    for (const change of changes) {
+      const prev = byId.get(change.id);
+      if (!prev) {
+        byId.set(change.id, {
+          ...change,
+          data: change.data ? { ...change.data } : undefined,
+        });
+        continue;
+      }
+      if (change.type === "delete") {
+        if (prev.type === "create") {
+          byId.delete(change.id);
+        } else {
+          byId.set(change.id, { ...change, data: undefined });
+        }
+      } else if (change.type === "create") {
+        byId.set(change.id, {
+          ...change,
+          data: change.data ? { ...change.data } : undefined,
+        });
+      } else if (change.type === "update") {
+        if (prev.type === "create" || prev.type === "update") {
+          const mergedData = { ...(prev.data ?? {}), ...(change.data ?? {}) } as Partial<T>;
+          byId.set(change.id, {
+            ...prev,
+            revision: change.revision,
+            timestamp: change.timestamp,
+            data: mergedData,
+            estimatedBytes: 40 + change.id.length * 2 + estimateObjectSizeBytes(mergedData),
+          });
+        } else {
+          byId.set(change.id, {
+            ...change,
+            data: change.data ? { ...change.data } : undefined,
+          });
+        }
+      }
+    }
+    return Array.from(byId.values());
   }
 
   /**

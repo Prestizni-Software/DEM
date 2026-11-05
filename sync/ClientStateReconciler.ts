@@ -1,4 +1,10 @@
-import { ChangeEntry, DeltaSyncPayload, StoredManagerState } from "./types.js";
+import {
+  ApplyDeltaOptions,
+  ChangeEntry,
+  DeltaBatchSummary,
+  DeltaSyncPayload,
+  StoredManagerState,
+} from "./types.js";
 import { IClientStorageAdapter } from "./storage/IClientStorageAdapter.js";
 import { EntityDescriptor, globalCache, IAutoUpdatedClientObjectBase } from "../CommonTypes.js";
 
@@ -277,19 +283,104 @@ export class ClientStateReconciler {
   }
 
   /**
+   * Coalesces a chronological list of change entries into at most one net entry per entity ID.
+   * Reduces redundant property updates from O(C * K) to O(U * K) where U is unique mutated entities.
+   *
+   * @param changes - Chronological array of change entries.
+   * @param preserveCreateDeleteLifecycle - When true, keeps create, update, and delete steps distinct when a created entity is also updated or deleted in the same payload.
+   * @returns Compacted array of change entries.
+   */
+  public static coalesceChanges<T = unknown>(
+    changes: ChangeEntry<T>[],
+    preserveCreateDeleteLifecycle = false,
+  ): ChangeEntry<T>[] {
+    if (changes.length <= 1) return changes;
+    const byId = new Map<string, ChangeEntry<T>>();
+    const extraEntries: ChangeEntry<T>[] = [];
+    for (const change of changes) {
+      const prev = byId.get(change.id);
+      if (!prev) {
+        byId.set(change.id, {
+          ...change,
+          data: change.data ? { ...change.data } : undefined,
+        });
+        continue;
+      }
+      if (change.type === "delete") {
+        if (prev.type === "create") {
+          if (preserveCreateDeleteLifecycle) {
+            extraEntries.push(prev);
+            byId.set(change.id, { ...change, data: undefined });
+          } else {
+            byId.delete(change.id);
+          }
+        } else if (prev.type === "update" && preserveCreateDeleteLifecycle) {
+          extraEntries.push(prev);
+          byId.set(change.id, { ...change, data: undefined });
+        } else {
+          byId.set(change.id, { ...change, data: undefined });
+        }
+      } else if (change.type === "create") {
+        byId.set(change.id, {
+          ...change,
+          data: change.data ? { ...change.data } : undefined,
+        });
+      } else if (change.type === "update") {
+        if (prev.type === "create" && preserveCreateDeleteLifecycle) {
+          extraEntries.push(prev);
+          byId.set(change.id, {
+            ...change,
+            data: change.data ? { ...change.data } : undefined,
+          });
+        } else if (prev.type === "create" || prev.type === "update") {
+          byId.set(change.id, {
+            ...prev,
+            revision: change.revision,
+            timestamp: change.timestamp,
+            data: { ...(prev.data ?? {}), ...(change.data ?? {}) } as Partial<T>,
+          });
+        } else {
+          byId.set(change.id, {
+            ...change,
+            data: change.data ? { ...change.data } : undefined,
+          });
+        }
+      }
+    }
+    if (extraEntries.length === 0) {
+      return Array.from(byId.values());
+    }
+    return [...extraEntries, ...byId.values()].sort((a, b) => a.revision - b.revision);
+  }
+
+  /**
    * Applies a delta changes payload to the in-memory client manager.
-   * Handles creates, updates, and deletes with callback dispatch and local state persistence.
+   * Coalesces redundant per-entity mutations by default and supports optional callback batching.
    *
    * @param manager - Reconcilable client manager instance.
    * @param payload - Delta sync payload containing status, revision, and changes array.
    * @param storageAdapter - Optional storage adapter to persist reconciled state.
+   * @param options - Optional settings for change coalescing and callback batching.
    */
   public static async applyDelta<T extends IAutoUpdatedClientObjectBase>(
     manager: ReconcilableClientManager<T>,
     payload: DeltaSyncPayload<any>,
     storageAdapter?: IClientStorageAdapter,
+    options?: ApplyDeltaOptions,
   ): Promise<void> {
-    const changes = payload.changes ?? [];
+    const rawChanges = payload.changes ?? [];
+    const shouldCoalesce = options?.coalesce !== false;
+    const batchCallbacks = options?.batchCallbacks === true;
+    const changes = shouldCoalesce
+      ? this.coalesceChanges(rawChanges, !batchCallbacks && options?.coalesce !== true)
+      : rawChanges;
+
+    const batchSummary: DeltaBatchSummary<T> = {
+      created: [],
+      updated: [],
+      deletedIds: [],
+    };
+    const itemCallbacks = batchCallbacks ? undefined : manager.callbacks;
 
     for (const change of changes) {
       const id = change.id;
@@ -312,7 +403,8 @@ export class ClientStateReconciler {
               (m) => String(m._id) !== String(id),
             );
           }
-          manager.callbacks?.delete?.(manager as any);
+          batchSummary.deletedIds.push(id);
+          itemCallbacks?.delete?.(manager as any);
         }
       } else if (change.type === "create") {
         let existing = manager.getObject(id);
@@ -352,15 +444,24 @@ export class ClientStateReconciler {
           }
           manager.totalObjects += 1;
           manager.loadedObjects += 1;
-          manager.callbacks?.new?.(instance);
+          batchSummary.created.push(instance);
+          itemCallbacks?.new?.(instance);
         } else if (change.data) {
           // Object already exists, apply properties
-          await this.patchObjectProperties(existing, change.data, manager.callbacks);
+          const keys = Object.keys(change.data).filter((k) => k !== "_id");
+          await this.patchObjectProperties(existing, change.data, itemCallbacks);
+          if (keys.length > 0) {
+            batchSummary.updated.push({ object: existing, keys });
+          }
         }
       } else if (change.type === "update") {
         let existing = manager.getObject(id);
         if (existing && change.data) {
-          await this.patchObjectProperties(existing, change.data, manager.callbacks);
+          const keys = Object.keys(change.data).filter((k) => k !== "_id");
+          await this.patchObjectProperties(existing, change.data, itemCallbacks);
+          if (keys.length > 0) {
+            batchSummary.updated.push({ object: existing, keys });
+          }
         } else if (!existing && change.data) {
           // Object was updated but client did not have it, create it
           const instance = new manager.classParam(
@@ -383,7 +484,30 @@ export class ClientStateReconciler {
           };
           manager.totalObjects += 1;
           manager.loadedObjects += 1;
-          manager.callbacks?.new?.(instance);
+          batchSummary.created.push(instance);
+          itemCallbacks?.new?.(instance);
+        }
+      }
+    }
+
+    if (
+      batchCallbacks &&
+      (batchSummary.created.length > 0 ||
+        batchSummary.updated.length > 0 ||
+        batchSummary.deletedIds.length > 0)
+    ) {
+      if (typeof manager.callbacks?.batchUpdate === "function") {
+        await manager.callbacks.batchUpdate(batchSummary);
+      } else {
+        if (batchSummary.updated.length > 0) {
+          const first = batchSummary.updated[0];
+          await manager.callbacks?.update?.(first.object, first.keys[0] ?? "*");
+        }
+        if (batchSummary.created.length > 0) {
+          await manager.callbacks?.new?.(batchSummary.created[batchSummary.created.length - 1]);
+        }
+        if (batchSummary.deletedIds.length > 0) {
+          await manager.callbacks?.delete?.(manager as any);
         }
       }
     }
@@ -405,23 +529,34 @@ export class ClientStateReconciler {
     patchData: Record<string, any>,
     callbacks?: any,
   ): Promise<void> {
-    for (const key of Object.keys(patchData)) {
-      if (key === "_id") continue;
-      const val = patchData[key];
-      if (typeof targetObj.setValue__ === "function") {
-        await targetObj.setValue__(key, val, true);
-        if (!targetObj.isLoaded) {
+    const suppressObjectCallback = !callbacks && targetObj.callbacks;
+    const savedCallbacks = suppressObjectCallback ? targetObj.callbacks : undefined;
+    if (suppressObjectCallback) {
+      targetObj.callbacks = { ...savedCallbacks, update: () => {} };
+    }
+    try {
+      for (const key of Object.keys(patchData)) {
+        if (key === "_id") continue;
+        const val = patchData[key];
+        if (typeof targetObj.setValue__ === "function") {
+          await targetObj.setValue__(key, val, true);
+          if (!targetObj.isLoaded) {
+            callbacks?.update?.(targetObj, key);
+          }
+        } else {
+          if (targetObj.data) {
+            targetObj.data[key] = val;
+          }
+          targetObj[key] = val;
           callbacks?.update?.(targetObj, key);
         }
-      } else {
-        if (targetObj.data) {
-          targetObj.data[key] = val;
+        if ("_cachedExtractedData" in targetObj) {
+          targetObj._cachedExtractedData = null;
         }
-        targetObj[key] = val;
-        callbacks?.update?.(targetObj, key);
       }
-      if ("_cachedExtractedData" in targetObj) {
-        targetObj._cachedExtractedData = null;
+    } finally {
+      if (suppressObjectCallback) {
+        targetObj.callbacks = savedCallbacks;
       }
     }
   }

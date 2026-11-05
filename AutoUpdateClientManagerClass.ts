@@ -732,6 +732,7 @@ export class AutoUpdateClientManager<
               this as any,
               data as any,
               this.storageAdapter,
+              { batchCallbacks: this.deltaSyncOptions?.batchCallbacks },
             );
             this.callbacks.progress?.(1);
             this.startSocketListeners();
