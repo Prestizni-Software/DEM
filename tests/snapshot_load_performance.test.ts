@@ -70,6 +70,22 @@ function createManager(): ReconcilableClientManager<any> {
   } as unknown as ReconcilableClientManager<any>;
 }
 
+/**
+ * Writes benchmark timing metrics directly to standard output.
+ * Bypasses Jest runner console suppression in silent mode (`npm run test_for_AI`).
+ *
+ * @param label - Descriptive label for the measured execution phase.
+ * @param updatesCount - Number of delta update entries processed.
+ * @param durationMs - Execution duration measured in milliseconds.
+ */
+function reportDeltaBenchmark(label: string, updatesCount: number, durationMs: number): void {
+  const formattedDuration = durationMs.toFixed(2).padStart(8);
+  const countStr = `${updatesCount} updates`.padStart(14);
+  process.stdout.write(
+    `  [DELTA BENCHMARK] ${label.padEnd(50)} | ${countStr} | ${formattedDuration} ms\n`,
+  );
+}
+
 beforeEach(() => {
   for (const k in globalCache.objects) delete globalCache.objects[k];
 });
@@ -412,11 +428,18 @@ describe("Part 5: Delta Sync Compaction and Callback Batching", () => {
       "setValue__",
     );
 
+    const t0 = performance.now();
     await ClientStateReconciler.applyDelta(
       manager,
       { status: "delta", revision: 500, changes },
       undefined,
       { batchCallbacks: true },
+    );
+    const batchedDurationMs = performance.now() - t0;
+    reportDeltaBenchmark(
+      "Coalesced + batchCallbacks (10 entities)",
+      changes.length,
+      batchedDurationMs,
     );
 
     // Because of compaction, setValue__ is called only once per unique entity (10 times total, not 500!)
@@ -437,6 +460,108 @@ describe("Part 5: Delta Sync Compaction and Callback Batching", () => {
 
     for (let i = 0; i < 10; i++) {
       expect(manager.objects_[`sub_${i}`].name).toBe(`Updated_${i}_rev_${490 + i}`);
+    }
+  });
+
+  it("benchmarks unbatched vs coalesced+batched delta application across 500, 2000, and 5000 updates", async () => {
+    const entityCount = 25;
+    const buildBenchManager = () => {
+      const socket = { on: jest.fn(), off: jest.fn(), emit: jest.fn() };
+      const loggers = { info: jest.fn(), debug: jest.fn(), error: jest.fn(), warn: jest.fn() };
+      const emitter = new EventEmitter();
+      let uiWorkCounter = 0;
+      const simulateUiSync = () => {
+        for (let k = 0; k < entityCount; k++) {
+          uiWorkCounter += k;
+        }
+      };
+      const manager: ReconcilableClientManager<any> = {
+        className: "Subordinate",
+        properties: ["_id", "name"],
+        classParam: Subordinate,
+        socket,
+        loggers,
+        callbacks: {
+          new: simulateUiSync,
+          update: simulateUiSync,
+          delete: simulateUiSync,
+          batchUpdate: simulateUiSync,
+        },
+        emitter,
+        objects_: {},
+        get objectsAsArray() {
+          return Object.values(this.objects_);
+        },
+        totalObjects: entityCount,
+        loadedObjects: entityCount,
+        isLoaded_: true,
+        getObject(id: string) {
+          return this.objects_[id];
+        },
+        deleteObject: jest.fn(async (id: string) => {
+          delete manager.objects_[id];
+        }),
+      };
+
+      for (let i = 0; i < entityCount; i++) {
+        const id = `sub_${i}`;
+        manager.objects_[id] = new (Subordinate as any)(
+          Subordinate,
+          socket,
+          { _id: id, name: `Initial_${i}` },
+          loggers,
+          "Subordinate",
+          manager,
+          manager.callbacks,
+          emitter,
+        );
+      }
+      return { manager, getUiWork: () => uiWorkCounter };
+    };
+
+    for (const totalUpdates of [500, 2000, 5000]) {
+      const changes = Array.from({ length: totalUpdates }, (_, i) => ({
+        revision: i + 1,
+        type: "update" as const,
+        id: `sub_${i % entityCount}`,
+        data: { name: `Name_${i}` },
+        timestamp: i + 1,
+        estimatedBytes: 32,
+      }));
+
+      const { manager: unbatchedMgr } = buildBenchManager();
+      await Promise.resolve();
+      const tStartUnbatched = performance.now();
+      await ClientStateReconciler.applyDelta(
+        unbatchedMgr,
+        { status: "delta", revision: totalUpdates, changes },
+        undefined,
+        { coalesce: false, batchCallbacks: false },
+      );
+      const unbatchedMs = performance.now() - tStartUnbatched;
+      reportDeltaBenchmark(
+        `Unbatched (coalesce: false, batchCallbacks: false)`,
+        totalUpdates,
+        unbatchedMs,
+      );
+
+      const { manager: batchedMgr } = buildBenchManager();
+      await Promise.resolve();
+      const tStartBatched = performance.now();
+      await ClientStateReconciler.applyDelta(
+        batchedMgr,
+        { status: "delta", revision: totalUpdates, changes },
+        undefined,
+        { coalesce: true, batchCallbacks: true },
+      );
+      const batchedMs = performance.now() - tStartBatched;
+      reportDeltaBenchmark(
+        `Batched   (coalesce: true,  batchCallbacks: true)`,
+        totalUpdates,
+        batchedMs,
+      );
+
+      expect(batchedMs).toBeLessThan(unbatchedMs);
     }
   });
 });
