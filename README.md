@@ -165,6 +165,7 @@ Detailed architectural guides exist in the `docs/` directory:
 - [Delta Synchronization Architecture](docs/DELTA_SYNC_ARCHITECTURE.md)
 - [Delta Synchronization User Guide](docs/DELTA_SYNC.md)
 - [Snapshot Load Performance Plan](docs/SNAPSHOT_LOAD_PERFORMANCE.md)
+- [Performance Analysis & Network Simulation](docs/PERFORMANCE_OPTIMIZATION.md)
 - [Database States and Error Handling](docs/ERRORS_AND_DB_STATE.md)
 - [Client Population Bypass Architecture](docs/CLIENT_POPULATION.md)
 - [Release Workflow Guide](docs/RELEASE_WORKFLOW.md)

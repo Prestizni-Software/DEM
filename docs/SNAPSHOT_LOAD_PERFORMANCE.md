@@ -63,6 +63,13 @@ Four parts. Execute them in order. Each part starts with a failing test.
   - Unbatched: $\mathcal{O}(C \cdot K)$ async `writeQueue` ticks and $\mathcal{O}(C \cdot K \cdot N_{\text{UI}})$ UI re-renders, where $C$ is total change entries, $K$ is properties per entry, and $N_{\text{UI}}$ is collection size.
   - Batched: $\mathcal{O}(C)$ compaction + $\mathcal{O}(U \cdot K)$ property writes (where $U \le N$ is unique mutated entities) + $\mathcal{O}(1)$ batch callback invocation.
 
+### Part 6: Network Slowness Simulation & Performance Testing
+
+- Add `sync/NetworkSimulation.ts` (`configureNetworkSimulation`, `resetNetworkSimulation`, `applyNetworkSimulationToSocket`) with FIFO packet ordering.
+- Add `tests/network_performance.test.ts` to benchmark cold startup, stale-while-revalidate (`restoreAndRevalidate`), and concurrent mutations across 0ms, 30–50ms RTT, and 120–160ms RTT.
+- Support global toggleable network noise (`DEM_NETWORK_NOISE=1`) across the entire test suite via `npm run test:network`.
+- Mandate that any performance work must be verified against both `npm run test:perf` and `npm run test:network`.
+
 ## Application follow-up (`ukolnicek-geodeta`, outside this repo)
 
 1. Publish `DB_HANDLER` after hydration. Run the delta sync in the background.
@@ -72,9 +79,11 @@ Four parts. Execute them in order. Each part starts with a failing test.
 
 ## Versioning
 
-All four parts add methods only. They are compatible. Release as a patch.
+All parts add methods only. They are compatible. Release as a patch.
 
 ## Verification
 
 1. `npx tsc --noEmit`
-2. `npm run test_for_AI`
+2. `npm run test:perf`
+3. `npm run test:network`
+4. `npm run test_for_AI`

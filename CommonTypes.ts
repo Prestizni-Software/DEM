@@ -876,3 +876,5 @@ export * from "./sync/ServerChangeTracker.js";
 export * from "./sync/ClientStateReconciler.js";
 export * from "./DEMErrors.js";
 
+
+export * from "./sync/NetworkSimulation.js";

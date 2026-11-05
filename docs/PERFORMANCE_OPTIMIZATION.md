@@ -81,11 +81,31 @@ Analysis of the subsequent profiler trace (`performance/Firefox 2026-10-05 08.04
 
 ---
 
-## 5. Test Suite Structure
+## 5. Network Slowness Simulation & Performance Testing Mandate
+
+When working with performance optimizations, synchronization, or startup flows, tests **must** be conducted under both zero-latency and simulated network slowness/jitter conditions.
+
+### A. Network Simulation Framework (`sync/NetworkSimulation.ts`)
+- **`configureNetworkSimulation({ enabled, minLatencyMs, jitterMs, seed, includeJestMocks })`**:
+  - Configures one-way outbound/inbound network latency and random jitter on socket connections.
+  - Preserves strict TCP/WebSocket FIFO packet ordering per stream even when random jitter varies across adjacent messages.
+- **`resetNetworkSimulation()`**:
+  - Restores network simulation settings to environment defaults.
+- **Environment Variable Toggle (`DEM_NETWORK_NOISE`)**:
+  - Setting `DEM_NETWORK_NOISE=1` (with optional `DEM_NETWORK_LATENCY_MS` and `DEM_NETWORK_JITTER_MS`) injects background network latency and jitter across all tests in the repository.
+
+### B. Dedicated Network Performance Benchmark (`tests/network_performance.test.ts`)
+- Benchmarks cold startup across 0ms, 30–50ms RTT (Wi-Fi), and 120–160ms RTT (Slow 3G).
+- Verifies Stale-While-Revalidate (`ClientStateReconciler.restoreAndRevalidate`) vs blocking `loadFromServer()` under 150ms RTT (proving local UI readiness in ~3ms while delta revalidation completes in the background).
+- Compares sequential vs parallel `Promise.all` entity mutations under 24–40ms RTT with jitter.
+
+---
+
+## 6. Test Suite Structure
 
 Tests are organized into dedicated categories in `package.json`:
-- `npm run test:basic`: All 15 core functionality test suites (69 tests).
-- `npm run test:perf`: Scalability & startup benchmark with 8,500+ objects across 9 managers (`tests/performance.test.ts`).
+- `npm run test:basic`: Core functionality test suites.
+- `npm run test:perf`: Scalability, startup, and network latency benchmarks (`tests/performance.test.ts`, `tests/network_performance.test.ts`).
+- `npm run test:network`: Runs the entire test suite with toggleable network noise (`DEM_NETWORK_NOISE=1`) via `scripts/run_tests_with_network_noise.js`.
 - `npm run test:optional`: Extended audit & regression catalog (`tests/issue_regression.test.ts`).
-- `npm run test_for_AI`: Complete automated regression and performance verification (70 tests).
-
+- `npm run test_for_AI`: Complete automated regression and performance verification.

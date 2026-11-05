@@ -31,6 +31,7 @@ This file defines the mandatory operating guidelines and instructions for AI age
 4. **Verification Protocol**:
    - Run `npx tsc --noEmit` to verify type safety and compilation.
    - Run `npm run test_for_AI` to ensure full test suite passes.
+   - When working on performance optimizations, synchronization, or latency-sensitive paths, always run `npm run test:perf` and `npm run test:network` to verify behavior under simulated network slowness and jitter.
    - If tests fail, run `npm test` for detailed diagnostics and fix failing tests.
 
 5. **Type Safety Standard**:
@@ -42,6 +43,7 @@ This file defines the mandatory operating guidelines and instructions for AI age
    - Ensure the test fails before applying the fix.
    - Do not claim completion until the test passes.
    - Add tests for new features.
+   - When adding or modifying performance features, include network slowness simulation tests (`tests/network_performance.test.ts`) and verify the full test suite under toggleable network noise (`npm run test:network` / `DEM_NETWORK_NOISE=1`).
 
 7. **In-Code Documentation Mandate**:
    - Provide complete JSDoc documentation for every function, method, and class.

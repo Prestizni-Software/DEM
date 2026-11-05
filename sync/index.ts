@@ -5,3 +5,4 @@ export * from "./storage/IClientStorageAdapter.js";
 export * from "./storage/MemoryStorageAdapter.js";
 export * from "./storage/LocalStorageAdapter.js";
 export * from "./storage/IndexedDbStorageAdapter.js";
+export * from "./NetworkSimulation.js";

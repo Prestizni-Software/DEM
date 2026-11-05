@@ -29,6 +29,7 @@ import {
   DEMArrayMutationResponse,
   DEMArrayMutationOp,
   DEMArrayMutationParams,
+  applyNetworkSimulationToSocket,
 } from "./CommonTypes.js";
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
@@ -154,16 +155,33 @@ export function createDEMArray<T>(
           const actualDeleteCount =
             deleteCount !== undefined ? deleteCount : Math.max(0, current.length - start);
           const targetIds: string[] = [];
-          for (
-            let i = start;
-            i < start + actualDeleteCount && i < current.length;
-            i++
-          ) {
-            const el = current[i];
-            if (el && typeof el === "object" && "_id" in el) {
-              targetIds.push(String((el as any)._id));
-            } else if (el) {
-              targetIds.push(String(el));
+          if (actualDeleteCount > 0) {
+            for (
+              let i = start;
+              i < start + actualDeleteCount && i < current.length;
+              i++
+            ) {
+              const el = current[i];
+              if (el && typeof el === "object" && "_id" in el) {
+                targetIds.push(String((el as any)._id));
+              } else if (el) {
+                targetIds.push(String(el));
+              }
+            }
+          }
+          const rawList = ((parent as any).data as Record<string, unknown>)?.[propertyName];
+          if (targetIds.length === 0 && actualDeleteCount > 0 && Array.isArray(rawList)) {
+            for (
+              let i = start;
+              i < start + actualDeleteCount && i < rawList.length;
+              i++
+            ) {
+              const rawEl = rawList[i];
+              if (rawEl && typeof rawEl === "object" && "_id" in rawEl) {
+                targetIds.push(String((rawEl as any)._id));
+              } else if (rawEl) {
+                targetIds.push(String(rawEl));
+              }
             }
           }
           const targetId = targetIds[0];
@@ -185,12 +203,21 @@ export function createDEMArray<T>(
         return async (index: number, item: any) => {
           const current = getItems();
           const targetEl = current[index];
-          const targetId =
+          let targetId =
             targetEl && typeof targetEl === "object" && "_id" in targetEl
               ? String((targetEl as any)._id)
               : targetEl
                 ? String(targetEl)
                 : undefined;
+          if (!targetId) {
+            const rawList = ((parent as any).data as Record<string, unknown>)?.[propertyName];
+            const rawEl = Array.isArray(rawList) ? rawList[index] : undefined;
+            if (rawEl && typeof rawEl === "object" && "_id" in rawEl) {
+              targetId = String((rawEl as any)._id);
+            } else if (rawEl) {
+              targetId = String(rawEl);
+            }
+          }
           return parent.mutateArrayQueue(
             propertyName,
             { op: "set", index, items: [item], targetId },
@@ -301,6 +328,15 @@ const pendingConstructionCompletion: Array<{ completeConstruction(): void }> = [
  */
 let constructionCompletionScheduled = false;
 
+function flushConstructionCompletion(): void {
+  constructionCompletionScheduled = false;
+  if (pendingConstructionCompletion.length === 0) return;
+  const batch = pendingConstructionCompletion.splice(0);
+  for (const item of batch) {
+    item.completeConstruction();
+  }
+}
+
 /**
  * Schedules the post-construction pass for one object.
  * All objects that the same task creates share one microtask.
@@ -312,13 +348,7 @@ function scheduleConstructionCompletion(target: { completeConstruction(): void }
   pendingConstructionCompletion.push(target);
   if (constructionCompletionScheduled) return;
   constructionCompletionScheduled = true;
-  queueMicrotask(() => {
-    constructionCompletionScheduled = false;
-    const batch = pendingConstructionCompletion.splice(0);
-    for (const item of batch) {
-      item.completeConstruction();
-    }
-  });
+  queueMicrotask(flushConstructionCompletion);
 }
 
 export abstract class AutoUpdatedClientObject<
@@ -515,7 +545,7 @@ export abstract class AutoUpdatedClientObject<
     }
 
     this.classParam = classParam;
-    this.socket = socket;
+    this.socket = isServer ? socket : applyNetworkSimulationToSocket(socket);
     this.isServer = isServer;
     this.emitter = emitter;
     this.isLoadingReferences = true;
@@ -550,6 +580,7 @@ export abstract class AutoUpdatedClientObject<
         this.generateSettersAndGetters();
         return;
       }
+      this.openSockets();
       this.socket.emit(
         EVENT_GET + this.className + data,
         null,
@@ -567,11 +598,24 @@ export abstract class AutoUpdatedClientObject<
             );
             return;
           }
+          const pendingUpdates = this._pendingUpdatesWhileLoading.splice(0);
           this.data = this.handleDataCleanup(res.data as any);
+          for (const pending of pendingUpdates) {
+            (this.data as any)[pending.key] = pending.value;
+          }
           this.generateSettersAndGetters();
           this.isLoading = false;
           this.emitter.emit(EVENT_INTERNAL_PRE_LOADED + this.EmitterID);
-          this.openSockets();
+          for (const pending of pendingUpdates) {
+            void this.setValue__(pending.key, pending.value, true).then(() => {
+              if (this.isLoaded) {
+                this.callbacks.update(
+                  this as unknown as IAutoUpdatedClientObject<T>,
+                  pending.key,
+                );
+              }
+            });
+          }
         },
       );
     } else {
@@ -858,6 +902,9 @@ export abstract class AutoUpdatedClientObject<
   }
 
   private _hasUpdateSocketListener = false;
+  private _pendingUpdatesWhileLoading: Array<{ key: string; value: unknown }> = [];
+  private _inFlightArrayMutations = 0;
+  private _lastArrayRevision?: Map<string, number>;
 
   private openSockets() {
     const id = this.data?._id ?? this._id;
@@ -882,8 +929,125 @@ export abstract class AutoUpdatedClientObject<
   private async handleUpdateRequest(update: {
     key: string;
     value: unknown;
+    revision?: number;
   }): Promise<ServerResponse<unknown>> {
     try {
+      if (this.isLoading) {
+        this._pendingUpdatesWhileLoading.push(update);
+      }
+      if (typeof update.revision === "number") {
+        if (!this._lastArrayRevision) this._lastArrayRevision = new Map();
+        const prev = this._lastArrayRevision.get(update.key) ?? -1;
+        if (update.revision < prev) {
+          return { success: true, data: undefined, message: "" };
+        }
+        this._lastArrayRevision.set(update.key, update.revision);
+      }
+      if (
+        (this._inFlightArrayMutations > 0 || typeof update.revision === "number") &&
+        Array.isArray(update.value)
+      ) {
+        const isRef = getMetadataRecursive("isRef", this, update.key);
+        const prevRawVal = (this.data as Record<string, unknown>)?.[update.key];
+        let valueToStore: unknown = update.value;
+        if (isRef) {
+          valueToStore = (update.value as unknown[]).map(
+            (v: unknown) =>
+              (v as { _id?: { toString(): string } | string })?._id?.toString() ??
+              (v as { toString(): string })?.toString() ??
+              v,
+          );
+        }
+        (this.data as Record<string, unknown>)[update.key] = valueToStore;
+        this._refArrayCache?.delete(update.key);
+        this._cachedExtractedData = null;
+        if (Object.hasOwn(this, update.key)) {
+          delete (this as Record<string, unknown>)[update.key];
+        }
+        if (isRef && Array.isArray(valueToStore)) {
+          const parentId = (this.data?._id ?? this._id)?.toString();
+          const nextIds = (valueToStore as unknown[]).map((v) =>
+            v && typeof v === "object" && "_id" in v
+              ? String((v as any)._id)
+              : String(v),
+          );
+          const prevIds = Array.isArray(prevRawVal)
+            ? (prevRawVal as unknown[]).map((v) =>
+                v && typeof v === "object" && "_id" in v
+                  ? String((v as any)._id)
+                  : String(v),
+              )
+            : [];
+          const removedIds = prevIds.filter((id) => !nextIds.includes(id));
+
+          for (const id of nextIds) {
+            const child = this.findReference(id, update.key);
+            if (child && typeof child === "object") {
+              const props = (child as any).properties || [];
+              for (const cp of props) {
+                const refsTo =
+                  Reflect.getMetadata("refsTo", child, cp) ||
+                  Reflect.getMetadata("refsTo", Object.getPrototypeOf(child), cp);
+                if (
+                  refsTo === this.className ||
+                  refsTo?.startsWith?.(this.className + ":")
+                ) {
+                  (child as any)[cp] = parentId;
+                  if ((child as any).data) {
+                    (child as any).data[cp] = parentId;
+                  }
+                }
+              }
+            }
+          }
+
+          for (const id of removedIds) {
+            if (nextIds.includes(id)) continue;
+            const child = this.findReference(id, update.key);
+            if (child && typeof child === "object") {
+              const props = (child as any).properties || [];
+              for (const cp of props) {
+                const refsTo =
+                  Reflect.getMetadata("refsTo", child, cp) ||
+                  Reflect.getMetadata("refsTo", Object.getPrototypeOf(child), cp);
+                if (
+                  refsTo === this.className ||
+                  refsTo?.startsWith?.(this.className + ":")
+                ) {
+                  const childParentVal = (child as any)[cp];
+                  const childParentId =
+                    childParentVal &&
+                    typeof childParentVal === "object" &&
+                    "_id" in childParentVal
+                      ? String((childParentVal as any)._id)
+                      : String(childParentVal);
+                  if (
+                    childParentId === parentId ||
+                    childParentVal === parentId ||
+                    childParentVal === this
+                  ) {
+                    (child as any)[cp] = undefined;
+                  }
+                  if (
+                    (child as any).data?.[cp] === parentId ||
+                    (child as any).data?.[cp]?.toString?.() === parentId
+                  ) {
+                    delete (child as any).data[cp];
+                  }
+                }
+              }
+            }
+          }
+        }
+        if (this.isLoaded) {
+          this.callbacks.update(
+            this as unknown as IAutoUpdatedClientObject<T>,
+            update.key,
+          );
+          await this.onUpdate(false, update.key);
+        }
+        return { success: true, data: undefined, message: "" };
+      }
       await this.setValue__(update.key, update.value, true);
       if (this.isLoaded)
         this.callbacks.update(
@@ -1493,10 +1657,15 @@ export abstract class AutoUpdatedClientObject<
         );
       }
       res = await new Promise((resolve) => {
+        this._inFlightArrayMutations = (this._inFlightArrayMutations || 0) + 1;
         this.socket.emit(
           EVENT_UPDATE + this.className + id,
           { _id: id.toString(), key, mutation: payload },
           (response: DEMArrayMutationResponse) => {
+            this._inFlightArrayMutations = Math.max(
+              0,
+              (this._inFlightArrayMutations || 1) - 1,
+            );
             resolve(response);
           },
         );
@@ -1511,17 +1680,29 @@ export abstract class AutoUpdatedClientObject<
     }
 
     const updatedArray = res.updatedArray ?? [];
-    (this.data as Record<string, unknown>)[key] = updatedArray;
-    this._refArrayCache?.delete(key);
-    this._cachedExtractedData = null;
-    if (Object.hasOwn(this, key)) {
-      delete (this as Record<string, unknown>)[key];
+    const lastSeenRev = this._lastArrayRevision?.get(key) ?? -1;
+    const isStaleAck =
+      typeof res.newRevision === "number" && res.newRevision < lastSeenRev;
+    if (typeof res.newRevision === "number" && res.newRevision >= lastSeenRev) {
+      if (!this._lastArrayRevision) this._lastArrayRevision = new Map();
+      this._lastArrayRevision.set(key, res.newRevision);
     }
+    if (!isStaleAck) {
+      (this.data as Record<string, unknown>)[key] = updatedArray;
+      this._refArrayCache?.delete(key);
+      this._cachedExtractedData = null;
+      if (Object.hasOwn(this, key)) {
+        delete (this as Record<string, unknown>)[key];
+      }
+    }
+
+    const effectiveArray =
+      ((this.data as Record<string, unknown>)?.[key] as unknown[]) ?? updatedArray;
 
     // Synchronize child back-references
     if (isRef) {
       const parentId = (this.data?._id ?? this._id)?.toString();
-      const currentIds = (updatedArray as unknown[]).map((v) =>
+      const currentIds = (effectiveArray as unknown[]).map((v) =>
         v && typeof v === "object" && "_id" in v
           ? String((v as any)._id)
           : String(v),
@@ -1546,20 +1727,22 @@ export abstract class AutoUpdatedClientObject<
           }
         }
       }
-      for (const entity of resolvedEntities) {
-        if (entity && typeof entity === "object") {
-          const props = (entity as any).properties || [];
-          for (const cp of props) {
-            const refsTo =
-              Reflect.getMetadata("refsTo", entity, cp) ||
-              Reflect.getMetadata("refsTo", Object.getPrototypeOf(entity), cp);
-            if (
-              refsTo === this.className ||
-              refsTo?.startsWith?.(this.className + ":")
-            ) {
-              (entity as any)[cp] = parentId;
-              if ((entity as any).data) {
-                (entity as any).data[cp] = parentId;
+      if (!isStaleAck) {
+        for (const entity of resolvedEntities) {
+          if (entity && typeof entity === "object") {
+            const props = (entity as any).properties || [];
+            for (const cp of props) {
+              const refsTo =
+                Reflect.getMetadata("refsTo", entity, cp) ||
+                Reflect.getMetadata("refsTo", Object.getPrototypeOf(entity), cp);
+              if (
+                refsTo === this.className ||
+                refsTo?.startsWith?.(this.className + ":")
+              ) {
+                (entity as any)[cp] = parentId;
+                if ((entity as any).data) {
+                  (entity as any).data[cp] = parentId;
+                }
               }
             }
           }

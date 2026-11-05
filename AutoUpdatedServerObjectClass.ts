@@ -39,6 +39,7 @@ export abstract class AutoUpdatedServerObject<
   declare public parentManager: AutoUpdateServerManager<T, any>;
   private saveLock: Promise<any> = Promise.resolve();
   private loadPromise: Promise<void> | null = null;
+  private _arrayMutationCounter: number = 0;
 
   /**
    * Initializes an AutoUpdatedServerObject instance.
@@ -646,7 +647,8 @@ export abstract class AutoUpdatedServerObject<
         }
 
         // Monotonic revision tracking
-        let newRev: number | undefined;
+        this._arrayMutationCounter = (this._arrayMutationCounter || 0) + 1;
+        let newRev: number = this._arrayMutationCounter;
         if (this.parentManager && (this.parentManager as any).changeTracker) {
           const tracker = (this.parentManager as any).changeTracker;
           tracker.recordChange("update", _id.toString(), { [key]: currentArr });
@@ -658,7 +660,10 @@ export abstract class AutoUpdatedServerObject<
           .join(",");
 
         // Broadcast to peer clients
-        const update = this.makeUpdate(key, currentArr);
+        const update = {
+          ...this.makeUpdate(key, currentArr),
+          ...(typeof newRev === "number" ? { revision: newRev } : {}),
+        };
         const event = EVENT_UPDATE + this.className + _id.toString();
         (this.socket as any).emit(event, update);
 
