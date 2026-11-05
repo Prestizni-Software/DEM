@@ -37,6 +37,90 @@ export class ClientStateReconciler {
   ): Promise<{ restored: boolean; revision: number; count: number }> {
     try {
       const state = await storageAdapter.loadManagerState<any>(manager.className);
+      return this.restoreFromState(manager, state);
+    } catch (err) {
+      manager.loggers?.warn?.(
+        `Failed to restore ${manager.className} from storage: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return { restored: false, revision: 0, count: 0 };
+    }
+  }
+
+  /**
+   * Restores client manager state from storage immediately and runs delta revalidation in the background.
+   * Implements stale-while-revalidate loading so the caller can publish restored state without blocking on network I/O.
+   *
+   * @param manager - Reconcilable client manager instance.
+   * @param storageAdapter - Storage adapter implementing IClientStorageAdapter.
+   * @param fetchDelta - Async callback that fetches a DeltaSyncPayload for the restored revision.
+   * @returns Restoration metadata along with a background revalidation promise.
+   */
+  public static async restoreAndRevalidate<T extends IAutoUpdatedClientObjectBase>(
+    manager: ReconcilableClientManager<T>,
+    storageAdapter: IClientStorageAdapter,
+    fetchDelta: (revision: number) => Promise<DeltaSyncPayload<any> | null | undefined>,
+  ): Promise<{
+    restored: boolean;
+    revision: number;
+    count: number;
+    revalidation: Promise<{
+      reconciled: boolean;
+      fullResyncRequired: boolean;
+      revision: number;
+    }>;
+  }> {
+    const restoredResult = await this.restoreFromStorage(manager, storageAdapter);
+
+    const revalidation = (async () => {
+      try {
+        const payload = await fetchDelta(restoredResult.revision);
+        if (!payload || payload.status === "full") {
+          return {
+            reconciled: false,
+            fullResyncRequired: true,
+            revision: payload?.revision ?? restoredResult.revision,
+          };
+        }
+        if (payload.status === "delta") {
+          await this.applyDelta(manager, payload, storageAdapter);
+        }
+        return {
+          reconciled: true,
+          fullResyncRequired: false,
+          revision: payload.revision,
+        };
+      } catch (err) {
+        manager.loggers?.warn?.(
+          `Failed to revalidate ${manager.className}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return {
+          reconciled: false,
+          fullResyncRequired: true,
+          revision: restoredResult.revision,
+        };
+      }
+    })();
+
+    return {
+      ...restoredResult,
+      revalidation,
+    };
+  }
+
+  /**
+   * Restores client manager objects in-memory from a stored state object.
+   * Needs no storage adapter. Use it to hydrate from a snapshot that the application owns.
+   *
+   * @param manager - Reconcilable client manager instance.
+   * @param state - Stored manager state. Can be null.
+   * @returns Object indicating restoration success, stored revision, and restored entity count.
+   * @throws Never. Errors are logged and reported as restored false.
+   */
+  public static restoreFromState<T extends IAutoUpdatedClientObjectBase>(
+    manager: ReconcilableClientManager<T>,
+    state: StoredManagerState<any> | null | undefined,
+  ): { restored: boolean; revision: number; count: number } {
+    try {
       if (!state || !Array.isArray(state.ids) || state.ids.length === 0) {
         return { restored: false, revision: state?.revision ?? 0, count: 0 };
       }
@@ -119,6 +203,58 @@ export class ClientStateReconciler {
   }
 
   /**
+   * Builds a storable snapshot of the manager in-memory state.
+   * Reads the cached raw data of each object. Does not clone objects.
+   * The `extractedData` getter of an object runs a deep clone. Avoid it for bulk reads.
+   *
+   * @param manager - Reconcilable client manager instance.
+   * @param revision - Monotonic revision number to record with the snapshot.
+   * @returns Serializable manager state. Lazy stubs stay stubs.
+   */
+  public static serializeState<T extends IAutoUpdatedClientObjectBase>(
+    manager: ReconcilableClientManager<T>,
+    revision: number,
+  ): StoredManagerState<any> {
+    const ids: string[] = [];
+    const objects: any[] = [];
+    for (const element of manager.objectsAsArray) {
+      const o: any = element;
+      const idStr = o._id ? o._id.toString() : (o.data?._id?.toString() ?? "unknown");
+      if (idStr !== "unknown") {
+        ids.push(idStr);
+      }
+      if (o.isLazyStub) {
+        objects.push({
+          _id: idStr,
+          __isLazyStub: true,
+          descriptor: o.descriptor,
+        });
+        continue;
+      }
+      const extracted = o.getRawExtractedData?.() ?? o.extractedData ?? o.data;
+      if (extracted) {
+        if (!extracted._id && idStr !== "unknown") {
+          objects.push({ ...extracted, _id: idStr });
+        } else {
+          objects.push(extracted);
+        }
+      } else {
+        objects.push({ _id: idStr });
+      }
+    }
+
+    return {
+      className: manager.className,
+      revision,
+      ids,
+      objects,
+      properties: (manager.properties as string[]) || [],
+      manifest: manager.manifest ? [...manager.manifest] : undefined,
+      savedAt: Date.now(),
+    };
+  }
+
+  /**
    * Persists current manager in-memory state to storage adapter.
    *
    * @param manager - Reconcilable client manager instance.
@@ -131,45 +267,7 @@ export class ClientStateReconciler {
     storageAdapter: IClientStorageAdapter,
   ): Promise<void> {
     try {
-      const objectsAsArray = manager.objectsAsArray;
-      const ids: string[] = [];
-      const objects: any[] = [];
-      for (const element of objectsAsArray) {
-        const o: any = element;
-        const idStr = o._id ? o._id.toString() : (o.data?._id?.toString() ?? "unknown");
-        if (idStr !== "unknown") {
-          ids.push(idStr);
-        }
-        if (o.isLazyStub) {
-          objects.push({
-            _id: idStr,
-            __isLazyStub: true,
-            descriptor: o.descriptor,
-          });
-          continue;
-        }
-        const extracted = o.getRawExtractedData?.() ?? o.extractedData ?? o.data;
-        if (extracted) {
-          if (!extracted._id && idStr !== "unknown") {
-            objects.push({ ...extracted, _id: idStr });
-          } else {
-            objects.push(extracted);
-          }
-        } else {
-          objects.push({ _id: idStr });
-        }
-      }
-
-      const state: StoredManagerState<any> = {
-        className: manager.className,
-        revision,
-        ids,
-        objects,
-        properties: (manager.properties as string[]) || [],
-        manifest: manager.manifest ? [...manager.manifest] : undefined,
-        savedAt: Date.now(),
-      };
-
+      const state = this.serializeState(manager, revision);
       await storageAdapter.saveManagerState(manager.className, state);
     } catch (err) {
       manager.loggers?.warn?.(

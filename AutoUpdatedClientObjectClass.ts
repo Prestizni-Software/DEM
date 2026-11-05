@@ -288,6 +288,36 @@ export function createDEMArray<T>(
 
 type SocketType = Socket;
 
+/**
+ * Objects that wait for the post-construction pass.
+ */
+const pendingConstructionCompletion: Array<{ completeConstruction(): void }> = [];
+
+/**
+ * True while one batched microtask is scheduled.
+ */
+let constructionCompletionScheduled = false;
+
+/**
+ * Schedules the post-construction pass for one object.
+ * All objects that the same task creates share one microtask.
+ * This avoids one promise per object when a snapshot restores thousands of objects.
+ *
+ * @param target - Object that finished its base constructor.
+ */
+function scheduleConstructionCompletion(target: { completeConstruction(): void }): void {
+  pendingConstructionCompletion.push(target);
+  if (constructionCompletionScheduled) return;
+  constructionCompletionScheduled = true;
+  queueMicrotask(() => {
+    constructionCompletionScheduled = false;
+    const batch = pendingConstructionCompletion.splice(0);
+    for (const item of batch) {
+      item.completeConstruction();
+    }
+  });
+}
+
 export abstract class AutoUpdatedClientObject<
   T extends IAutoUpdatedClientObjectBase,
   M extends Record<string, IAutoUpdateManager<any>> = Record<
@@ -305,7 +335,56 @@ export abstract class AutoUpdatedClientObject<
   protected data: IsData<T>;
   protected readonly isServer: boolean = false;
   public abstract readonly _id: MongoId;
-  protected readonly loggers: LoggersType;
+  private _rawLoggers?: LoggersType;
+  private _loggers?: LoggersType;
+
+  /**
+   * Returns the entity-scoped loggers interface.
+   * Builds the wrapper closures lazily on first access.
+   *
+   * @returns Entity-scoped loggers object.
+   */
+  protected get loggers(): LoggersType {
+    if (!this._loggers) {
+      const raw = this._rawLoggers;
+      this._loggers = {
+        debug: (s: string) =>
+          raw?.debug?.(
+            `[DEM - ${this.className}: ${
+              this.data?._id ?? this._id ?? "not loaded"
+            }] ${s}`,
+          ),
+        info: (s: string) =>
+          raw?.info?.(
+            `[DEM - ${this.className}: ${
+              this.data?._id ?? this._id ?? "not loaded"
+            }] ${s}`,
+          ),
+        warn: (s: string) =>
+          raw?.warn?.(
+            `[DEM - ${this.className}: ${
+              this.data?._id ?? this._id ?? "not loaded"
+            }] ${s}`,
+          ),
+        error: (s: string) =>
+          raw?.error?.(
+            `[DEM - ${this.className}: ${
+              this.data?._id ?? this._id ?? "not loaded"
+            }] ${s}`,
+          ),
+      };
+    }
+    return this._loggers;
+  }
+
+  /**
+   * Assigns the entity-scoped loggers interface directly.
+   *
+   * @param value - Loggers interface to assign.
+   */
+  protected set loggers(value: LoggersType) {
+    this._loggers = value;
+  }
   protected isLoading = true;
   public isLazyStub: boolean = false;
   /**
@@ -450,32 +529,7 @@ export abstract class AutoUpdatedClientObject<
     
     this.callbacks = callback!;
 
-    this.loggers = {
-      debug: (s: string) =>
-        loggers.debug?.(
-          `[DEM - ${this.className}: ${
-            this.data?._id ?? this._id ?? "not loaded"
-          }] ${s}`,
-        ),
-      info: (s: string) =>
-        loggers.info?.(
-          `[DEM - ${this.className}: ${
-            this.data?._id ?? this._id ?? "not loaded"
-          }] ${s}`,
-        ),
-      warn: (s: string) =>
-        loggers.warn?.(
-          `[DEM - ${this.className}: ${
-            this.data?._id ?? this._id ?? "not loaded"
-          }] ${s}`,
-        ),
-      error: (s: string) =>
-        loggers.error?.(
-          `[DEM - ${this.className}: ${
-            this.data?._id ?? this._id ?? "not loaded"
-          }] ${s}`,
-        ),
-    };
+    this._rawLoggers = loggers;
 
     if (typeof data === "object" && data !== null && (data as any).__isLazyStub) {
       this.isLazyStub = true;
@@ -530,11 +584,18 @@ export abstract class AutoUpdatedClientObject<
     }
     this.generateSettersAndGetters();
 
-    Promise.resolve().then(() => {
-      this.generateSettersAndGetters();
-      // The derived constructors are complete, so no class field can shadow the accessors again.
-      this._ownShadowsCleared = true;
-    });
+    scheduleConstructionCompletion(this);
+  }
+
+  /**
+   * Runs the post-construction pass. Installs accessors again, then marks shadows as cleared.
+   * The derived constructors are complete, so no class field can shadow the accessors again.
+   *
+   * @internal Called by the batched microtask. Do not call it from application code.
+   */
+  public completeConstruction(): void {
+    this.generateSettersAndGetters();
+    this._ownShadowsCleared = true;
   }
 
   /**
@@ -725,6 +786,7 @@ export abstract class AutoUpdatedClientObject<
 
   /**
    * Returns a deep clone of the entity's extracted data with reference objects converted to IDs.
+   * Performs a deep clone on every read. Use `getRawExtractedData()` for read-only serialization and snapshot saving.
    *
    * @returns Serialized entity representation.
    */

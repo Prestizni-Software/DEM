@@ -159,12 +159,32 @@ Use `ClientStateReconciler` for manual state restoration or delta application:
 ```typescript
 import { ClientStateReconciler } from "@prestizni-software/dem-publisher";
 
+// Serialize in-memory manager state without cloning objects
+const stateSnapshot = ClientStateReconciler.serializeState(
+  clientManager,
+  revisionNumber,
+);
+
+// Restore client manager synchronously from an existing state snapshot
+const stateRestore = ClientStateReconciler.restoreFromState(
+  clientManager,
+  stateSnapshot,
+);
+
 // Restore client manager in-memory state from storage
 const restoreResult = await ClientStateReconciler.restoreFromStorage(
   clientManager,
   storage,
 );
 console.log(restoreResult.restored, restoreResult.revision);
+
+// Stale-while-revalidate: restore immediately and revalidate in the background
+const swrResult = await ClientStateReconciler.restoreAndRevalidate(
+  clientManager,
+  storage,
+  async (rev) => fetchDeltaFromServer(rev),
+);
+// Publish swrResult immediately, then await swrResult.revalidation in background
 
 // Persist in-memory manager state to storage manually
 await ClientStateReconciler.persistToStorage(

@@ -164,6 +164,7 @@ Detailed architectural guides exist in the `docs/` directory:
 - [ADR 0002: DEMArray Reactive Mutation Architecture](docs/adr/0002-demarray-reactive-mutation-architecture.md)
 - [Delta Synchronization Architecture](docs/DELTA_SYNC_ARCHITECTURE.md)
 - [Delta Synchronization User Guide](docs/DELTA_SYNC.md)
+- [Snapshot Load Performance Plan](docs/SNAPSHOT_LOAD_PERFORMANCE.md)
 - [Database States and Error Handling](docs/ERRORS_AND_DB_STATE.md)
 - [Client Population Bypass Architecture](docs/CLIENT_POPULATION.md)
 - [Release Workflow Guide](docs/RELEASE_WORKFLOW.md)
