@@ -10,6 +10,7 @@ import {
 } from "../CommonTypes.js";
 import { AutoUpdateClientManager } from "../AutoUpdateClientManagerClass.js";
 import { EventEmitter } from "eventemitter3";
+import { readVersions, release, writeVersions } from "../scripts/release.js";
 
 describe("DEM Version Verification System", () => {
   describe("parseSemVer", () => {
@@ -255,6 +256,67 @@ describe("DEM Version Verification System", () => {
       await expect(strictManager.loadFromServer()).rejects.toThrow(
         /Strict DEM version match required/,
       );
+    });
+  });
+
+  describe("Release Script Rollback on Failure", () => {
+    test("reverts version.ts changes when a release step fails after version bump", () => {
+      const before = readVersions();
+      const failingExec = jest.fn((cmd: string) => {
+        if (cmd.startsWith("npx tsc")) {
+          throw new Error("Simulated build failure");
+        }
+      });
+
+      try {
+        expect(() =>
+          release("both", "patch", {
+            skipTests: true,
+            skipPublish: true,
+            push: false,
+            execCommand: failingExec,
+          } as any),
+        ).toThrow(/Simulated build failure/);
+
+        const after = readVersions();
+        expect(after.client).toBe(before.client);
+        expect(after.server).toBe(before.server);
+        expect(after.minCompatible).toBe(before.minCompatible);
+      } finally {
+        writeVersions(before.client, before.server, before.minCompatible);
+      }
+    });
+
+    test("reverts version.ts, commit, and tags when npm publish fails", () => {
+      const before = readVersions();
+      const executedCmds: string[] = [];
+      const mockExec = jest.fn((cmd: string) => {
+        executedCmds.push(cmd);
+        if (cmd.startsWith("npm publish")) {
+          throw new Error("Simulated npm publish failure");
+        }
+      });
+
+      try {
+        expect(() =>
+          release("both", "minor", {
+            skipTests: true,
+            skipPublish: false,
+            push: false,
+            execCommand: mockExec,
+            prepareDist: jest.fn(),
+          } as any),
+        ).toThrow(/Simulated npm publish failure/);
+
+        const after = readVersions();
+        expect(after.client).toBe(before.client);
+        expect(after.server).toBe(before.server);
+        expect(after.minCompatible).toBe(before.minCompatible);
+        expect(executedCmds.some((c) => c.startsWith("git reset --soft HEAD~1"))).toBe(true);
+        expect(executedCmds.some((c) => c.startsWith("git tag -d"))).toBe(true);
+      } finally {
+        writeVersions(before.client, before.server, before.minCompatible);
+      }
     });
   });
 });

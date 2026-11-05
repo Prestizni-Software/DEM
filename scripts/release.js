@@ -46,16 +46,18 @@ function runCommand(cmd, cwd = rootDir) {
 /**
  * Reads versions from src/version.ts.
  *
- * @returns Object with client and server versions.
+ * @returns Object with client, server, and minCompatible versions.
  */
 export function readVersions() {
   const versionFile = path.join(rootDir, "version.ts");
   const content = fs.readFileSync(versionFile, "utf-8");
   const clientMatch = content.match(/DEM_CLIENT_VERSION\s*=\s*"([^"]+)"/);
   const serverMatch = content.match(/DEM_SERVER_VERSION\s*=\s*"([^"]+)"/);
+  const minMatch = content.match(/DEM_MIN_COMPATIBLE_CLIENT_VERSION\s*=\s*"([^"]+)"/);
   return {
     client: clientMatch ? clientMatch[1] : "0.7.5",
     server: serverMatch ? serverMatch[1] : "0.7.4",
+    minCompatible: minMatch ? minMatch[1] : undefined,
   };
 }
 
@@ -310,10 +312,12 @@ function preparePackageDist(clientVersion, serverVersion) {
 
 /**
  * Executes unified release workflow for client and/or server packages.
+ * Reverts version.ts changes, staged files, release commits, and tags if any step fails.
  *
  * @param target - 'both' | 'client' | 'server'.
  * @param releaseType - 'patch' | 'minor' | 'major' | semver string.
  * @param options - Release execution options.
+ * @throws {Error} Rethrows the underlying error after reverting version changes.
  */
 export function release(target = "both", releaseType = "patch", options = {}) {
   const {
@@ -322,6 +326,8 @@ export function release(target = "both", releaseType = "patch", options = {}) {
     skipTests = false,
     skipPublish = false,
     push = true,
+    execCommand = runCommand,
+    prepareDist = preparePackageDist,
   } = options;
 
   const currentVersions = readVersions();
@@ -352,105 +358,157 @@ export function release(target = "both", releaseType = "patch", options = {}) {
   log(`========================================\n`);
 
   // Step 1: Verify npm login status
-  if (!skipPublish && !dryRun) {
+  if (!skipPublish && !dryRun && execCommand === runCommand) {
     ensureNpmLogin();
   }
 
   // Step 2: Verification protocol (tests & compilation)
   if (!skipTests) {
     log("Running TypeScript compilation check (npx tsc --noEmit)...");
-    runCommand("npx tsc --noEmit", rootDir);
+    execCommand("npx tsc --noEmit", rootDir);
     log("Running automated regression test suite (npm run test_for_AI)...");
-    runCommand("npm run test_for_AI", rootDir);
+    execCommand("npm run test_for_AI", rootDir);
     logSuccess("All tests and verification checks passed!");
   }
 
-  // Step 3: Update version.ts
-  writeVersions(nextClientVersion, nextServerVersion);
+  let versionUpdated = false;
+  let versionStaged = false;
+  let commitCreated = false;
+  const createdTags = [];
 
-  // Step 4: Build distribution files
-  log("Building distribution files (dist/)...");
-  runCommand("npx tsc", rootDir);
-  logSuccess("Built dist/ successfully");
-
-  // Step 5: Prepare standalone client and server packages in dist/packages/
-  preparePackageDist(nextClientVersion, nextServerVersion);
-
-  if (dryRun) {
-    logSuccess("[DRY RUN] Build and packaging completed. Skipping commit and publish.");
-    // Revert version.ts in dry run
-    writeVersions(currentVersions.client, currentVersions.server);
-    return;
-  }
-
-  // Step 6: Stage version.ts and package.json
-  runCommand("git add version.ts package.json", rootDir);
-
-  // Step 7: Construct release commit message
-  const commitTitle = description
-    ? `Release client v${nextClientVersion}, server v${nextServerVersion}: ${description}`
-    : `Release client v${nextClientVersion}, server v${nextServerVersion}`;
-  const commitMessage = `${commitTitle}\n\nClient version: ${nextClientVersion}\nServer version: ${nextServerVersion}`;
-
-  log(`Creating release commit: "${commitTitle}"...`);
-  const tempMsgFile = path.join(rootDir, ".release-commit-msg.tmp");
   try {
-    fs.writeFileSync(tempMsgFile, commitMessage, "utf-8");
-    runCommand(`git commit -F "${tempMsgFile}"`, rootDir);
-  } finally {
-    if (fs.existsSync(tempMsgFile)) {
-      fs.unlinkSync(tempMsgFile);
+    // Step 3: Update version.ts
+    writeVersions(nextClientVersion, nextServerVersion);
+    versionUpdated = true;
+
+    // Step 4: Build distribution files
+    log("Building distribution files (dist/)...");
+    execCommand("npx tsc", rootDir);
+    logSuccess("Built dist/ successfully");
+
+    // Step 5: Prepare standalone client and server packages in dist/packages/
+    prepareDist(nextClientVersion, nextServerVersion);
+
+    if (dryRun) {
+      logSuccess("[DRY RUN] Build and packaging completed. Skipping commit and publish.");
+      writeVersions(
+        currentVersions.client,
+        currentVersions.server,
+        currentVersions.minCompatible,
+      );
+      return;
     }
-  }
 
-  // Step 8: Create git tags
-  if (target === "client" || target === "both" || target === "all") {
-    const clientTag = `client-v${nextClientVersion}`;
-    log(`Tagging release as ${clientTag}...`);
-    runCommand(`git tag -a "${clientTag}" -m "Release @prestizni-software/client-dem v${nextClientVersion}"`, rootDir);
-  }
-  if (target === "server" || target === "both" || target === "all") {
-    const serverTag = `server-v${nextServerVersion}`;
-    log(`Tagging release as ${serverTag}...`);
-    runCommand(`git tag -a "${serverTag}" -m "Release @prestizni-software/server-dem v${nextServerVersion}"`, rootDir);
-  }
+    // Step 6: Stage version.ts and package.json
+    execCommand("git add version.ts package.json", rootDir);
+    versionStaged = true;
 
-  // Step 9: Push commit and tags if enabled
-  if (push) {
+    // Step 7: Construct release commit message
+    const commitTitle = description
+      ? `Release client v${nextClientVersion}, server v${nextServerVersion}: ${description}`
+      : `Release client v${nextClientVersion}, server v${nextServerVersion}`;
+    const commitMessage = `${commitTitle}\n\nClient version: ${nextClientVersion}\nServer version: ${nextServerVersion}`;
+
+    log(`Creating release commit: "${commitTitle}"...`);
+    const tempMsgFile = path.join(rootDir, ".release-commit-msg.tmp");
     try {
-      log("Pushing commit and tags to origin...");
-      runCommand("git push origin main --follow-tags", rootDir);
-      logSuccess("Pushed release commit and tags to origin");
-    } catch (pushErr) {
-      logError("git push failed. Push manually using: git push origin main --follow-tags");
+      fs.writeFileSync(tempMsgFile, commitMessage, "utf-8");
+      execCommand(`git commit -F "${tempMsgFile}"`, rootDir);
+      commitCreated = true;
+    } finally {
+      if (fs.existsSync(tempMsgFile)) {
+        fs.unlinkSync(tempMsgFile);
+      }
     }
-  }
 
-  // Step 10: Publish to npm
-  if (skipPublish) {
-    logSuccess("Skipping npm publish as requested.");
-    return;
-  }
-
-  const distPackagesDir = path.join(rootDir, "dist", "packages");
-  if (target === "client" || target === "both" || target === "all") {
-    log("Publishing @prestizni-software/client-dem to npm...");
-    try {
-      runCommand("npm publish --access public", path.join(distPackagesDir, "client"));
-      logSuccess(`Successfully published @prestizni-software/client-dem v${nextClientVersion}!`);
-    } catch (err) {
-      logError("Client publish failed. Check npm credentials.");
+    // Step 8: Create git tags
+    if (target === "client" || target === "both" || target === "all") {
+      const clientTag = `client-v${nextClientVersion}`;
+      log(`Tagging release as ${clientTag}...`);
+      execCommand(
+        `git tag -a "${clientTag}" -m "Release @prestizni-software/client-dem v${nextClientVersion}"`,
+        rootDir,
+      );
+      createdTags.push(clientTag);
     }
-  }
-
-  if (target === "server" || target === "both" || target === "all") {
-    log("Publishing @prestizni-software/server-dem to npm...");
-    try {
-      runCommand("npm publish --access public", path.join(distPackagesDir, "server"));
-      logSuccess(`Successfully published @prestizni-software/server-dem v${nextServerVersion}!`);
-    } catch (err) {
-      logError("Server publish failed. Check npm credentials.");
+    if (target === "server" || target === "both" || target === "all") {
+      const serverTag = `server-v${nextServerVersion}`;
+      log(`Tagging release as ${serverTag}...`);
+      execCommand(
+        `git tag -a "${serverTag}" -m "Release @prestizni-software/server-dem v${nextServerVersion}"`,
+        rootDir,
+      );
+      createdTags.push(serverTag);
     }
+
+    // Step 9: Publish to npm before pushing so a failed publish can roll back cleanly
+    if (!skipPublish) {
+      const distPackagesDir = path.join(rootDir, "dist", "packages");
+      if (target === "client" || target === "both" || target === "all") {
+        log("Publishing @prestizni-software/client-dem to npm...");
+        execCommand("npm publish --access public", path.join(distPackagesDir, "client"));
+        logSuccess(`Successfully published @prestizni-software/client-dem v${nextClientVersion}!`);
+      }
+
+      if (target === "server" || target === "both" || target === "all") {
+        log("Publishing @prestizni-software/server-dem to npm...");
+        execCommand("npm publish --access public", path.join(distPackagesDir, "server"));
+        logSuccess(`Successfully published @prestizni-software/server-dem v${nextServerVersion}!`);
+      }
+    } else {
+      logSuccess("Skipping npm publish as requested.");
+    }
+
+    // Step 10: Push commit and tags if enabled
+    if (push) {
+      try {
+        log("Pushing commit and tags to origin...");
+        execCommand("git push origin main --follow-tags", rootDir);
+        logSuccess("Pushed release commit and tags to origin");
+      } catch (pushErr) {
+        logError("git push failed. Push manually using: git push origin main --follow-tags");
+      }
+    }
+  } catch (error) {
+    logError(`Release failed: ${error instanceof Error ? error.message : String(error)}`);
+    log("Reverting version changes and release artifacts...");
+
+    for (const tag of createdTags) {
+      try {
+        execCommand(`git tag -d "${tag}"`, rootDir);
+      } catch (_tagErr) {
+        // Ignore tag cleanup errors
+      }
+    }
+
+    if (commitCreated) {
+      try {
+        execCommand("git reset --soft HEAD~1", rootDir);
+      } catch (_resetErr) {
+        // Ignore commit reset errors
+      }
+    }
+
+    if (versionStaged || commitCreated) {
+      try {
+        execCommand("git restore --staged version.ts package.json", rootDir);
+      } catch (_unstageErr) {
+        // Ignore unstage errors
+      }
+    }
+
+    if (versionUpdated) {
+      writeVersions(
+        currentVersions.client,
+        currentVersions.server,
+        currentVersions.minCompatible,
+      );
+      logSuccess(
+        `Reverted version.ts back to client v${currentVersions.client}, server v${currentVersions.server}`,
+      );
+    }
+
+    throw error;
   }
 }
 
@@ -494,11 +552,15 @@ if (isMainModule) {
     }
   }
 
-  release(target, releaseTypeArg, {
-    description,
-    dryRun,
-    skipTests,
-    skipPublish,
-    push: !noPush,
-  });
+  try {
+    release(target, releaseTypeArg, {
+      description,
+      dryRun,
+      skipTests,
+      skipPublish,
+      push: !noPush,
+    });
+  } catch (_err) {
+    process.exit(1);
+  }
 }

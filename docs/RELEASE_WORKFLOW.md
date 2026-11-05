@@ -63,6 +63,12 @@ The release script (`scripts/release.js`) executes the following operations:
 8. **NPM Publication**:
    - Publishes `@prestizni-software/client-dem` and/or `@prestizni-software/server-dem` with public access.
 
+9. **Remote Push**:
+   - Pushes the release commit and tags to `origin main --follow-tags` after publication succeeds.
+
+10. **Automatic Rollback on Failure**:
+    - If any build, packaging, commit, tag, or publish step fails after `version.ts` is updated, the script automatically deletes any newly created tags, soft-resets the release commit (`git reset --soft HEAD~1`), unstages `version.ts` and `package.json`, and restores `version.ts` to its previous client, server, and minimum compatible versions.
+
 ---
 
 ## 4. Usage Commands
