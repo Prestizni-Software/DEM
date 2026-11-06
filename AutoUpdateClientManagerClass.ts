@@ -21,7 +21,6 @@ import {
   EntityDescriptor,
   LazyLoadingOptions,
   DEMClientOptions,
-  applyNetworkSimulationToSocket,
 } from "./CommonTypes.js";
 import { EventEmitter } from "eventemitter3";
 import {
@@ -358,9 +357,8 @@ export class AutoUpdateClientManager<
         DEMErrorCode.MISSING_ARGUMENT,
         "Missing required argument: socket",
       );
-    const wrappedSocket = applyNetworkSimulationToSocket(socket);
-    super(classParam, className, wrappedSocket, loggers, managers, emitter);
-    this.socket = wrappedSocket;
+    super(classParam, className, socket, loggers, managers, emitter);
+    this.socket = socket;
     this.managers = managers;
     this.callbacks = callbacks;
     this.versionOptions = versionOptions;

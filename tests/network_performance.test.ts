@@ -9,10 +9,13 @@ import {
   DEM_VERSION,
   globalCache,
   LoggersType,
+} from "../CommonTypes.js";
+import {
   configureNetworkSimulation,
   resetNetworkSimulation,
   getNetworkSimulationConfig,
-} from "../CommonTypes.js";
+  applyNetworkSimulationToSocket,
+} from "./NetworkSimulation.js";
 import {
   ClientStateReconciler,
   MemoryStorageAdapter,
@@ -109,7 +112,7 @@ describe("Network Slowness & Jitter Performance Benchmarks", () => {
         seed: 101,
       });
 
-      const mockSocket: any = {
+      const rawMockSocket: any = {
         on: jest.fn(),
         off: jest.fn(),
         onAny: jest.fn(),
@@ -128,6 +131,7 @@ describe("Network Slowness & Jitter Performance Benchmarks", () => {
           }
         }),
       };
+      const mockSocket = applyNetworkSimulationToSocket(rawMockSocket);
 
       const t0 = performance.now();
       const managers = await AUCManagerFactory(
@@ -196,7 +200,7 @@ describe("Network Slowness & Jitter Performance Benchmarks", () => {
       seed: 777,
     });
 
-    const blockingSocket: any = {
+    const rawBlockingSocket: any = {
       on: jest.fn(),
       off: jest.fn(),
       emit: jest.fn((event: string, _payload: any, ack: any) => {
@@ -216,6 +220,7 @@ describe("Network Slowness & Jitter Performance Benchmarks", () => {
         }
       }),
     };
+    const blockingSocket = applyNetworkSimulationToSocket(rawBlockingSocket);
 
     const blockingManager = new AutoUpdateClientManager(
       ClientClasses.Subordinate as any,
@@ -294,13 +299,14 @@ describe("Network Slowness & Jitter Performance Benchmarks", () => {
       seed: 99,
     });
 
-    const mockSocket: any = {
+    const rawMockSocket: any = {
       on: jest.fn(),
       off: jest.fn(),
       emit: jest.fn((_event: string, data: any, ack: any) => {
         ack?.({ success: true, data: data?.value });
       }),
     };
+    const mockSocket = applyNetworkSimulationToSocket(rawMockSocket);
 
     const manager: any = {
       managers: {},

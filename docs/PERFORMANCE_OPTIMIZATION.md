@@ -85,7 +85,8 @@ Analysis of the subsequent profiler trace (`performance/Firefox 2026-10-05 08.04
 
 When working with performance optimizations, synchronization, or startup flows, tests **must** be conducted under both zero-latency and simulated network slowness/jitter conditions.
 
-### A. Network Simulation Framework (`sync/NetworkSimulation.ts`)
+### A. Network Simulation Test Harness (`tests/NetworkSimulation.ts`)
+- **Isolation**: The network simulation engine resides exclusively in `tests/NetworkSimulation.ts`, keeping the production DEM client/server runtime completely clean of simulation code.
 - **`configureNetworkSimulation({ enabled, minLatencyMs, jitterMs, seed, includeJestMocks })`**:
   - Configures one-way outbound/inbound network latency and random jitter on socket connections.
   - Preserves strict TCP/WebSocket FIFO packet ordering per stream even when random jitter varies across adjacent messages.

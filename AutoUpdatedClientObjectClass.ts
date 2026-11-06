@@ -29,7 +29,6 @@ import {
   DEMArrayMutationResponse,
   DEMArrayMutationOp,
   DEMArrayMutationParams,
-  applyNetworkSimulationToSocket,
 } from "./CommonTypes.js";
 import { ObjectId } from "bson";
 import { Socket } from "socket.io-client";
@@ -545,7 +544,7 @@ export abstract class AutoUpdatedClientObject<
     }
 
     this.classParam = classParam;
-    this.socket = isServer ? socket : applyNetworkSimulationToSocket(socket);
+    this.socket = socket;
     this.isServer = isServer;
     this.emitter = emitter;
     this.isLoadingReferences = true;

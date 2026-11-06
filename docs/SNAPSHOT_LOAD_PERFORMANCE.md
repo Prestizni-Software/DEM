@@ -65,7 +65,7 @@ Four parts. Execute them in order. Each part starts with a failing test.
 
 ### Part 6: Network Slowness Simulation & Performance Testing
 
-- Add `sync/NetworkSimulation.ts` (`configureNetworkSimulation`, `resetNetworkSimulation`, `applyNetworkSimulationToSocket`) with FIFO packet ordering.
+- Add `tests/NetworkSimulation.ts` (`configureNetworkSimulation`, `resetNetworkSimulation`, `applyNetworkSimulationToSocket`) with FIFO packet ordering (isolated completely to tests).
 - Add `tests/network_performance.test.ts` to benchmark cold startup, stale-while-revalidate (`restoreAndRevalidate`), and concurrent mutations across 0ms, 30–50ms RTT, and 120–160ms RTT.
 - Support global toggleable network noise (`DEM_NETWORK_NOISE=1`) across the entire test suite via `npm run test:network`.
 - Mandate that any performance work must be verified against both `npm run test:perf` and `npm run test:network`.

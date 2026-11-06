@@ -13,6 +13,7 @@ function runTestsWithNetworkNoise() {
     "node_modules/jest/bin/jest.js",
     ...(hasExplicitTestTargets ? [] : ["tests/"]),
     "--testPathIgnorePatterns=tests/issue_regression.test.ts",
+    "--setupFilesAfterEnv=<rootDir>/tests/setup_network_noise.ts",
     "--detectOpenHandles",
     "--forceExit",
     ...extraArgs,
