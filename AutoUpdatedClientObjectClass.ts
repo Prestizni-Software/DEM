@@ -906,6 +906,9 @@ export abstract class AutoUpdatedClientObject<
   private _lastArrayRevision?: Map<string, number>;
 
   private openSockets() {
+    if ((this.parentManager as any)?.hasCollectionUpdateListener) {
+      return;
+    }
     const id = this.data?._id ?? this._id;
     if (!id || !this.socket) return;
     const event = EVENT_UPDATE + this.className + id.toString();
@@ -925,7 +928,14 @@ export abstract class AutoUpdatedClientObject<
     );
   }
 
-  private async handleUpdateRequest(update: {
+  /**
+   * Applies an incoming server property update or array mutation to this entity.
+   *
+   * @param update - Update request payload from server.
+   * @returns Promise resolving to server response outcome.
+   * @internal
+   */
+  public async handleUpdateRequest(update: {
     key: string;
     value: unknown;
     revision?: number;

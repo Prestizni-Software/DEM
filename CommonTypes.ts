@@ -221,6 +221,10 @@ export interface DEMClientOptions {
    * Timeout in milliseconds for startup data loading from server (default: 5000 ms).
    */
   startupTimeoutMs?: number;
+  /**
+   * Enables collection-level socket event multiplexing, eliminating per-entity socket listeners.
+   */
+  multiplexUpdateEvents?: boolean;
 }
 
 /**

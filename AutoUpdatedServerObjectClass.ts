@@ -450,6 +450,7 @@ export abstract class AutoUpdatedServerObject<
         const update = this.makeUpdate(key, value);
         const event = EVENT_UPDATE + this.className + _id.toString();
         (this.socket as any).emit(event, update);
+        (this.socket as any).emit(EVENT_UPDATE + this.className, update);
         if (
           this.parentManager &&
           typeof (this.parentManager as any).checkPermissionBoundaries ===
@@ -666,6 +667,7 @@ export abstract class AutoUpdatedServerObject<
         };
         const event = EVENT_UPDATE + this.className + _id.toString();
         (this.socket as any).emit(event, update);
+        (this.socket as any).emit(EVENT_UPDATE + this.className, update);
 
         return {
           success: true,

@@ -53,6 +53,12 @@ DEM isolates responsibilities into two distinct packages:
 - Uses element-anchored operations (`targetId`) to eliminate index-drift under concurrent writes.
 - Synchronizes client and server clocks using Cristian's algorithm during handshake.
 
+### 6. Collection-Level Socket Event Multiplexing (v0.15.1+)
+- Multiplexes entity updates through a single collection-level listener (`update${className}`).
+- Eliminates socket listener proliferation across thousands of instances.
+- Replaces $O(N)$ teardown sweeps with zero-cost detachment.
+- Fully backward-compatible with dual server emission (`update${className}${id}` and `update${className}`).
+
 ---
 
 ## Packages
@@ -169,6 +175,7 @@ Detailed architectural guides exist in the `docs/` directory:
 - [Database States and Error Handling](docs/ERRORS_AND_DB_STATE.md)
 - [Client Population Bypass Architecture](docs/CLIENT_POPULATION.md)
 - [Release Workflow Guide](docs/RELEASE_WORKFLOW.md)
+- [Collection-Level Socket Event Multiplexing](docs/SOCKET_MULTIPLEXING.md)
 - [Domain Glossary](GLOSSARY.md)
 
 ---

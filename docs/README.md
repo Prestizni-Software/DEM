@@ -26,3 +26,4 @@ This directory contains architectural documentation and technical guides for the
 - [Smart Lazy Loading Plan](./superpowers/plans/2026-10-21-smart-lazy-loading.md) - Phased implementation plan and review criteria.
 - [Functionality Catalog & Combinations Matrix](./functionalities/README.md) - Catalog of all 14 library subsystems, 2-way and 3-way combinations matrix, and subagent test suites.
 - [Snapshot Load Performance Plan](./SNAPSHOT_LOAD_PERFORMANCE.md) - Profiler evidence and four-part plan for faster snapshot loading.
+- [Collection-Level Socket Event Multiplexing](./SOCKET_MULTIPLEXING.md) - Architectural specification for collection-level update multiplexing and listener proliferation elimination.

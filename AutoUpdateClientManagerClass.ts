@@ -155,8 +155,9 @@ export async function AUCManagerFactory<
           managerClientOptions = clientOptions;
         } else if (typeof clientOptions === "object" && clientOptions !== null) {
           if (
-            "startupTimeoutMs" in clientOptions &&
-            typeof (clientOptions as DEMClientOptions).startupTimeoutMs === "number"
+            ("startupTimeoutMs" in clientOptions &&
+              typeof (clientOptions as DEMClientOptions).startupTimeoutMs === "number") ||
+            "multiplexUpdateEvents" in clientOptions
           ) {
             managerClientOptions = clientOptions as DEMClientOptions;
           } else if (key in clientOptions) {
@@ -295,6 +296,10 @@ export class AutoUpdateClientManager<
   public readonly lazyLoadingOptions?: LazyLoadingOptions | boolean;
   public readonly isLazyLoadingEnabled: boolean;
   public readonly defaultHydrationDepth: number = 2;
+  /**
+   * Indicates whether this manager handles collection-level socket updates, avoiding per-entity listeners.
+   */
+  public readonly hasCollectionUpdateListener: boolean;
   public manifest: EntityDescriptor[] = [];
   public lastRevision: number = 0;
   /**
@@ -385,10 +390,14 @@ export class AutoUpdateClientManager<
 
     if (typeof clientOptions === "number") {
       this.startupTimeoutMs = clientOptions;
+      this.hasCollectionUpdateListener = false;
     } else if (typeof clientOptions === "object" && clientOptions !== null) {
       if (typeof clientOptions.startupTimeoutMs === "number") {
         this.startupTimeoutMs = clientOptions.startupTimeoutMs;
       }
+      this.hasCollectionUpdateListener = Boolean(clientOptions.multiplexUpdateEvents);
+    } else {
+      this.hasCollectionUpdateListener = false;
     }
 
     this._reconnectHandler = async () => {
@@ -428,11 +437,32 @@ export class AutoUpdateClientManager<
   }
 
   /**
-   * Registers socket event listeners for entity creation and deletion broadcasts.
+   * Registers socket event listeners for entity creation, deletion, and collection-level update broadcasts.
    */
   private startSocketListeners() {
     this.socket.off("new" + this.className);
     this.socket.off("delete" + this.className);
+
+    if (this.hasCollectionUpdateListener) {
+      this.socket.off(EVENT_UPDATE + this.className);
+      this.socket.on(
+        EVENT_UPDATE + this.className,
+        async (
+          update: { _id?: string; key: string; value: unknown; revision?: number },
+          ack?: (res: ServerResponse<unknown>) => void,
+        ) => {
+          if (this._isClosed) return;
+          const id = update?._id?.toString?.();
+          if (!id) return;
+          const obj = this.objects_[id];
+          if (obj && typeof (obj as any).handleUpdateRequest === "function") {
+            const res = await (obj as any).handleUpdateRequest(update);
+            if (ack && typeof ack === "function") ack(res);
+            return res;
+          }
+        },
+      );
+    }
 
     this.socket.on(
       "new" + this.className,
@@ -577,7 +607,9 @@ export class AutoUpdateClientManager<
     _id: MongoId,
   ): Promise<{ success: boolean; message: string }> {
     const _idStr = _id.toString();
-    this.socket.off(EVENT_UPDATE + this.className + _idStr);
+    if (!this.hasCollectionUpdateListener) {
+      this.socket.off(EVENT_UPDATE + this.className + _idStr);
+    }
     this._cachedObjectsArray = null;
     if (this.manifest && Array.isArray(this.manifest)) {
       this.manifest = this.manifest.filter((m) => String(m._id) !== _idStr);
@@ -787,7 +819,7 @@ export class AutoUpdateClientManager<
             // Remove any locally cached objects that no longer exist on the server
             for (const oldId of Object.keys(this.objects_)) {
               if (!incomingIds.has(oldId)) {
-                if (this.socket && typeof this.socket.off === "function") {
+                if (!this.hasCollectionUpdateListener && this.socket && typeof this.socket.off === "function") {
                   this.socket.off(EVENT_UPDATE + this.className + oldId);
                 }
                 const oldObj = this.objects_[oldId];
@@ -892,7 +924,9 @@ export class AutoUpdateClientManager<
 
           // Clear old objects before populating new ones on full reload
           for (const oldId of Object.keys(this.objects_)) {
-            this.socket.off(EVENT_UPDATE + this.className + oldId);
+            if (!this.hasCollectionUpdateListener && this.socket && typeof this.socket.off === "function") {
+              this.socket.off(EVENT_UPDATE + this.className + oldId);
+            }
             const oldObj = this.objects_[oldId];
             if (oldObj && typeof (oldObj as any).destroyImmediate === "function") {
               (oldObj as any).destroyImmediate();
@@ -1370,6 +1404,9 @@ export class AutoUpdateClientManager<
     }
     this.socket?.off?.("new" + this.className);
     this.socket?.off?.("delete" + this.className);
+    if (this.hasCollectionUpdateListener) {
+      this.socket?.off?.(EVENT_UPDATE + this.className);
+    }
     const objs = Object.values(this.objects_);
     for (const element of objs) {
       const obj = element;

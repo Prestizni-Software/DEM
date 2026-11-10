@@ -1273,7 +1273,10 @@ export class AutoUpdateServerManager<
             );
             if (hasMoreSpecificManager) return;
           }
-          const id = event.slice(updatePrefix.length);
+          let id = event.slice(updatePrefix.length);
+          if (!id && (data as any)?._id) {
+            id = String((data as any)._id);
+          }
           if (!id) return;
           this.loggers.debug(
             "Updating object in manager " +
