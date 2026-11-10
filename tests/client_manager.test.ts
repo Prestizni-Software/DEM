@@ -398,6 +398,23 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
 
     expect(manager.isLoaded).toBe(true);
     expect(emitCount).toBe(1);
+
+    // Subsequent call after completion should initiate a new load
+    const p3 = manager.loadFromServer();
+    expect(emitCount).toBe(2);
+
+    finishStartup!({
+      success: true,
+      data: {
+        ids: ["id1"],
+        objects: [{ _id: "id1" }],
+        properties: ["_id"],
+      },
+      message: "",
+    });
+
+    await p3;
+    expect(emitCount).toBe(2);
   });
 });
 

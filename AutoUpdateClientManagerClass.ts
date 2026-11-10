@@ -308,6 +308,7 @@ export class AutoUpdateClientManager<
   private _cachedObjectsArray: T[] | null = null;
   private _reconnectHandler?: () => Promise<void>;
   private _deauthHandler?: (payload?: unknown) => void;
+  private inFlightLoadPromise: Promise<void> | null = null;
   public _isClosed: boolean = false;
   /**
    * Timeout in milliseconds for startup data loading from server (default: 5000 ms).
@@ -594,6 +595,7 @@ export class AutoUpdateClientManager<
 
   /**
    * Fetches startup data from the server or applies delta updates from local storage.
+   * Deduplicates concurrent invocations so only one load operation executes at a time.
    *
    * @param t - Optional benchmark timer tracking object.
    * @param timeoutMs - Optional timeout in milliseconds override for this load operation.
@@ -602,7 +604,34 @@ export class AutoUpdateClientManager<
    * @throws {DEMError} Throws DEMErrorCode.STARTUP_FAILED if server rejected startup.
    * @throws {DEMError} Throws DEMErrorCode.VERSION_MISMATCH if versions are incompatible.
    */
-  async loadFromServer(
+  public async loadFromServer(
+    t?: { s: number; f: number },
+    timeoutMs?: number,
+  ): Promise<void> {
+    if (this.inFlightLoadPromise) {
+      return this.inFlightLoadPromise;
+    }
+    this.inFlightLoadPromise = (async () => {
+      try {
+        await this.executeLoadFromServer(t, timeoutMs);
+      } finally {
+        this.inFlightLoadPromise = null;
+      }
+    })();
+    return this.inFlightLoadPromise;
+  }
+
+  /**
+   * Internal execution logic for fetching startup data from the server.
+   *
+   * @param t - Optional benchmark timer tracking object.
+   * @param timeoutMs - Optional timeout in milliseconds override for this load operation.
+   * @returns Promise resolving when data has been loaded and initialized.
+   * @throws {DEMError} Throws DEMErrorCode.TIMEOUT if data loading exceeds timeout.
+   * @throws {DEMError} Throws DEMErrorCode.STARTUP_FAILED if server rejected startup.
+   * @throws {DEMError} Throws DEMErrorCode.VERSION_MISMATCH if versions are incompatible.
+   */
+  private async executeLoadFromServer(
     t?: { s: number; f: number },
     timeoutMs?: number,
   ): Promise<void> {
@@ -1350,6 +1379,7 @@ export class AutoUpdateClientManager<
     }
     this.pendingMissingFetches.clear();
     this.pendingHydrations.clear();
+    this.inFlightLoadPromise = null;
     super.close();
   }
 }
