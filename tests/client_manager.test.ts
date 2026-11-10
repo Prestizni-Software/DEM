@@ -347,6 +347,59 @@ describe("AutoUpdateClientManagerClass Full Coverage", () => {
       expect(recordedProgress[i]).toBeGreaterThanOrEqual(recordedProgress[i - 1]);
     }
   });
+
+  test("loadFromServer deduplicates concurrent in-flight calls", async () => {
+    let emitCount = 0;
+    let finishStartup: ((res: any) => void) | null = null;
+
+    (mockSocket.emit as unknown as jest.Mock).mockImplementation(
+      (event: string, _data: unknown, cb: (res: ServerResponse<unknown>) => void) => {
+        if (event === "startupTest") {
+          emitCount++;
+          finishStartup = cb;
+        }
+      },
+    );
+
+    class TestClass extends AutoUpdatedClientObject<MockClientData> {
+      get _id() {
+        return (this.data as MockClientData)?._id;
+      }
+    }
+    Reflect.defineMetadata("props", ["_id"], TestClass.prototype);
+
+    const manager = new AutoUpdateClientManager(
+      TestClass,
+      "Test",
+      mockSocket,
+      loggers,
+      {} as any,
+      emitter,
+      callbacks,
+    );
+    managersToClose.push(manager);
+
+    const p1 = manager.loadFromServer();
+    const p2 = manager.loadFromServer();
+
+    expect(emitCount).toBe(1);
+
+    finishStartup!({
+      success: true,
+      data: {
+        ids: ["id1"],
+        objects: [{ _id: "id1" }],
+        properties: ["_id"],
+      },
+      message: "",
+    });
+
+    await Promise.all([p1, p2]);
+
+    expect(manager.isLoaded).toBe(true);
+    expect(emitCount).toBe(1);
+  });
 });
+
 
 
