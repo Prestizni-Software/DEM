@@ -451,7 +451,7 @@ export interface ParsedSemVer {
 export function parseSemVer(version: string): ParsedSemVer | null {
   if (!version || typeof version !== "string") return null;
   const cleaned = version.trim().replace(/^v/, "");
-  const match = cleaned.match(/^(\d+)\.(\d+)(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?/);
+  const match = cleaned.match(/^(\d+)\.(\d+)(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/);
   if (!match) return null;
   return {
     major: parseInt(match[1], 10),

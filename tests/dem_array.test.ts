@@ -609,4 +609,29 @@ describe("DEMArray Reactive Array Wrapper & Mutation Pipeline", () => {
     };
     expect(payloadWithIds.objects).toHaveLength(2);
   });
+
+  test("DEMArray splice with negative index returns removed elements accurately", async () => {
+    const project = new MockProject(
+      MockProject,
+      mockSocket,
+      { _id: "proj-neg", name: "NegSplice", tags: ["first", "second", "third"] },
+      loggers,
+      "MockProject",
+      {} as any,
+      { new: jest.fn(), update: jest.fn(), delete: jest.fn() },
+      emitter,
+    );
+
+    mockSocket.emit = jest.fn((_event: string, ...args: any[]) => {
+      const cb = args[args.length - 1];
+      if (typeof cb === "function") {
+        cb({ success: true, updatedArray: ["first", "second"] });
+      }
+    });
+
+    const tags = project.tags as unknown as DEMArray<string>;
+    const removed = await tags.splice(-1, 1);
+    expect(removed).toEqual(["third"]);
+    expect([...tags]).toEqual(["first", "second"]);
+  });
 });

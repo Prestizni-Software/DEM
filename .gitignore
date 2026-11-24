@@ -145,3 +145,4 @@ vite.config.ts.timestamp-*
 .vite/
 # stryker temp files
 .stryker-tmp
+reports/

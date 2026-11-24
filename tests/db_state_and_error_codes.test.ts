@@ -174,22 +174,40 @@ describe("DEM Server DB State Check and Error Codes System", () => {
 
   describe("Error Code Propagation and Communication", () => {
     test("DEMError includes code, message description, and timestamp", () => {
+      const details = { extra: 42 };
       const err = new DEMError(
         DEMErrorCode.MISSING_ARGUMENT,
         "Missing required argument: classParam",
+        details,
       );
       expect(err).toBeInstanceOf(Error);
       expect(err).toBeInstanceOf(DEMError);
+      expect(err.name).toBe("DEMError");
       expect(err.code).toBe(DEMErrorCode.MISSING_ARGUMENT);
+      expect(err.details).toEqual(details);
       expect(err.message).toContain("Missing required argument: classParam");
       expect(err.message).toContain(DEMErrorCode.MISSING_ARGUMENT);
       expect(typeof err.timestamp).toBe("number");
+
+      const json = err.toJSON();
+      expect(json).toEqual({
+        name: "DEMError",
+        code: DEMErrorCode.MISSING_ARGUMENT,
+        message: err.message,
+        details,
+        timestamp: err.timestamp,
+      });
     });
 
     test("getDEMErrorDescription returns human-readable description for any code", () => {
       const desc = getDEMErrorDescription(DEMErrorCode.DB_NOT_CONNECTED);
       expect(typeof desc).toBe("string");
-      expect(desc.length).toBeGreaterThan(0);
+      expect(desc).toBe(
+        "Database is not in connected state. Establish connection before loading.",
+      );
+      expect(getDEMErrorDescription("NON_EXISTENT_CODE" as DEMErrorCode)).toBe(
+        "Unknown error.",
+      );
     });
 
     test("Server manager emits 'error' on emitter for host systems to intercept", async () => {
@@ -251,10 +269,21 @@ describe("DEM Server DB State Check and Error Codes System", () => {
 
     test("toDEMError wraps standard Error and preserves DEMError", () => {
       const standardErr = new Error("Something went wrong");
-      const wrapped = toDEMError(standardErr, DEMErrorCode.INTERNAL_ERROR);
+      const wrapped = toDEMError(standardErr);
       expect(wrapped).toBeInstanceOf(DEMError);
       expect(wrapped.code).toBe(DEMErrorCode.INTERNAL_ERROR);
-      expect(wrapped.message).toContain("Something went wrong");
+      expect(wrapped.message).toBe(
+        `[${DEMErrorCode.INTERNAL_ERROR}] Something went wrong`,
+      );
+      expect(wrapped.details).toEqual({ originalError: standardErr });
+
+      const wrappedString = toDEMError("plain string failure", DEMErrorCode.TIMEOUT);
+      expect(wrappedString).toBeInstanceOf(DEMError);
+      expect(wrappedString.code).toBe(DEMErrorCode.TIMEOUT);
+      expect(wrappedString.message).toBe(
+        `[${DEMErrorCode.TIMEOUT}] plain string failure`,
+      );
+      expect(wrappedString.details).toBeUndefined();
 
       const existingDEMErr = new DEMError(
         DEMErrorCode.ACCESS_DENIED,

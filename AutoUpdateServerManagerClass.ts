@@ -1527,6 +1527,9 @@ export class AutoUpdateServerManager<
         }
         delete this.objects_[idStr];
         delete globalCache.objects[idStr];
+        if (deleted) {
+          (this.socket as any).emit(EVENT_DELETE + this.className, idStr);
+        }
         res = { success: true, message: deleted ? "Deleted" : "Already gone" };
       } catch (error: any) {
         this.loggers.error?.(

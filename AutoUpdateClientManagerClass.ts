@@ -467,9 +467,9 @@ export class AutoUpdateClientManager<
     this.socket.on(
       "new" + this.className,
       async (payload: string | { _id: string; description?: string }) => {
-        if (this._isClosed) return;
+        if (this._isClosed || !payload) return;
         const id = typeof payload === "string" ? payload : payload._id;
-        if (this.getObject(id)) return;
+        if (!id || this.getObject(id)) return;
         this.loggers.debug(
           "Applying new object from manager " + this.className + " - " + id,
         );
@@ -538,13 +538,13 @@ export class AutoUpdateClientManager<
     );
 
     this.socket.on("delete" + this.className, async (id: string) => {
-      if (!this.getObject(id)) return;
+      if (this._isClosed || !id || !this.getObject(id)) return;
       this.loggers.debug(
         "Applying object deletion from manager " + this.className + " - " + id,
       );
       try {
-        this.totalObjects -= 1;
-        this.loadedObjects -= 1;
+        this.totalObjects = Math.max(0, this.totalObjects - 1);
+        this.loadedObjects = Math.max(0, this.loadedObjects - 1);
         await this.evictObject(id);
       } catch (error: unknown) {
         this.loggers.error(

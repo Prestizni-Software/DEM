@@ -1582,10 +1582,17 @@ export abstract class AutoUpdatedClientObject<
         const firstId = currentRawArray[0];
         removedEntities = [this.findReference(firstId, key) || firstId];
       } else if (req.op === "splice" && req.index !== undefined) {
-        const count = req.deleteCount ?? currentRawArray.length - req.index;
+        const startIdx =
+          req.index < 0
+            ? Math.max(currentRawArray.length + req.index, 0)
+            : Math.min(req.index, currentRawArray.length);
+        const count = Math.max(
+          0,
+          req.deleteCount ?? currentRawArray.length - startIdx,
+        );
         for (
-          let i = req.index;
-          i < req.index + count && i < currentRawArray.length;
+          let i = startIdx;
+          i < startIdx + count && i < currentRawArray.length;
           i++
         ) {
           const id = currentRawArray[i];
@@ -1602,8 +1609,15 @@ export abstract class AutoUpdatedClientObject<
       } else if (req.op === "shift" && currentRawArray.length > 0) {
         removedEntities = [currentRawArray[0]];
       } else if (req.op === "splice" && req.index !== undefined) {
-        const count = req.deleteCount ?? currentRawArray.length - req.index;
-        removedEntities = currentRawArray.slice(req.index, req.index + count);
+        const startIdx =
+          req.index < 0
+            ? Math.max(currentRawArray.length + req.index, 0)
+            : Math.min(req.index, currentRawArray.length);
+        const count = Math.max(
+          0,
+          req.deleteCount ?? currentRawArray.length - startIdx,
+        );
+        removedEntities = currentRawArray.slice(startIdx, startIdx + count);
       } else if (req.op === "clear") {
         removedEntities = [...currentRawArray];
       }

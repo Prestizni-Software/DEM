@@ -1,4 +1,4 @@
-import { ServerChangeTracker } from "../sync/ServerChangeTracker.js";
+import { ServerChangeTracker, estimateObjectSizeBytes } from "../sync/ServerChangeTracker.js";
 import { ChangeEntry } from "../sync/types.js";
 
 describe("ServerChangeTracker", () => {
@@ -96,6 +96,8 @@ describe("ServerChangeTracker", () => {
       tracker.recordChange("create", `id_${i}`, { data: "x".repeat(100) });
     }
 
+    expect(tracker.getEntryCount()).toBeGreaterThan(0);
+    expect(tracker.getEstimatedSizeBytes()).toBeGreaterThan(0);
     expect(tracker.getEstimatedSizeBytes()).toBeLessThanOrEqual(500);
     expect(tracker.getLowestRetainedRevision()).toBeGreaterThan(1);
 
@@ -117,5 +119,88 @@ describe("ServerChangeTracker", () => {
     // Should NOT prune yet because size limit is not exceeded even though age is
     expect(tracker.getEntryCount()).toBe(1);
     expect(tracker.getLowestRetainedRevision()).toBe(1);
+
+    // Add a large recent entry so total size exceeds 100 bytes; now Entry 1 violates BOTH age and size
+    tracker.recordChange("create", "id2", { payload: "z".repeat(100) });
+    expect(tracker.getEntryCount()).toBe(1);
+    expect(tracker.getLowestRetainedRevision()).toBe(2);
+
+    // Single constraint in "both" mode falls back to pruning on that constraint
+    const ageOnlyBoth = new ServerChangeTracker("TestModel", {
+      maxAgeMs: 1000,
+      pruneMode: "both",
+    });
+    ageOnlyBoth.recordChangeWithTimestamp("create", "old1", { n: 1 }, oldTimestamp);
+    expect(ageOnlyBoth.getEntryCount()).toBe(0);
+    expect(ageOnlyBoth.getLowestRetainedRevision()).toBe(2);
+    expect(ageOnlyBoth.getEstimatedSizeBytes()).toBe(0);
+    expect(ageOnlyBoth.getChangesSince(0)).toEqual({ isExpired: true, changes: [] });
+  });
+
+  test("estimateObjectSizeBytes handles primitives, arrays, nested objects, and functions", () => {
+    expect(estimateObjectSizeBytes(null)).toBe(8);
+    expect(estimateObjectSizeBytes(undefined)).toBe(8);
+    expect(estimateObjectSizeBytes(true)).toBe(4);
+    expect(estimateObjectSizeBytes(42)).toBe(8);
+    expect(estimateObjectSizeBytes("abcd")).toBe(8);
+    expect(estimateObjectSizeBytes([1, "ab"])).toBe(16 + 8 + 4);
+    expect(estimateObjectSizeBytes({ ab: true })).toBe(16 + 4 + 4);
+    expect(estimateObjectSizeBytes(() => {})).toBe(16);
+  });
+
+  test("updateOptions, maxEntries, clear, and clientRevision boundary handling", () => {
+    const tracker = new ServerChangeTracker("TestModel", { maxEntries: 2 });
+    expect(tracker.pruneMode).toBe("either");
+    tracker.recordChange("create", "id1", { a: 1 });
+    tracker.recordChange("update", "id1", { a: 2 });
+    tracker.recordChange("update", "id1", { a: 3 });
+
+    expect(tracker.getEntryCount()).toBe(2);
+    expect(tracker.getLowestRetainedRevision()).toBe(2);
+    expect(tracker.getChangesSince(3)).toEqual({ isExpired: false, changes: [] });
+    expect(tracker.getChangesSince(99)).toEqual({ isExpired: false, changes: [] });
+
+    tracker.updateOptions({ maxEntries: 1, maxAgeMs: 5000, maxSizeBytes: 5000, pruneMode: "both" });
+    expect(tracker.pruneMode).toBe("both");
+    expect(tracker.getEntryCount()).toBe(1);
+    expect(tracker.getLowestRetainedRevision()).toBe(3);
+
+    tracker.clear();
+    expect(tracker.getCurrentRevision()).toBe(0);
+    expect(tracker.getLowestRetainedRevision()).toBe(1);
+    expect(tracker.getEntryCount()).toBe(0);
+    expect(tracker.getEstimatedSizeBytes()).toBe(0);
+  });
+
+  test("coalesceEntries and getChangesSince with coalesce=true compact entity transitions", () => {
+    const tracker = new ServerChangeTracker<{ a?: number; b?: number }>("TestModel");
+    tracker.recordChange("create", "id1", { a: 1 });
+    tracker.recordChange("update", "id1", { b: 2 });
+    tracker.recordChange("create", "id2", { a: 10 });
+    tracker.recordChange("delete", "id2");
+    tracker.recordChange("update", "id3", { a: 5 });
+    tracker.recordChange("update", "id3", { b: 6 });
+    tracker.recordChange("update", "id4", { a: 7 });
+    tracker.recordChange("delete", "id4");
+    tracker.recordChange("delete", "id5");
+    tracker.recordChange("create", "id5", { a: 99 });
+    tracker.recordChange("delete", "id6");
+    tracker.recordChange("update", "id6", { a: 100 });
+
+    const res = tracker.getChangesSince(0, undefined, true);
+    expect(res.isExpired).toBe(false);
+    const byId = new Map(res.changes.map((c) => [c.id, c]));
+
+    expect(byId.get("id1")?.type).toBe("create");
+    expect(byId.get("id1")?.data).toEqual({ a: 1, b: 2 });
+    expect(byId.has("id2")).toBe(false);
+    expect(byId.get("id3")?.type).toBe("update");
+    expect(byId.get("id3")?.data).toEqual({ a: 5, b: 6 });
+    expect(byId.get("id4")?.type).toBe("delete");
+    expect(byId.get("id4")?.data).toBeUndefined();
+    expect(byId.get("id5")?.type).toBe("create");
+    expect(byId.get("id5")?.data).toEqual({ a: 99 });
+    expect(byId.get("id6")?.type).toBe("update");
+    expect(byId.get("id6")?.data).toEqual({ a: 100 });
   });
 });

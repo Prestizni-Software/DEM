@@ -67,6 +67,7 @@ export class IndexedDbStorageAdapter implements IClientStorageAdapter {
       };
 
       request.onerror = () => {
+        this.dbPromise = null;
         reject(request.error || new Error("Failed to open IndexedDB"));
       };
     });
@@ -119,7 +120,11 @@ export class IndexedDbStorageAdapter implements IClientStorageAdapter {
         const req = store.get(className);
 
         req.onsuccess = () => {
-          if (req.result && typeof req.result.revision === "number") {
+          if (
+            req.result &&
+            typeof req.result.revision === "number" &&
+            Array.isArray(req.result.ids)
+          ) {
             resolve(req.result as StoredManagerState<T>);
           } else {
             resolve(null);

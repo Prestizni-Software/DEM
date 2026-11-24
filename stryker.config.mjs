@@ -1,13 +1,57 @@
 // @ts-check
+const testMatch = process.env.STRYKER_TEST_MATCH
+  ? process.env.STRYKER_TEST_MATCH.split(",")
+  : undefined;
+
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 const config = {
-  _comment:
-    "This config was generated using 'stryker init'. Please take a look at: https://stryker-mutator.io/docs/stryker-js/configuration/ for more information.",
   packageManager: "npm",
-  reporters: ["html", "clear-text", "progress", "dashboard"],
+  reporters: ["html", "clear-text", "progress", "json"],
   testRunner: "jest",
-  testRunner_comment:
-    "Take a look at https://stryker-mutator.io/docs/stryker-js/jest-runner for information about the jest plugin.",
+  testRunnerNodeArgs: ["--no-warnings", "--experimental-vm-modules"],
   coverageAnalysis: "perTest",
+  ignoreStatic: true,
+  incremental: true,
+  concurrency: 1,
+  maxTestRunnerReuse: 40,
+  timeoutMS: 15000,
+  mutate: [
+    "AutoUpdateClientManagerClass.ts",
+    "AutoUpdatedClientObjectClass.ts",
+    "AutoUpdatedServerObjectClass.ts",
+    "AutoUpdateManagerClass.ts",
+    "AutoUpdateServerManagerClass.ts",
+    "CommonTypes.ts",
+    "DEMErrors.ts",
+    "sync/**/*.ts",
+    "!sync/**/index.ts",
+    "!sync/types.ts",
+    "!sync/storage/IClientStorageAdapter.ts",
+  ],
+  ignorePatterns: [
+    "dist",
+    "coverage",
+    "reports",
+    "docs",
+    "investigation",
+    ".codegraph",
+    "*.txt",
+    "types_test.ts",
+    "inspect_type.ts",
+  ],
+  jest: {
+    projectType: "custom",
+    configFile: "jest.config.ts",
+    enableFindRelatedTests: !testMatch,
+    config: {
+      ...(testMatch ? { testMatch } : {}),
+      testPathIgnorePatterns: [
+        "node_modules/",
+        "issue_regression\\.test\\.ts",
+        "performance\\.test\\.ts",
+        "stress\\.test\\.ts",
+      ],
+    },
+  },
 };
 export default config;

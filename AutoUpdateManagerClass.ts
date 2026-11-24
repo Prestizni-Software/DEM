@@ -154,8 +154,8 @@ export abstract class AutoUpdateManager<
     if (res?.success || !o || typeof o?.destroy !== "function") {
       delete this.objects_[_idStr];
       delete globalCache.objects[_idStr];
+      o?.callbacks?.delete?.(this);
     }
-    o?.callbacks?.delete?.(this);
     return res ?? { success: true, message: "Already gone" };
   }
 

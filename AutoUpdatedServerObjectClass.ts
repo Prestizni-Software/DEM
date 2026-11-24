@@ -347,10 +347,14 @@ export abstract class AutoUpdatedServerObject<
     silent = false,
     noUpdate = false,
   ): Promise<{ success: boolean; msg: string; code?: DEMErrorCode }> {
+    const keyParts = key.split(".");
     if (
-      key === "__proto__" ||
-      key === "constructor" ||
-      key === "prototype"
+      keyParts.some(
+        (part) =>
+          part === "__proto__" ||
+          part === "constructor" ||
+          part === "prototype",
+      )
     ) {
       return {
         success: false,
@@ -388,22 +392,8 @@ export abstract class AutoUpdatedServerObject<
         this.saveLock = (this.saveLock ?? Promise.resolve())
           .catch(() => {})
           .then(async () => {
-            if (typeof this.parentManager.model?.updateOne === "function") {
-              if (value === undefined) {
-                await this.parentManager.model.updateOne(
-                  { _id },
-                  { $unset: { [key]: "" } },
-                );
-              } else {
-                await this.parentManager.model.updateOne(
-                  { _id },
-                  { $set: { [key]: value } },
-                );
-              }
-            } else if (this.entry && typeof (this.entry as any).save === "function") {
-              await (this.entry as any).save();
-            }
-            if (this.entry) {
+            const applyToEntry = () => {
+              if (!this.entry) return;
               if (value === undefined) {
                 if (key.includes(".")) {
                   _.unset(this.entry, key);
@@ -417,6 +407,26 @@ export abstract class AutoUpdatedServerObject<
                   (this.entry as any)[key] = value;
                 }
               }
+            };
+
+            if (typeof this.parentManager.model?.updateOne === "function") {
+              if (value === undefined) {
+                await this.parentManager.model.updateOne(
+                  { _id },
+                  { $unset: { [key]: "" } },
+                );
+              } else {
+                await this.parentManager.model.updateOne(
+                  { _id },
+                  { $set: { [key]: value } },
+                );
+              }
+              applyToEntry();
+            } else if (this.entry && typeof (this.entry as any).save === "function") {
+              applyToEntry();
+              await (this.entry as any).save();
+            } else {
+              applyToEntry();
             }
           });
         await this.saveLock;
